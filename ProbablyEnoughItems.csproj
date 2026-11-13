@@ -1,0 +1,96 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>ProbablyEnoughItems</AssemblyName>
+    <RootNamespace>ItemCatalog</RootNamespace>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <!--
+      游戏安装目录，按优先级解析，仓库里不写死任何绝对路径：
+        1) dotnet build -p:GameDir=<路径>
+        2) 环境变量 PROBABLY_STOLEN_DIR
+        3) Steam 注册表（HKCU\Software\Valve\Steam 的 SteamPath）下的 steamapps\common\Probably Stolen
+    -->
+    <GameDir Condition="'$(GameDir)' == '' and '$(PROBABLY_STOLEN_DIR)' != ''">$(PROBABLY_STOLEN_DIR)</GameDir>
+    <SteamInstallPath Condition="'$(GameDir)' == ''">$([MSBuild]::GetRegistryValue('HKEY_CURRENT_USER\Software\Valve\Steam', 'SteamPath'))</SteamInstallPath>
+    <SteamInstallPath Condition="'$(SteamInstallPath)' != ''">$(SteamInstallPath.Replace('/', '\'))</SteamInstallPath>
+    <GameDir Condition="'$(GameDir)' == '' and '$(SteamInstallPath)' != ''">$(SteamInstallPath)\steamapps\common\Probably Stolen</GameDir>
+    <ManagedDir>$(GameDir)\Probably Stolen_Data\Managed</ManagedDir>
+    <ModDir>$(GameDir)\Mods\ProbablyEnoughItems</ModDir>
+  </PropertyGroup>
+
+  <Target Name="CheckGameDir" BeforeTargets="PrepareForBuild" Condition="'$(GameDir)' == ''">
+    <Error Text="找不到游戏安装目录。请用 dotnet build -p:GameDir=&lt;游戏路径&gt;，或设置环境变量 PROBABLY_STOLEN_DIR。" />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(ManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(ManagedDir)\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(ManagedDir)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(ManagedDir)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(ManagedDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(ManagedDir)\Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(ManagedDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(ManagedDir)\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <LocFiles Include="Localization\*.csv" />
+    <!-- 来源表：运行时用 ModHelper.ReadModFileText(...) 读，必须和 DLL 一起装到模组目录 -->
+    <SourceFiles Include="Data\*.csv" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- examples/ 是给别家模组抄的示例代码，不参与编译。
+         它里面用的是「按运行时算出来的类型做反射」（Type.GetMethod），
+         被扫描器判成 reflection-external，会连带整个模组被拒绝激活。 -->
+    <Compile Remove="examples\**\*.cs" />
+  </ItemGroup>
+
+  <!-- 编译后自动安装到 Mods\ProbablyEnoughItems；权限不足时只警告，不中断构建 -->
+  <Target Name="InstallMod" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <MakeDir Directories="$(ModDir)" ContinueOnError="true" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModDir)" ContinueOnError="true" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\manifest.xml" DestinationFolder="$(ModDir)" ContinueOnError="true" />
+    <!-- 模组菜单横幅：创意工坊预览图优先，本地文件夹没有时就退回这张 -->
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\preview.png" DestinationFolder="$(ModDir)" ContinueOnError="true" Condition="Exists('$(MSBuildProjectDirectory)\preview.png')" />
+    <Copy SourceFiles="@(LocFiles)" DestinationFolder="$(ModDir)\Localization" ContinueOnError="true" Condition="'@(LocFiles)' != ''" />
+    <Copy SourceFiles="@(SourceFiles)" DestinationFolder="$(ModDir)\Data" ContinueOnError="true" Condition="'@(SourceFiles)' != ''" />
+    <Message Importance="high" Text="[ProbablyEnoughItems] 已尝试安装到 $(ModDir)（若权限不足请用 install.ps1 以管理员运行）" />
+  </Target>
+
+</Project>

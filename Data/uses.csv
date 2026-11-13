@@ -1,0 +1,84 @@
+# Probably Enough Items · 使用来源表
+#
+# 记录「对物品本身动手」的转化，和机器配方（RecipeIndex）分开：
+#   开箱子 / 撕包装 → 内容物
+#   喝掉液体      → 空瓶
+#   涂抹使用      → 生效后的东西
+#   组合          → 拼出来的东西
+#
+# 列：uses,输入物品id,方式,产出物品id(|分隔),备注key
+#   输入物品id  被使用/开启/消耗的那件东西
+#               两件物品之间的交互（A 用在 B 上）写成 `A+B`，
+#               这样两件物品的去处里都会出现这一条
+#   方式        open 开启 / drink 喝掉 / apply 涂抹 / combine 组合
+#   产出        得到的东西，多个用 | 分隔；留空表示「用掉就没了」
+#   备注key     可选，本地化 key（见 Localization）
+#
+# 行首 # 是注释，空行会被跳过。物品 id 用图鉴里显示的 ID。
+#
+# 开箱子的内容物不写在这张表里：那部分由 `Catalog/LootSource.cs` 直接读
+# `LootRegistry` 的战利品表生成，游戏里改表会自动跟着变。
+
+# 液体好运装在小瓶里，喝掉剩下的就是那个小瓶（不是 bottled_water）
+uses,liquid_luck,drink,mini_bottle,
+
+# 玻璃片 + 绷带 → 玻璃刀（两件物品之间的交互，两边去处都会显示）
+uses,glass_shard+bandage_item,combine,glass_shard_shiv,
+
+# 医用绷带是另一种，游戏里若也能缠出刀就取消注释
+# uses,glass_shard+topical_bandage_item,combine,glass_shard_shiv,
+
+# ===== 2026-11-12 按 tools/audit/29_use_sites.ps1 的 IL 证据补 =====
+
+# 喝掉红啤酒，剩下的就是空瓶
+#   FoodItemDirectory::<RedBeer>b__0  →  DirectoryMaster.Item("empty_beer_bottle")
+uses,red_beer,drink,empty_beer_bottle,
+
+# 刮开一叠刮刮券 → 单张
+#   MiscItemDirectory::<ScratcherTicketStack>b__76_2  →  ItemSpawner.Spawn("scratcher")
+uses,scratcher_stack,open,scratcher,
+
+# 熔炉周期产出
+#   MachineFurnace::<Furnace>b__5  →  metal_ingot + scrap_metal
+uses,furnace,apply,metal_ingot|scrap_metal,
+
+# 捕鼠夹周期产出
+#   RatTrap::<CreateMouseTrap>b__3  →  processed_cheese
+uses,mouse_trap,apply,processed_cheese,
+
+# 蒸发器周期产出溶剂回收模块
+#   MachineEvaporator::<Evaporator>b__7  →  WaterHelper.AddLiquid + evaporator_module_solvent_recovery
+uses,evaporator,apply,evaporator_module_solvent_recovery,
+
+# ===== 2026-11-12 支持 `tag:XXX` 键后，把「整类目标」的补上 =====
+# 第 2 列可以用 `tag:TAG_NAME` 表示「任意带这个标签的物品」，
+# 去处查询时 UseIndex 会用物品自己的 IsTag 匹配（见 UseTable.Using(id, item)）。
+
+# 螺丝刀拆解枪械 → 零件（ToolDirectory::<CreateScrewdriver>b__5_4，检查 ADV_GUN_TAG）
+uses,screwdriver+tag:ADV_GUN_TAG,apply,system_module_ruined|common_electronic|printer_plastic|junk,
+
+# 螺丝刀拆坏机器 → 零件（同一回调的另一分支，检查 BROKEN_MACHINE_TAG）
+uses,screwdriver+tag:BROKEN_MACHINE_TAG,apply,system_module_ruined|common_electronic|printer_plastic|junk,
+
+# 刀切死老鼠 → 三种肉（HusbandryHelper::InitBladeItem + CreateButcherCuts，只认 ANIMAL_RAT）
+# 按重量拆份：400g 一份 raw_meat、200g 一份 small_raw_meat、剩下的进 morsel
+uses,tag:BLADE_ITEM_TAG+rat,apply,raw_meat|small_raw_meat|morsel,
+
+# 屠宰人形尸体 → 肉（CharacterItemDirectory::<Humanoid>b__5_1，要求 butchering 标签）
+# **不写**：这条在游戏里见不到，原因有两层 ——
+#   1. GameMaster.InRaid() 的 IL 就是 `ldc.i4.0; ret`（硬编码 false），
+#      战斗系统未实装 → 敌人不会死 → 没有尸体；
+#   2. 唯一的死亡入口 KillCurrentEntity 的调用者是 DebugHandler（调试）、
+#      DamageEntity（战斗效果，走不到）、Survival.CheckSurvivalEffect（玩家生存，不留尸）。
+#   就算有尸体，butchering 标签也没有任何 EnableTag 添加点。
+# uses,tag:SPECIES_HUMAN,apply,raw_meat|small_raw_meat|fat_meat,
+
+# SPECIES_XENO 分支不写：它产出的 raw_xeno_meat / small_raw_xeno_meat 在
+# Directory 里没有注册（全 DLL 只有 3 处 ldstr 引用、没有 Directory.Add，
+# items_all.csv 里也查不到），写进来等于报一个拿不到的物品。
+
+# --- 仍然不补的（没有可用标签，也没有固定 id）---
+# 贴标机       ToolDirectory::<CreateLabelerBlue>b__13_4 → LabelerBlueUIManager.OpenUI
+#              产出 dossier 发生在 UI 里，目标是任意文件，找不到能判定的标签。
+# 泡面         FoodItemHelper::<CanCookCupNoodle>b__10_2
+#              cup_noodle 只是被 EnableTag("cooked") + TransformEdible，同 id 不变。

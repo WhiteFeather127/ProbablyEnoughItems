@@ -1,0 +1,317 @@
+# Probably Enough Items — 客人表（改完重启游戏生效，不需要重新编译）
+#
+# 一个阵营一节：# ===== 阵营 ===== 标题 + 一行 faction，下面逐行写该阵营的客人。
+# 客人行不带 faction 列，阵营由上方最近的 faction 行决定。
+#
+# 列顺序（前 7 列必填，第 8~16 列可选）：
+#   第 10 列 buys_tags   收购的种类标签（WATER / WEAPON …，| 分隔）
+#   第 11 列 buys_items  收购的具体物品 id（| 分隔）
+#   第 12 列 sells       他摆出来卖的货（原 goods.csv 的 items，已合并进来）
+#   第 13 列 base        货单继承自哪个 id（原 goods.csv 的 base）
+#   第 14 列 exclude     从继承货单里剔掉的 id（原 goods.csv 的 exclude）
+#   第 15 列 random_items 随机分支的全部可能产出（原 goods.csv 的 random_items）
+#   第 16 列 dynamic     动态货单标记（如 commissary，原 goods.csv 的 dynamic）
+#   goods.csv 仍会被读取并与上面 12~16 列叠加，但新数据只需要写这一张表。
+# kind          faction=阵营分节 / client=上门客人 / location=地点商店
+# id            faction 行填官方本地化 key；客人行填唯一标识（goods.csv 靠它关联）
+# name_key      游戏 ClientName 表的本地化 key（name_xxx），留空则用注册名兜底
+# location_id   地点 id：留空 / dr_jackson / commissary（走地点自己的 GetTitle）
+# fallback_key  模组本地化 key，只在游戏本地化取不到时用；留空则显示注册名
+# profession    人工分组标签，仅用于阅读和排序，代码不解释其内容
+# sprite        客人立绘：固定精灵 key 或 pool:方法名；地点留空
+# water         可选：该客人卖的容器里装什么水 —— pure / hq / base / rust / ghost / gutterflow
+#               **留空 = 没灌水，只卖空瓶**（empty / none / no_water / - 同义）；
+#               只有 IL 里确实调了 FillWith* / WaterPremadeHelper 的客人才填水种
+#               只给某几件容器灌水：水种@物品id，多件用 | 分隔
+#                 例 base@large_bottled_water（不在名单里的容器按空瓶处理）
+#               第 9 列 empty=1 = **既卖水又卖瓶**：来源页把每件容器拆成
+#               「原始空瓶」+「灌好的满瓶」两格（RecipeWindow.RenderSourcePage）。
+#               判定由 tools/audit/25_empty_flags.ps1 自动做：water 非空（有满瓶）
+#               且货单里存在 IL 未灌过的液体容器（或 water 带 @ 限定）。
+#               当前命中 2 个：DishonestWaterSellScav（IL 只灌 bottled_water，
+#                 small_bottled_water 是原始空瓶，所以 water 写 ghost@bottled_water）、
+#               Supplier（只灌 large_bottled_water，水壶/量筒/小瓶都是空的）。
+#               带 @ 限定时 RecipeWindow 只对灌过的那件容器拆空瓶格，没灌的容器
+#               本来就画成空瓶，不会重复。纯空瓶客人不要填 1（没水可拆）。
+# buys_tags     第 10 列：他收购的**种类标签**，| 分隔（WATER / FOOD / WEAPON / ARMOR /
+#               AMMUNITION / SUBSTANCE / HOUSEHOLD_GOOD / LIQUID_CONTAINER_TAG /
+#               GUN_CALIBER_TAG / BREVAGE）。来源窗口只显示标签名，不展开成物品。
+# buys_items    第 11 列：他收购的**具体物品 id**，| 分隔；按图鉴格子显示。
+#
+#               这两列是从各客人 willAcceptItem 谓词的 IL 里抄的
+#               （`item.IsTag("…")` / `item.IsID("…")`），不是猜的。
+#               没写 willAcceptItem 的客人留空（他们只卖不收，或收什么都行）。
+#
+#               water 列依据：tools/audit/23_water_clients.ps1 从 IL 导出。
+#               注意早期「只有 PlaceSupplierInventory 灌水」的结论是**错的**：
+#               多数水商走 WaterPremadeHelper 的透传工厂（id 是形参，字面量在调用方），
+#               直接搜 FillWith* 看不到。实际有据可查的：
+#                 CreateDishonestWaterSellScav -> AccurateBaseWater / GhostWaterAsPureWater
+#                 CreateWaterCompany          -> AccurateBaseWater / GhostWaterAsBaseWater / GetRandomWater
+#                 CreateWaterSeller           -> GetRandomWater
+#                 CreateWaterSellScav         -> GetRandomWater
+#                 CreateIceMiner              -> AccurateHighQualityWater (hq)
+#                 CreateUpperLevelCharity     -> AccurateHighQualityWater (hq)
+#                 CreateStoryWaterVendor      -> AccurateBaseWater / GhostWaterAsBaseWater
+#                 SetHonestWaterSellerDialog   -> AccurateBaseWater / AccurateGhostWater
+#                 PlaceSupplierInventory      -> FillWithBaseWater (仅 large_bottled_water)
+#                 NetworkUpgradeList 的升级奖励 -> AccurateRustWater (water_jug)
+#               GetRandomWater 是运行时随机抽一种，表里按 base 展示。
+#               没有灌水证据的客人一律留空 = 空瓶（不要兜底成 base，否则没水的客人
+#               会被画成满瓶）；clients.csv 里目前只有 6 个客人有水种。
+#
+# 官方阵营 key（StoreReputation.InitReputation 用的同一批，全语种自带）：
+#   faction_name_lower_level / _upper_level / _security / _black_market
+#   / _revolution / _cartel
+#   faction_none=真无阵营（工厂完全不设 clientFaction，目前仅 Nurse1 / LandlordClient）
+#   faction_location=地点分组；这两个是模组兜底 key，不是游戏阵营
+#
+# 物理行顺序 = 图鉴显示顺序；同一 name_key 的多个 Create* 已合并成一行。
+# 货单不在这张表，见 goods.csv。数据来源：Assembly-CSharp.dll 的 IL 离线提取。
+#
+# kind,id,name_key,location_id,fallback_key,profession,sprite
+
+# ===== 下层 =====
+faction,faction_name_lower_level,,,,,
+# ---- 水商/水类 ----
+client,DishonestWaterSellScav,name_scav,,,水商/水类,pool:GetRandomScavSpriteName,ghost@bottled_water,1,,,bottled_water|common_electronic|food_stamp|nuts_metal|paper_towel|scrap_metal|shampoo|small_bottled_water|toilet_paper|wire,,,,
+client,GenericWaterBuyer,name_lower_level_citizen,,,水商/水类,pool:GetRandomLowerLevelSpriteName,,,,,bottled_water|handmade_pistol|internal_springs|internal_springs_improved|large_bottled_water|laser|laser_toy|mag_22|mag_22_ext|mag_22_high|pistol_switch|rds|rds_makeshift|silencer|silencer_makeshift|small_pistol_ammo|small_pistol_ammo_nl|small_pistol_ammo_p|trigger_group,,,,
+client,ScavWater,name_sick_scav,,,水商/水类,pool:GetRandomScavSpriteName,,,,,bottled_water,,,,
+client,WaterCompany,name_lower_levels_citizen,,,水商/水类,pool:GetRandomLowerLevelSpriteName,base,,,,bottled_water|large_bottled_water|flashbang_grenade|heavy_pistol_ammo|smoke_grenade|stun_baton,,,,
+client,WaterSeller,name_water_trader,,,水商/水类,pool:GetRandomMerchantSpriteName,base,,,,large_bottled_water|water_jug|water_ration|water_ration_small,,,,
+# ---- 农业/食品 ----
+client,FarmerClientStandard,name_hydroponic_farmer,,,农业/食品,pool:GetRandomFarmerSpriteName,,,,,nutrifruit|wine_berry,,,,
+client,FarmerSeedClient,name_farmer,,,农业/食品,pool:GetRandomFarmerSpriteName,,,,,nutrifruit,,,,
+client,FoodSurplusClient,name_lower_levels_trader,,,农业/食品,pool:GetRandomLowerLevelSpriteName,,,,,beis_icecream|cat_bar|common_electronic|common_ore|cup_noodle|energy_drink|galaxy_blend|li_eat_snackbar|nudka|processed_juice|processed_meat|processed_milk|red_beer|scrap_metal|soda_red|wire|zerochew,,,,
+# ---- 医药/化学 ----
+client,AddictBlood,name_addict,,,医药/化学,pool:GetRandomScavSpriteName,,,,blood_bag|pink_injector,blood_bag|pink_injector,,,,
+client,LowerLevelChemist,name_lower_level_chemist,,,医药/化学,pool:GetRandomScientistSpriteName,,,CHEMICAL_SUPPLIES,,caffeine_pill|dream_dust|salve,,,,
+client,MedicalSurplusClient,name_lower_levels_vendor,,,医药/化学,pool:GetRandomLowerLevelSpriteName,,,,,bandage_item|birth_control_pill|caffeine_pill|pink_injector|salve|topical_bandage_item,,,,
+client,RareLowerLevelChemist,name_pharmacist,,,医药/化学,pool:GetRandomScientistSpriteName,,,CHEMICAL_SUPPLIES,,black_injector|dream_dust|fanta_pill|pink_injector,,,,
+client,SubstanceSurplusClient,name_shifty_dealer,,,医药/化学,pool:GetRandomShadySpriteName,,,,,dream_dust|fanta_pill|pink_injector,,,,
+# ---- 拾荒/废料 ----
+client,Junker,name_junker,,,拾荒/废料,pool:GetRandomScavSpriteName,,,SUBSTANCE,,common_electronic|nuts_metal|printer_plastic|scrap_metal|wine_bottle|wire,,,,
+client,OldScav,name_old_scav,,,拾荒/废料,pool:GetRandomElderSpriteName,,,FOOD|BREVAGE|HOUSEHOLD_GOOD,,heavy_handmade_pistol|heavy_pistol_ammo|heavy_pistol_ammo_p,,,,
+client,SalvagePilot,name_salvage_ship_pilot,,,拾荒/废料,pool:getRandomPilotSpriteName,,,,,common_electronic|scrap_metal|wire,,,,
+client,ScavBlood,name_pale_scav,,,拾荒/废料,pool:GetRandomScavSpriteName,,,FOOD,,blood_bag,,,,
+client,Scavenger,name_scavenger,,src_client_scavenger,拾荒/废料,pool:GetRandomScavSpriteName,,,WEAPON|ARMOR|AMMUNITION,,processed_cheese|kitchen_knife|combat_knife|box_cutter|kitchen_cleaver|pipe_weapon|hatchet|screwdriver|welder|crowbar|wire_cutter|printer_plastic|water_ration_small|kotton_fabric|pink_injector|flux_agent|common_electronic|wire|toilet_paper|toothpaste|shampoo|birth_control_pill|box_tampon|kotton_seed|bloomberry_seed|water_pitcher|nudka|common_medical|common_chemical|scratcher|system_module_corrupt|system_module_ruined|module_extractor|pure_white_injector|rubbing_alcohol|smelling_salt|hemostatic_bandage_item|surgery_tool|wine_bottle|wine_yeast|nutrifruit|energy_credit|water_filter|packet_red_cigarette|nutrifruit_seed_packet|nutrifruit_seed|water_tablet_container|water_tablet|water_test_container|water_test_strip|large_purple_injector|small_bottled_water|cat_bar|galaxy_blend|soda_red|processed_meat|scrap_metal,,,galaxy_blend|energy_drink|soda_red|cat_bar|li_eat_snackbar|red_beer|processed_milk|processed_juice|processed_meat|zerochew|cup_noodle|nudka|beis_icecream|system_module_performance|system_module_efficiancy|system_module_quality|portable_water_purifier,
+client,Scrapper,name_scrap_buyer,,,拾荒/废料,pool:GetRandomScavSpriteName,,,,,energy_credit|furnace|moisture_farm|security_alarm,,,,
+# ---- 军械/军警 ----
+client,Gunsmith,name_lower_level_gunsmith,,,军械/军警,pool:GetRandomLowerLevelSpriteName,,,,,handmade_pistol|heavy_handmade_pistol|heavy_pistol_ammo|revolver|small_pistol_ammo,,,,
+client,LowerLevelRareMerchant,name_rare_merchant,,,军械/军警,pool:GetRandomLowerLevelSpriteName,,,,,advanced_flux_agent|energy_credit_breeder|module_extractor_advanced|neuroactive_perfume|system_module_eco|system_module_efficiancy|system_module_fineness|system_module_overclock|system_module_performance|system_module_quality|turbo_booster_adv,,,,
+client,MercGunSeller,name_mercenary,,,军械/军警,pool:GetRandomMercSpriteName,,,,,ammo_display|grip_gel|heavy_handmade_pistol|heavy_pistol_ammo|heavy_pistol_ammo_nl|heavy_pistol_ammo_p|internal_springs|internal_springs_improved|laser|mag_10mm|mag_10mm_ext|mag_10mm_high|match_barrel|pistol_switch|rds|revolver|silencer|trigger_group,,,,
+client,WeaponArmorSurplusClient,name_lower_level_weapon_trader,,,军械/军警,pool:GetRandomLowerLevelSpriteName,,,,,armor_lining|box_cutter|combat_knife|hatchet|kitchen_knife,,,,
+# ---- 矿业/工业 ----
+client,IceMiner,name_ice_miner,,,矿业/工业,pool:getRandomPilotSpriteName,hq,,SUBSTANCE,,bottled_water|large_bottled_water,,,,
+client,Miner,name_miner,,,矿业/工业,pool:GetRandomMinerSpriteName,,,SUBSTANCE,,common_ore,,,,
+client,RadioactiveWasteCustomer,name_corporate_waste_manager,,,矿业/工业,pool:GetRandomLowerLevelSpriteName,,,,,nuclear_waste,,,,
+# ---- 快递/供应商 ----
+client,CourrierBeer,name_red_imp_courrier,,,快递/供应商,pool:GetCourrierSpriteName,,,,,beerCase|red_beer,,,,
+client,CourrierMining,name_gp_mining_courrier,,,快递/供应商,pool:GetCourrierSpriteName,,,,,common_ore,,,,
+client,Supplier,name_supply_runner,,src_client_supplier,快递/供应商,pool:GetRandomMerchantSpriteName,base@large_bottled_water,1,,,bandage_item|module_extractor|water_pitcher|wine_bottle|wine_yeast|fillerweed_seed|kotton_seed|flux_agent|50ml_cylinder|mini_bottle|printer_plastic|kotton_fabric|large_bottled_water|energy_credit|water_filter|nutrient_tablet_container|nutrient_tablet|nutrifruit_seed_packet|nutrifruit_seed|water_tablet_container|water_tablet|water_test_container|water_test_strip,,,cassette1|cassette1d|cassette1l|cassette2|cassette2d|cassette2l|cassette3|cassette3d|cassette3l|cassette4|cassette4d|cassette4l|cassette5|cassette5d|cassette5l|cassette6|cassette6d|cassette6l|cassette7|cassette7d|cassette7l|cassette8|cassette8d|cassette8l|cassette9|cassette9d|cassette9l|cassette10|cassette10d|cassette10l|cassette11|cassette11d|cassette11l|cassette12|cassette12d|cassette12l|cassette13|cassette13d|cassette13l|cassette14|cassette14d|cassette14l,
+# ---- 退休者 ----
+client,RetiredAquafarmer,name_retired_aquafarmer,,,退休者,pool:GetRetiredAquafarmerSpriteName,,,,,auto_butcher|gutterflow_pellet|industrial_fish_feed|kitchen_cleaver|livestock_feed_dispenser|marking_pen|water_filter,,,,
+client,RetiredChemist,name_retired_chemist,,,退休者,pool:GetRetiredChemistSpriteName,,,,,blender|chem_finisher|chem_module|chem_scanner|chemistry_guide|common_chemical|evaporator|evaporator_module_solvent_recovery|heating_plate|kotton_fabric|module_extractor|restricted_chemical|storage_bay_chem|water_filter|water_pitcher|water_tablet|water_tablet_container,,,,
+client,RetiredFarmer,name_retired_farmer,,,退休者,pool:GetRetiredFarmerSpriteName,,,,,aquascan|bloomberry_seed|coffee_bean|dream_cap_seed|farm_module_dream_cap|farm_module_fillerweed_production|farm_module_hydroreed_filter|farm_module_kotton_loom|farm_module_nightmare_cap|farm_module_nutrifruit|farm_module_smuggler|fillerweed_seed|hydroponic|hydroponic_guide|hydroreed_seed|kotton_seed|nutrient_tablet|nutrient_tablet_container|nutrifruit_seed|nutrifruit_seed_packet|plant_analyser|water_filter|water_pitcher|water_tablet|water_tablet_container|water_test_container|water_test_strip,,,,
+client,RetiredGunsmith,name_retired_gunsmith,,,退休者,pool:GetRandomLowerLevelSpriteName,,,,,ammo_display|compensator|grip_gel|internal_springs|internal_springs_improved|laser2|mag_10mm|mag_10mm_ext|mag_10mm_high|mag_22_high|match_barrel|pistol_switch|printer|printer_plastic|screwdriver|silencer2|trigger_group,,,,
+client,RetiredJunker,name_retired_junker,,,退休者,pool:GetRandomScavSpriteName,,,,,flux_agent|furnace|module_extractor|screwdriver|welder|wire_cutter,,,,
+client,RetiredRancher,name_retired_rancher,,,退休者,pool:GetRandomFarmerSpriteName,,,,,animal_cage|auto_butcher|gene_scanner|kitchen_cleaver|labeler_blue|livestock_feed_dispenser|marking_pen|nutrifruit|nutrifruit_seed|rat|serum_green|serum_red|vacuum_robot|wire_cutter,,,,
+client,RetiredWaterMerchant,name_retired_water_merchant,,,退休者,pool:GetRandomLowerLevelSpriteName,,,,,energy_credit|evaporator|moisture_farm|water_filter|water_filter_adv|water_pitcher|water_purifier|water_tablet|water_tablet_container|water_tank|water_test_container|water_test_strip,,,,
+client,RetiredWinemaker,name_retired_winemaker,,,退休者,pool:GetRandomFarmerSpriteName,,,,,water_ration|wine_berry|wine_bottle|wine_superyeast|wine_yeast|wine_yeast_infinite,,,,
+# ---- 商贩/买家 ----
+client,CorporateBuyerClient,name_corporate_representative,,,商贩/买家,pool:GetRandomUpperSpriteName,,,,bottled_water_premium,bottled_water|bottled_water_premium|large_bottled_water,,,,
+client,LotteryRep,name_lottery_representative,,,商贩/买家,lotteryRep,,,,,lottery_info|lottery_ticket|scratcher,,,,
+client,PanicBuyerClient,name_spacer,,,商贩/买家,pool:GetRandomLowerLevelSpriteName,,,,,bottled_water|large_bottled_water|small_bottled_water,,,,
+# ---- 其他 ----
+client,BrokenMachineIntroduction,name_scrapper,,,其他,pool:GetRandomScavSpriteName,,,,,ruined_machine_small,,,,
+client,ClinicVolunteerClient,name_clinic_volunteer,,,其他,pool:GetRandomMedSpriteName,,,,,pure_white_injector,,,,
+client,ConspiracyClient,name_conspiracy_theorist,,,其他,pool:GetRandomScavMaleSpriteName,,,,,glass_shard_shiv|pipe_weapon,,,,
+client,Georgio2,name_georgio,,,其他,george,,,,,packet_red_cigarette|birth_control_pill|box_tampon|shampoo|toilet_paper|toothpaste|scrap_metal|large_bottled_water|liquid_luck|nuclear_waste,,,,
+# 博士上门 + 仓储客 + 剧情引导客合成一条 Client 来源，继承下面「博士店里」的货单（base=dr_jackson）。
+# exclude 的 7 件 = 上门时 PlaceInventorInventory(true) 跳过的四件背包
+#   + 只在店里 PlaceInventorSpecialStock 里摆的三件（energy_credit_dis/advanced_flux_agent/turbo_booster_adv）。
+# 仓储客的 machine_bay_ext / storage_bay_large、剧情引导客的 furnace / ingot_book / 三个随机模块
+# 都已在继承来的清单里，所以这里只写唯一多出来的 flux_agent（解析器会去重）。
+# 两条同名（name_dr._jackson），靠 kind=client / kind=location 分到不同大类。
+client,InventorVisit,name_dr._jackson,,src_doctor_shop,其他,pool:GetInventorSpriteName,,,,,flux_agent,dr_jackson,satchel|backpack_large|backpack_medium|backpack_small|energy_credit_dis|advanced_flux_agent|turbo_booster_adv,,
+client,MentorClientVisualInspection,name_the_mentor,,,其他,mentor,,,,,cigarette_color|cigarette_guide|magnifier|sign_food|sign_household|sign_material|sign_water,,,,
+client,StoryAppraisalBoard,name_appraiser_board_member,,,其他,pool:GetClerkSpriteName,,,,,cert1|hand_guide|magnifier,,,,
+client,ThirstySpacer,name_thirsty_spacer,,,其他,pool:GetRandomLowerLevelSpriteName,,,WATER,,bottled_water|small_bottled_water,,,,
+client,Wanted1,name_james_bailey,,,其他,wanted1,,,,,sec_keycard|stun_baton|heavy_pistol_ammo|stun_gun,,,,
+client,Wanted2,name_the_butcher,,,其他,wanted2,,,,,common_electronic|crowbar|energy_drink|fat_meat|postit|processed_meat|raw_meat|satchel|scav_token|small_raw_meat,,,,
+client,Wanted6,name_li_bei_wen,,,其他,wanted6,,,,,pink_alt_injector,,,,
+client,Wanted7,name_juan,,,其他,wanted7,,,,,processed_juice|processed_meat|processed_milk,,,,
+# ===== 上层 =====
+faction,faction_name_upper_level,,,,,
+# ---- 水商/水类 ----
+client,WaterStockPiler,name_water_stockpiler,,,水商/囤水,pool:GetRandomUpperSpriteName,,,WATER,bottled_water_premium,bottled_water_premium|large_bottled_water|water_jug,,,,
+client,upperLowerVisitorLuxury,name_upper_level_visitor,,,访客/奢侈品,pool:GetRandomUpperSpriteName,,,LUXURY_ITEM,,,,,,
+# ---- 医药/化学 ----
+client,CourrierPharma,name_courrier,,,医药/化学,pool:GetRandomShadySpriteName,,,,,pink_injector,,,,
+client,ShadyPharmacist,name_upper_levels_pharmacist,,,医药/化学,pool:GetRandomScientistSpriteName,,,,,pink_injector|topical_bandage_item,,,,
+# ---- 军械/军警 ----
+client,ULGunSeller,name_upper_level_citizen,,,军械/军警,pool:GetRandomMercSpriteName,,,,,ammo_display|bipod|compensator|glock_receiver|grip_gel|heavy_pistol_ammo|heavy_pistol_ammo_p|internal_springs|internal_springs_improved|laser|laser2|mag_10mm|mag_10mm_ext|mag_10mm_high|mag_10mm_smg|mag_10mm_smg_box|mag_10mm_smg_high|match_barrel|pistol_switch|rds|silencer|silencer2|smg|trigger_group|blue_blood_bag|energy_credit_breeder|portable_water_purifier|stun_gun|tazer|water_filter_adv,,,system_module_efficiancy|system_module_performance|system_module_quality,
+# ---- 其他 ----
+client,UpperLevelCharity,name_upper_level_volunteer,,,其他,pool:GetRandomUpperSpriteName,hq,,,,bottled_water|galaxy_blend|hemostatic_bandage_item|phagimycin_pill|tazer,,,,
+# ===== 黑市 =====
+faction,faction_name_black_market,,,,,
+# ---- 农业/食品 ----
+client,FoodThief,name_food_thief,,,农业/食品,pool:GetRandomShadySpriteName,,,,,galaxy_blend|nutrifruit|processed_juice|processed_meat|processed_milk,,,,
+# ---- 快递/供应商 ----
+client,CourrierChem,name_ashish,,,快递/供应商,pool:GetAshishSpriteName,,,CHEMICAL_SUPPLIES,,dream_dust,,,,
+# ---- 黑市/盗窃 ----
+client,PettyThief,name_petty_thief,,,黑市/盗窃,pool:GetRandomShadySpriteName,,,,,bandage_item|beis_icecream|caffeine_pill|cat_bar|cup_noodle|energy_drink|galaxy_blend|hemostatic_bandage_item|li_eat_snackbar|nudka|paper_towel|pink_injector|processed_juice|processed_meat|processed_milk|red_beer|rubbing_alcohol|salve|shampoo|smelling_salt|soda_red|surgery_tool|toilet_paper|toothpaste|topical_bandage_item|water_filter|water_tablet|water_tablet_container|water_test_container|water_test_strip|wine_yeast_red|zerochew,,,,
+client,Scalper,name_scalper,,,黑市/盗窃,pool:GetShadyMerchantSpriteName,,,,,large_purple_injector,,,,
+client,Thief,name_thief,,,黑市/盗窃,pool:GetRandomShadySpriteName,,,,,bottled_water_premium|cmd_keycard|common_chemical|common_medical|crypto_module_cmd|crypto_module_eng|crypto_module_med|crypto_module_sec|crypto_module_ser|eng_box|eng_keycard|evidence_box|med_box|med_keycard|neuroactive_perfume|pheromone_perfume|portable_water_purifier|scratcher_stack|sec_box|sec_keycard|ser_keycard|service_box|skincare_cream|system_module_eco|system_module_efficiancy|system_module_fineness|system_module_overclock|system_module_performance|system_module_quality|turbo_booster_adv|water_filter_adv,,,,
+# ===== 安保 =====
+faction,faction_name_security,,,,,
+# ---- 军械/军警 ----
+client,OfficerLunSurplus,name_lun,,,军械/军警,officer_lun,,,,,flashbang_grenade|glock_receiver|heavy_pistol_ammo_p|tazer,,,,
+client,SecSurplusMerchant,name_security_requisition_officer,,,军械/军警,pool:GetRandomSecSpriteName,,,,,bipod|compensator|glock_receiver|grip|heavy_pistol_ammo|heavy_pistol_ammo_nl|heavy_pistol_ammo_p|laser|laser2|mag_10mm|mag_10mm_ext|mag_10mm_high|mag_10mm_smg|mag_10mm_smg_box|mag_10mm_smg_high|pink_injector|rds|short_stock|shotgun|silencer|silencer2|smg|stock|stun_gun|tazer,,,,
+# ===== 革命 =====
+faction,faction_name_revolution,,,,,
+# ---- 其他 ----
+client,RevQuartermaster,name_revolution_quartermaster,,,其他,pool:GetRandomRevSpriteName,,,,,common_ore|nutrifruit|scrap_metal,,,,
+client,RevRaider,name_revolution_raider,,,其他,pool:GetRandomRevSpriteName,,,,,advanced_flux_agent|birth_control_pill|blue_blood_bag|common_chemical|common_electronic|common_medical|energy_credit_breeder|energy_credit_dis|glock_receiver|module_bay_expansion_kit|module_extractor|module_extractor_advanced|printer_plastic|restricted_chemical|shampoo|small_raw_meat|smg|system_module_eco|system_module_efficiancy|system_module_fineness|system_module_overclock|system_module_performance|system_module_quality|toilet_paper|toothpaste|turbo_booster_adv,,,,
+# ===== 卡特尔 =====
+faction,faction_name_cartel,,,,,
+# ---- 农业/食品 ----
+client,ShadyFarmer,name_shady_farmer,,,农业/食品,pool:GetRandomFarmerSpriteName,,,,,coffee_bean|dream_cap|dream_cap_seed|kotton_fabric|nightmare_cap|nutrifruit,,,,
+# ---- 其他 ----
+client,CartelIntro,name_cartel_handler,,,其他,pool:GetCartelHandlerSpriteName,,,,,common_chemical|dream_cap,,,,
+# ===== 无阵营 =====
+faction,faction_none,,,,,
+# ---- 医药/化学 ----
+client,Nurse1,name_mid_level_nurse,,,医药/化学,pool:GetRandomScientistSpriteName,,,,,birth_control_pill|common_medical|pink_injector,,,,
+# ---- 商贩/买家 ----
+client,LandlordClient,name_the_landlord,,,商贩/买家,landlord,,,,,deed,,,,
+# ===== 地点 =====
+faction,faction_location,,,,,
+# ---- 地点 ----
+location,commissary,,commissary,src_commissary,地点,
+location,dr_jackson,,dr_jackson,src_doctor_shop,地点,
+
+# ===== 从 IL 自动补录（2026-11-12）=====
+
+# --- 上层区 ---
+faction,faction_name_upper_level,,,,,
+client,privateChef,name_upper_private_chef,,,,pool:GetRandomChefSpriteName,,,FOOD,,,,,,
+client,hospitalAdmin,name_upper_hospital_supplier,,,,pool:GetRandomUpperSpriteName,,,MEDICAL,,,,,,
+client,upperMaid,name_upper_level_servant,,,,pool:GetRandomLowerLevelSpriteName,,,HOUSEHOLD_GOOD,,,,,,
+client,upperLevelVisitorMinor,name_upper_level_citizen,,,,pool:GetRandomUpperSpriteName,,,MAKESHIFT|LOWTECH|PROCESSED_FOOD|NARCOTIC|SUBSTANCE,,,,,,
+client,upperLowerVisitor,name_upper_level_visitor,,,,pool:GetRandomUpperSpriteName,,,SUBSTANCE,,,,,,
+
+# --- 下层区 ---
+faction,faction_name_lower_level,,,,,
+client,wanted8,name_john_smith,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,wanted8_weekly,name_john_smith,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,wanted8_return,name_john_smith,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,selfDefenseEnthusiast,name_self_defense_enthusiast,,,,pool:GetRandomLowerLevelSpriteName,,,WEAPON|AMMUNITION|ARMOR,,,,,,
+client,spacerFoodI,name_spacer,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,hungrySpacer,name_hungry_spacer,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,spacerChef,name_spacer_cook,,,,pool:GetRandomChefSpriteName,,,FOOD,,,,,,
+client,expeditionSupplier,name_expedition_supplier,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,spacerMedical,name_injured_spacer,,,,pool:GetRandomLowerLevelSpriteName,,,MEDICAL,,,,,,
+client,sickChildCaretaker,name_sick_child_caretaker,,,,pool:GetRandomScavSpriteName,,,MEDICAL,,,,,,
+client,lowLevelDoctor,name_low_level_doctor,,,,pool:GetRandomScientistSpriteName,,,MEDICAL,,,,,,
+client,clinicNurse,name_mid_level_nurse,,,,pool:GetRandomScientistSpriteName,,,MEDICAL,,,,,,
+client,lowerRepairman,name_lower_level_repairman,,,,pool:GetRandomEngSpriteName,,,MATERIAL|TOOL|ENERGY_CELL,,,,,,
+client,scrap_byer,name_scrap_buyer,,,,pool:GetRandomScavSpriteName,,,MATERIAL|TOOL|ENERGY_CELL,,,,,,
+client,maintenanceWorker,name_maintenance_worker,,,,pool:GetRandomEngSpriteName,,,MATERIAL|TOOL|ENERGY_CELL,,,,,,
+client,lowerInventor,name_lower_level_inventor,,,,pool:GetRandomSciFemaleSpriteName,,,MATERIAL|MODULE|NODE|TOOL|ENERGY_CELL,,,,,,
+client,stationEngineer,name_station_engineer,,,,pool:GetRandomEngSpriteName,,,MATERIAL|MODULE|NODE|TOOL|ENERGY_CELL,,,,,,
+client,spacerHouseholdItem,name_spacer,,,,pool:GetRandomLowerLevelSpriteName,,,HOUSEHOLD_GOOD,,,,,,
+client,youngSpacerHousehold,name_young_spacer,,,,pool:GetRandomLowerLevelSpriteName,,,HOUSEHOLD_GOOD,,,,,,
+client,familyMother,name_lower_level_parent,,,,pool:GetRandomScavSpriteName,,,HOUSEHOLD_GOOD,,,,,,
+client,citizenHousehold,name_citizen,,,,pool:GetRandomLowerLevelSpriteName,,,HOUSEHOLD_GOOD,,,,,,
+client,wantedBait,name_lower_levels_citizen,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,spacerFoodStory,name_spacer,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,spacerFoodStory2,name_spacer,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD|BREVAGE,,,,,,
+client,food_shortage_client,name_lower_level_citizen,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,medical_shortage_client,name_worried_resident,,,,pool:GetRandomLowerLevelSpriteName,,,MEDICAL,,,,,,
+client,substance_shortage_client,name_shady_addict,,,,pool:GetRandomShadySpriteName,,,SUBSTANCE,,,,,,
+client,weapon_armor_shortage_client,name_tense_local,,,,pool:GetRandomLowerLevelSpriteName,,,WEAPON|ARMOR,,,,,,
+client,material_shortage_client,name_scrap_dealer,,,,pool:GetRandomScavSpriteName,,,MATERIAL,,,,,,
+client,stationEngineerMinor,name_station_engineer,,,,pool:GetRandomEngSpriteName,,,MATERIAL|MODULE|NODE|TOOL,,,,,,
+client,minerMinor,name_miner,,,,pool:GetRandomMinerSpriteName,,,NARCOTIC,,,,,,
+client,nurseMinor2,name_lower_level_nurse,,,,pool:GetRandomScientistSpriteName,,,MEDICAL,,,,,,
+client,minorMerc,name_mercenary,,,,pool:GetRandomMercSpriteName,,,WEAPON|ARMOR|AMMUNITION,,,,,,
+client,sickLowers,name_sick_lower_levels_citizen,,,,pool:GetRandomLowerLevelSpriteName,,,MEDICAL,,,,,,
+client,lowerLevelElder,name_lower_levels_elder,,,,pool:GetRandomElderSpriteName,,,FOOD,,,,,,
+client,lover,name_desperate_lover,,,,pool:GetRandomScavSpriteName,,,TOOL|WEAPON|MEDICAL,,,,,,
+client,lotteryWinnerMinor,name_upper_level_citizen,,,,pool:GetRandomUpperSpriteName,,,FOOD,,,,,,
+client,spacerFood,name_spacer,,,,pool:GetRandomScavSpriteName,,,FOOD,,,,,,
+client,spacerFoodVariety,name_spacer,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,spacerAmenityVariety,name_spacer,,,,pool:GetRandomLowerLevelSpriteName,,,HOUSEHOLD_GOOD,,,,,,
+client,junker2,name_junker,,,,pool:GetRandomScavSpriteName,,,SUBSTANCE,,,,,,
+client,farmer_standard,name_hydroponic_farmer,,,,pool:GetRandomFarmerSpriteName,,,SEED,,,,,,
+client,inventor,name_dr._jackson,,,,pool:GetInventorSpriteName,,,MATERIAL|system_module_corrupt|system_module_ruined,,,,,,
+client,merchant,name_merchant,,,,pool:GetRandomMerchantSpriteName,,,ALL_TYPE_EXCEPT_CONTRABAND,,,,,,
+client,mercenaryBuyer,name_mercenary,,,,pool:GetRandomMercSpriteName,,,WEAPON|ARMOR|AMMUNITION,,,,,,
+
+# --- 黑市 ---
+faction,faction_name_black_market,,,,,
+client,wanted5,name_lou,,,,pool:GetRandomShadySpriteName,,,MELEE_WEAPON|welder|screwdriver,,,,,,
+client,woundedMan,name_wounded_man,,,,pool:GetRandomBMMaleSpriteName,,,MEDICAL,,,,,,
+client,poisonBuyer,name_shady_buyer,,,,pool:GetRandomShadySpriteName,,,POISON|CHEMICAL_SUPPLIES,,,,,,
+client,shadyMerchant,name_shady_merchant,,,,pool:GetShadyMerchantSpriteName,,,CONTRABAND|ACCESS_CARD,,,,,,
+
+# --- 安保 ---
+faction,faction_name_security,,,,,
+client,offDutyOfficerStoryTreat,name_off_duty_officer,,,,pool:GetRandomOffDutySecSpriteName,,,TREAT|CIGARETTE_TAG,,,,,,
+client,patrolOfficer,name_security_officer,,,,pool:GetRandomSecSpriteName,,,TREAT|CIGARETTE_TAG|caffeine_pill,,,,,,
+
+# --- 革命 ---
+faction,faction_name_revolution,,,,,
+client,wanted3,name_lower_levels_citizen,,,,pool:GetRandomRevSpriteName,,,FOOD|MATERIAL,,,,,,
+client,wanted4Normal,name_odin,,,,pool:GetRandomRevSpriteName,,,AMMUNITION|WEAPON|MELEE_WEAPON|ACCESS_CARD|MUNITION|SUPPLY_CRATE|ARMOR|POISON,,,,,,
+
+# --- 无阵营 ---
+faction,faction_none,,,,,
+client,billy1,,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,addictGeneralTrailer,,,,,pool:GetRandomScavSpriteName,,,SUBSTANCE,advanced_flux_agent|birth_control_pill|blood_bag|box_cutter|box_tampon|c4|combat_knife|common_chemical|common_medical|energy_credit_breeder|glass_shard_shiv|kotton_fabric|pipe_weapon|screwdriver|system_capped_neural_core|system_module_eco|system_module_efficiancy|system_module_fineness|system_module_overclock|system_module_performance|system_module_quality|wire|wire_cutter,,,,,
+client,shadyBuyerStory,,,,,pool:GetRandomLowerLevelSpriteName,,,ORGAN,,,,,,
+client,abby1,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,abby2,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,abby3,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,abby4,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,abby5,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,church_engineer_unique,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,church_engineer_unique2,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,foodieTourist,name_foodie_tourist,,,,pool:GetFoodieSpriteName,,,FOOD|BREVAGE,,,,,,
+client,caseEnjoyerReturning,,,,,pool:GetCaseEnjoyerSpriteName,,,ACCESS_CARD|SUPPLY_CRATE,,,,,,
+client,foodieTouristReturning,name_foodie_tourist,,,,pool:GetFoodieSpriteName,,,FOOD|BREVAGE,,,,,,
+client,officerLunVisit,name_lun,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,officerLunShot,name_lun,,,,pool:GetRandomLowerLevelSpriteName,,,MEDICAL|NARCOTIC,,,,,,
+client,officerLunBackOnDuty,name_lun,,,,pool:GetRandomLowerLevelSpriteName,,,NARCOTIC|black_injector,,,,,,
+client,louDemandCollect,,,,,pool:GetRandomLowerLevelSpriteName,,,WEAPON|FIREARM|MELEE_WEAPON|AMMUNITION|MEDICAL,,,,,,
+client,wanted6_supply,,,,,pool:GetRandomLowerLevelSpriteName,,,common_chemical|restricted_chemical,,,,,,
+client,offDutyOfficerStoryBeer,name_off_duty_officer,,,,pool:GetRandomOffDutySecSpriteName,,,ALCOHOL,,,,,,
+client,chemical_returning_client,,,,,pool:GetRandomLowerLevelSpriteName,,,WATER,,,,,,
+client,revolutionaryBuyer,name_revolutionary_fighter,,,,pool:GetRandomRevSpriteName,,,WEAPON|MUNITION|AMMUNITION|MEDICAL,,,,,,
+client,revSupplyBuyerTrailer,,,,,pool:GetRandomRevSpriteName,,,WEAPON|AMMUNITION|MEDICAL,,,,,,
+client,conspiracyMinor,name_conspiracy_theorist,,,,pool:GetRandomScavMaleSpriteName,,,SUBSTANCE,,,,,,
+client,upperLevelServantHoboParty,name_upper_level_servant,,,,pool:GetRandomUpperSpriteName,,,FOOD|TREAT|BREVAGE,,,,,,
+client,foreman,name_foreman,,,,pool:GetRandomEngSpriteName,,,MATERIAL,,,,,,
+client,foodBuyer,name_food_buyer,,,,pool:GetRandomScavSpriteName,,,FOOD,,,,,,
+client,pharmacist,name_pharmacist,,,,pool:GetRandomScientistSpriteName,,,MEDICAL,,,,,,
+client,farmerSeedBuyer,name_farmer,,,,pool:GetRandomFarmerSpriteName,,,SEED,,,,,,
+client,lynching_citizen,name_angry_citizen,,,,pool:GetRandomLowerLevelSpriteName,,,WEAPON|ARMOR,,,,,,
+client,lowerLevelCitizenPowerBuying,name_lower_level_citizen,,,,pool:GetRandomLowerLevelSpriteName,,,ENERGY_CELL,,,,,,
+client,lowerLevelCitizenMaintenanceBuying,name_lower_level_citizen,,,,pool:GetRandomLowerLevelSpriteName,,,ENERGY_CELL,,,,,,
+client,upperLevelCitizenPowerBuying,name_upper_level_resident,,,,pool:GetRandomUpperSpriteName,,,ENERGY_CELL,,,,,,
+client,panickedShopkeeperWeaponBuyer,name_panicked_shopkeeper,,,,pool:GetRandomLowerLevelSpriteName,,,WEAPON|ARMOR,,,,,,
+client,cartelWoundedSoldier,name_cartel_soldier,,,,pool:GetRandomShadySpriteName,,,MEDICAL,,,,,,
+client,street_dealer,name_dealer,,,,pool:GetRandomShadySpriteName,,,NARCOTIC,,,,,,
+client,secRequisitionOfficer,name_security_requisition_officer,,,,pool:GetRandomSecSpriteName,,,FOOD|MEDICAL,,,,,,
+client,cluelessTouristBuyer,name_tourist,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD|WATER|WATER_RATION|SUBSTANCE,,,,,,
+client,touristWeaponSouvenirBuyer,name_station_tourist,,,,pool:GetRandomLowerLevelSpriteName,,,WEAPON,,,,,,
+client,touristJunkSouvenirBuyer,name_station_tourist,,,,pool:GetRandomLowerLevelSpriteName,,,MATERIAL|MAKESHIFT|JUNK,,,,,,
+client,foodBankBuyer,name_food_bank_supplier,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,criminalBuyerThief,name_shopping_thief,,,,pool:GetRandomShadySpriteName,,,ACCESS_CARD|MEDICAL|MELEE_WEAPON,,,,,,
+client,criminalBuyerMerc,name_shopping_mercenary,,,,pool:GetRandomMercSpriteName,,,ARMOR|MEDICAL|WEAPON|MUNITION|AMMUNITION,,,,,,
+client,aug_med,,,,,pool:GetRandomLowerLevelSpriteName,,,MEDICAL,,,,,,
+client,aug_material,,,,,pool:GetRandomLowerLevelSpriteName,,,MATERIAL|ENERGY_CELL,,,,,,
+
+# 什么都收的客人放最后
+client,businessPermitOfficial,name_trade_board_official,,,,pool:GetClerkSpriteName,,,ALL_TYPE,,,,,,

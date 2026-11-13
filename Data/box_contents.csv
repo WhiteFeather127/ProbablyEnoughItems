@@ -1,0 +1,18 @@
+# Probably Enough Items · 箱子的真实内容物
+#
+# 数据来源：`PreBuiltItemHelper.Fill*` 的反汇编（2026-11-11 提取）。
+# 这些方法就是箱子生成时真正往内容窗口里塞东西的代码，每个物品前面都跟着
+# `LuckRoll(几率, 幸运倍率)`，所以这里只列「可能出现的物品」，不含概率。
+#
+# 列：box,items
+#   box    箱子物品 id
+#   items  可能开出的物品 id，用 | 分隔
+#
+# 改完重启游戏生效，不用编译。
+
+box,items
+med_box,med_keycard|black_injector|surgery_tool|common_chemical|restricted_chemical|common_medical|salve|rubbing_alcohol|bandage_item|blood_bag|blue_blood_bag|galaxy_blend|hemostatic_bandage_item|pink_injector|phagimycin_pill|fanta_pill|smelling_salt|birth_control_pill|caffeine_pill
+sec_box,glock_receiver|stun_gun|tazer|current_converter|stun_baton|combat_knife|pink_injector|sec_keycard|flashbang_grenade|flashlight|smoke_grenade|heavy_pistol_ammo|heavy_pistol_ammo_p|heavy_pistol_ammo_nl|topical_bandage_item
+eng_box,energy_credit_breeder|system_capped_neural_core|module_bay_expansion_kit|current_converter|screwdriver|wire_cutter|crowbar|welder|module_extractor|module_extractor_advanced|turbo_booster|turbo_booster_adv|advanced_flux_agent|furnace_module_blast|eng_keycard|random_performance_module|random_efficiency_module|random_quality_module|random_node|system_module_overclock|system_module_eco|system_module_fineness|common_electronic|nuts_metal|flux_agent
+service_box,current_converter|neuroactive_perfume|ser_keycard|aquascan|uv_filter|water_filter_adv|portable_water_purifier|toilet_paper|processed_cheese|toothpaste|box_cutter|kitchen_knife|hatchet|paper_towel|shampoo|caffeine_pill|kotton_seed|hydroreed_seed|module_bay_expansion_kit|nutrient_tablet
+evidence_box,current_converter|skincare_cream|bottled_water_premium|neuroactive_perfume|pheromone_perfume|turbo_booster_adv|blue_blood_bag|scav_token|water_filter_adv|portable_water_purifier|pink_alt_injector|kitchen_knife|combat_knife|glass_shard_shiv|kitchen_cleaver|hatchet|pipe_weapon|pink_injector|raw_meat|sec_keycard|med_keycard|eng_keycard|cmd_keycard|common_chemical|restricted_chemical|common_electronic|scratcher|processed_cheese|unlicensed_phagimycin_pill|dream_dust|zyanide_pill|fanta_pill|small_pistol_ammo|small_pistol_ammo_p|small_pistol_ammo_nl|heavy_pistol_ammo|heavy_pistol_ammo_p|heavy_pistol_ammo_nl|nudka|wine_yeast_red

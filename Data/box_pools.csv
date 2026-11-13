@@ -1,0 +1,22 @@
+# Probably Enough Items · 开箱要的卡（以及没有内容物表时才用的池）
+#
+# 注意：
+#   · med_box / sec_box / eng_box / service_box / evidence_box 的真实内容物
+#     在 `box_contents.csv`（从 `PreBuiltItemHelper.Fill*` 反汇编），优先级高于这里；
+#   · toolbox / expedition_box / luxury_supply_crate 根本不是随机掉落容器，
+#     它们的去处页显示一句说明（见 LootSource.ContainerNoteFor），这里不写 pool。
+#
+# 列：box,pool,key
+#   box    箱子物品 id
+#   pool   掉落池 id，可写多个（`|` 分隔）。可用值看日志 `[loot] ... ids=…`
+#   key    开这个箱子要的卡物品 id，不需要卡就留空
+#
+# 卡的去处靠 `key` 列反查：哪张卡写在这里，它的「开启」页就列出对应箱子 + 内容。
+# 改完重启游戏生效，不用编译。
+
+box,pool,key
+med_box,,med_keycard
+sec_box,,sec_keycard
+eng_box,,eng_keycard
+service_box,,ser_keycard
+evidence_box,,

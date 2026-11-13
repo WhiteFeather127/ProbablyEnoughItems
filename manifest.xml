@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Manifest>
+  <ID>probably_enough_items</ID>
+  <Name>Probably Enough Items</Name>
+  <Author>WhiteFeather127（白羽）</Author>
+  <ModVersion>0.1.0</ModVersion>
+  <Description>Probably Enough Items: a JEI-style in-game item catalog. Browse every item in the game, and see where each one comes from and what it is used for.</Description>
+  <GameVersions>
+    <Version>0.46D</Version>
+  </GameVersions>
+  <Prerequisites />
+  <Assemblies>
+    <Assembly>ProbablyEnoughItems.dll</Assembly>
+  </Assemblies>
+  <!--
+    不声明任何能力。
+
+    以前这里声明过 reflection-external（对运行时才确定的类型做反射），
+    而它属于待退役能力：游戏 2026-12-10 的更新会直接拒绝加载声明了它的模组。
+    现在所有反射都改成「字面类型 + 字面成员名」，按扫描规则是免费的：
+
+      AnchorTarget.WindowRectOf        → PixelWindow.rectTransform（公开属性，直接读）
+      AnchorTarget.GetWindow           → 枚举 + 字面属性访问，不再按字符串查属性
+      CatalogWindow.ElementInventory*  → 同上，直接返回 GameGridInventory / GameSlotInventory
+      CatalogWindow.CaptureContainer*  → item.getItemSpriteModifierForItemFunc（公开属性，
+                                         返回 Func<GameItem, List<ItemSpriteModifier>>）直接调用
+      CatalogWindow.StartVanillaDrag   → typeof(ItemMouseDragHandler) + 字面字段名
+      CatalogWindow.BindDragItemNode   → typeof(TreeNodeRender) + 字面字段名
+      ClientSprite.PoolMethod          → 每个池方法一个 case，全部字面方法名
+      ClientSprite.EnsureEntryAccessors→ typeof(SpriteDict.SpriteEntry) 字面类型
+
+    新增代码请遵守同一条：不要用 obj.GetType()、不要把 Type / 成员名当参数传进辅助函数、
+    不要用拼接出来的字符串查找成员，否则就得重新声明这个能力（并在 12-10 后被拒）。
+  -->
+  <Capabilities />
+</Manifest>
