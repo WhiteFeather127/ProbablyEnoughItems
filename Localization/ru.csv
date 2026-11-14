@@ -6,7 +6,7 @@ tt_id,ID
 tt_ingredient,Состав
 tt_impurity,Примеси
 build_log,Каталог предметов готов: {0}
-search_placeholder,Поиск по названию или ID записей
+search_placeholder,Поиск по названию или ID
 take_toggle,Чит-режим
 rec_title,Рецепты
 rec_mats,Материалы
@@ -32,7 +32,7 @@ use_kind_drink,Выпить
 use_kind_apply,Применить
 use_kind_combine,Совместить
 use_kind_use,Использовать
-src_buys,Скупает
+src_buys,Скупка
 buy_tag_water,Вода
 buy_tag_food,Еда
 buy_tag_substance,Вещества
@@ -43,7 +43,7 @@ buy_tag_household,Хозтовары
 buy_tag_container,Ёмкости
 buy_tag_caliber,Калибры
 buy_tag_drink,Напитки
-src_loot,Открытие
+src_loot,Добыча
 src_loot_hint,Может выпасть из контейнеров
 loot_opens,Может содержать
 loot_needs,Нужна карта
@@ -74,3 +74,11 @@ name_church_engineer,Инженер Церкви
 name_billy,Билли
 name_aug_med,Медик аугментаций
 name_aug_material,Поставщик аугментаций
+all_items,Все предметы
+rec_cat_wanted,Скупка
+use_tag_blade,ножи
+use_tag_broken_machine,сломанные машины
+use_tag_gun,огнестрельное оружие
+use_tag_humanoid,трупы гуманоидов
+use_tag_water,качество воды
+use_tag_xeno,трупы ксеносов

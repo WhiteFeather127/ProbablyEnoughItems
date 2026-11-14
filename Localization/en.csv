@@ -43,7 +43,7 @@ buy_tag_household,Household
 buy_tag_container,Liquid containers
 buy_tag_caliber,Gun calibers
 buy_tag_drink,Drinks
-src_loot,Opening
+src_loot,Loot
 src_loot_hint,Can drop from loot tables or containers
 loot_opens,Can contain
 loot_needs,Requires keycard
