@@ -1,21 +1,24 @@
-<#
+﻿<#
 .SYNOPSIS
     构建并生成 Steam 创意工坊发布包（可选直接上传）。
 
 .DESCRIPTION
     全流程：
-      1. Release 构建，并把安装目标重定向到 .publish\stage（不碰游戏目录）
+      1. Release 构建，并把安装目标重定向到 publish\stage（不碰游戏目录）
       2. 校验发布包内容：manifest.xml / dll / preview.png / Localization / Data
-      3. 按 manifest 里的名称、描述、版本生成 .vdf
+      3. 按 manifest 里的名称、版本生成 .vdf：描述取自 workshop-description.txt
+         （可写 BBCode），改动说明取自 changenote.txt（同目录）；
+         没有对应文件时退回 manifest 的 <Description> 与版本号
       4. 加 -Upload 时调用 steamcmd 上传；首次上传后用写回的 publishedfileid 更新已有物品
 
     发布包里的东西就是「游戏运行必需」的那几样，不含 .git / bin / obj / 源码 / 文档。
 
-    默认输出：<我的文档>\ProbablyEnoughItems-publish\
+    默认输出：<仓库根>\publish\
                 ├── stage\          ← 上传内容（contentfolder）
                 └── workshop.vdf    ← 物品元数据，发布成功后会被写回物品 ID
 
-    用 -StageDir 可改到别处，但请保持纯 ASCII 路径（steamcmd 对非 ASCII 的 contentfolder 支持不佳）。
+    仓库目录名含中文，steamcmd 对非 ASCII 的 contentfolder 支持不佳；
+    若上传阶段出问题，用 -StageDir 指到一个纯 ASCII 路径。
 
 .PARAMETER PublishedFileId
     0 = 新建物品；填已有 ID = 更新该物品。上传成功后 steamcmd 会把新 ID 写回 vdf，脚本也会打印出来。
@@ -76,11 +79,10 @@ if (-not $GameDir) {
 }
 if (-not $GameDir) { throw "找不到游戏目录：用 -GameDir <路径>，或设置环境变量 PROBABLY_STOLEN_DIR" }
 
-# 默认放到「文档」下的纯 ASCII 路径：steamcmd 对含中文/空格的 contentfolder 容易出问题，
-# 而仓库目录本身叫「深空当铺mod来源显示」，所以发布包不能留在仓库里。
+# 默认发布包放在仓库根的 publish\ 下：内容与 vdf 同处一处，便于随手查看。
+# 仓库目录名含中文，steamcmd 对非 ASCII 的 contentfolder 支持不佳，上传出错时用 -StageDir 换到纯 ASCII 路径。
 if ([string]::IsNullOrWhiteSpace($StageDir)) {
-    $docs = [Environment]::GetFolderPath('MyDocuments')
-    $StageDir = Join-Path $docs "ProbablyEnoughItems-publish\stage"
+    $StageDir = Join-Path (Join-Path $repo "publish") "stage"
 }
 $StageDir = [System.IO.Path]::GetFullPath($StageDir)
 $publishDir = Split-Path -Parent $StageDir
@@ -93,8 +95,24 @@ $modName   = $manifest.Manifest.Name
 $modVer    = $manifest.Manifest.ModVersion
 $gameVers  = @($manifest.Manifest.GameVersions.Version) -join ", "
 if ([string]::IsNullOrWhiteSpace($Title))       { $Title = $modName }
-if ([string]::IsNullOrWhiteSpace($Description)) { $Description = $manifest.Manifest.Description }
-if ([string]::IsNullOrWhiteSpace($ChangeNote))  { $ChangeNote = "v$modVer" }
+if ([string]::IsNullOrWhiteSpace($Description)) {
+    # Steam 描述单独放在 tools\publish\workshop-description.txt（可写 BBCode）；
+    # 没有这个文件时退回 manifest 的 <Description>（游戏内 Mods 菜单显示的纯文本）。
+    $descFile = Join-Path $PSScriptRoot "workshop-description.txt"
+    if (Test-Path $descFile) {
+        $Description = [System.IO.File]::ReadAllText($descFile, [System.Text.Encoding]::UTF8).Trim()
+    }
+    if ([string]::IsNullOrWhiteSpace($Description)) { $Description = $manifest.Manifest.Description }
+}
+if ([string]::IsNullOrWhiteSpace($ChangeNote)) {
+    # 改动说明单独放在 tools\publish\changenote.txt（每次发布前编辑）；
+    # 没有这个文件时退回版本号。注意：vdf 的字符串值不能含英文双引号。
+    $noteFile = Join-Path $PSScriptRoot "changenote.txt"
+    if (Test-Path $noteFile) {
+        $ChangeNote = ([System.IO.File]::ReadAllText($noteFile, [System.Text.Encoding]::UTF8)).Trim() -replace "`r?`n", " "
+    }
+    if ([string]::IsNullOrWhiteSpace($ChangeNote)) { $ChangeNote = "v$modVer" }
+}
 
 $gameMods = Join-Path $GameDir "Mods"
 if ($StageDir.TrimEnd('\') -eq (Join-Path $gameMods "ProbablyEnoughItems").TrimEnd('\')) {

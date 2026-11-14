@@ -1355,6 +1355,11 @@ namespace ItemCatalog.UI
             if (string.IsNullOrEmpty(_search) || _search.Trim().Length == 0) return all;
 
             string query = _search.Trim();
+
+            // 先把查询词反查成类型键：本地化名「奢侈品」→ `LUXURY_ITEM`。
+            // 不这么做的话，只有输入英文键名才能搜到，中文名一条都搜不出来。
+            var matchedTypes = MatchTypes(query);
+
             var result = new List<ItemEntry>(64);
 
             for (int i = 0; i < all.Count; i++)
@@ -1383,6 +1388,10 @@ namespace ItemCatalog.UI
                     {
                         try { hit = gi.IsTag(query) || gi.IsGameItemType(query); }
                         catch { hit = false; }
+
+                        // 再按「本地化类型名」命中：日用品 / 文档 / 奢侈品 / 水 …
+                        if (!hit && matchedTypes != null)
+                            hit = HasAnyType(gi, matchedTypes);
                     }
                 }
 
@@ -1390,6 +1399,92 @@ namespace ItemCatalog.UI
             }
 
             return result;
+        }
+
+        /// <summary>类型键 → 本地化名（`LUXURY_ITEM` → 奢侈品），首次搜索时建一次。</summary>
+        private static Dictionary<string, string> _typeNames;
+
+        private static Dictionary<string, string> TypeNames()
+        {
+            if (_typeNames != null) return _typeNames;
+
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var all = FlatEntries();
+
+            for (int i = 0; i < all.Count; i++)
+            {
+                var gi = all[i] != null ? all[i].Item : null;
+                if (gi == null) continue;
+
+                List<string> types = null;
+                try { types = gi.GetGameItemType(); }
+                catch { }
+                if (types == null) continue;
+
+                for (int k = 0; k < types.Count; k++)
+                {
+                    string key = types[k];
+                    if (string.IsNullOrEmpty(key) || map.ContainsKey(key)) continue;
+
+                    // 类型名在 `type_<小写>` 键上，先试 mechanic 段，再退 UI / 通用表
+                    string locKey = "type_" + key.ToLowerInvariant();
+                    string name = null;
+                    try { name = LocHelper.GetLocalizedMechanicOrDefault(locKey, null); } catch { }
+                    if (string.IsNullOrEmpty(name))
+                    {
+                        try { name = LocHelper.GetLocalizedUIOrDefault(locKey, null); } catch { }
+                    }
+                    if (string.IsNullOrEmpty(name))
+                    {
+                        try { name = LocHelper.GetLocalized(locKey, null); } catch { }
+                    }
+
+                    map[key] = string.IsNullOrEmpty(name) ? key : name;
+                }
+            }
+
+            _typeNames = map;
+            return map;
+        }
+
+        /// <summary>查询词命中的类型键集合（键名或本地化名任一包含即可）。</summary>
+        private static HashSet<string> MatchTypes(string query)
+        {
+            var names = TypeNames();
+            if (names.Count == 0) return null;
+
+            var hits = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in names)
+            {
+                if (pair.Key.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    hits.Add(pair.Key);
+                    continue;
+                }
+
+                if (!string.IsNullOrEmpty(pair.Value) &&
+                    pair.Value.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0)
+                {
+                    hits.Add(pair.Key);
+                }
+            }
+
+            return hits.Count > 0 ? hits : null;
+        }
+
+        private static bool HasAnyType(GameItem item, HashSet<string> types)
+        {
+            try
+            {
+                var own = item.GetGameItemType();
+                if (own == null) return false;
+
+                for (int i = 0; i < own.Count; i++)
+                    if (!string.IsNullOrEmpty(own[i]) && types.Contains(own[i])) return true;
+            }
+            catch { }
+
+            return false;
         }
 
         private static void OnTakeModeChanged(bool value)

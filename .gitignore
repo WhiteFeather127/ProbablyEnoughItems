@@ -6,6 +6,7 @@ obj/
 .vs/
 
 # 创意工坊发布包（tools/publish/publish.ps1 生成）
+publish/
 .publish/
 
 # 系统文件
