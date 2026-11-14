@@ -787,6 +787,9 @@ namespace ItemCatalog.UI
                 try { _window.SetTitle(_entry == null ? "?" : _entry.DisplayName); }
                 catch (Exception e) { Warn("set title: " + e.Message); }
 
+                // 物品名仍居中；来源/用途靠左贴在标题栏内侧
+                ApplyDirectionLabel();
+
                 // 大类翻页：按钮贴两端，名称居中；到头就禁用，不做循环
                 builder.BeginRow(6f);
                 builder.AddButton("<", delegate { TurnCategory(-1); }, "cat_prev");
@@ -843,11 +846,99 @@ namespace ItemCatalog.UI
             }
         }
 
+        private static TMPro.TMP_Text _dirLabel;
+
+        /// <summary>
+        /// 在标题栏左侧写「来源 / 用途」。
+        ///
+        /// 窗口标题由 `CustomUIWindow.SetTitle` 居中绘制，没有「左侧留白」这种接口，
+        /// 所以这里复制标题那个文字对象（字体、颜色、描边全都跟着），改成靠左摆放。
+        /// 找不到标题节点就什么都不做——宁可没有这个标签，也不去猜坐标。
+        /// </summary>
+        private static void ApplyDirectionLabel()
+        {
+            if (_window == null || _entry == null) return;
+
+            string dir = ModEntry.T(_asUse ? "dir_use" : "dir_source");
+            if (string.IsNullOrEmpty(dir)) return;
+
+            try
+            {
+                if (_dirLabel != null)
+                {
+                    _dirLabel.text = dir;
+                    return;
+                }
+
+                var root = _window.Rect;
+                if (root == null) return;
+
+                TMPro.TMP_Text title = null;
+                var texts = root.GetComponentsInChildren<TMPro.TMP_Text>(true);
+                for (int i = 0; i < texts.Length; i++)
+                {
+                    if (texts[i] != null && texts[i].text == _entry.DisplayName)
+                    {
+                        title = texts[i];
+                        break;
+                    }
+                }
+
+                if (title == null || title.transform.parent == null) return;
+
+                var clone = UnityEngine.Object.Instantiate(title.gameObject, title.transform.parent);
+                clone.name = "directionLabel";
+
+                var rect = clone.transform as RectTransform;
+                if (rect != null)
+                {
+                    rect.anchorMin = new Vector2(0f, 0.5f);
+                    rect.anchorMax = new Vector2(0f, 0.5f);
+                    rect.pivot = new Vector2(0f, 0.5f);
+                    rect.anchoredPosition = new Vector2(10f, 0f);
+                    rect.sizeDelta = new Vector2(120f, rect.sizeDelta.y);
+                }
+
+                _dirLabel = clone.GetComponent<TMPro.TMP_Text>();
+                if (_dirLabel != null)
+                {
+                    _dirLabel.text = dir;
+                    _dirLabel.raycastTarget = false;
+                    try { _dirLabel.alignment = TMPro.TextAlignmentOptions.Left; } catch { }
+                }
+            }
+            catch (Exception e) { Warn("direction label: " + e.Message); }
+        }
+
+        private static string CategoryTitle(Category category)
+        {
+            if (category == null) return "?";
+
+            // 掉落池按「地方」分大类：垃圾倾倒场 / 小偷 / 装着它的箱子
+            if (category.Kind == CatLoot && !string.IsNullOrEmpty(category.Site))
+                return SiteName(category.Site);
+
+            switch (category.Kind)
+            {
+                // 「谁卖给我」和「谁收这件」都是客人，共用一个键
+                case CatClient: return ModEntry.T("src_clients");
+                case CatWanted: return ModEntry.T("src_clients");
+                case CatLocation: return ModEntry.T("src_locations");
+                case CatCraftOut: return ModEntry.T("rec_cat_craft_out");
+                case CatCraftIn: return ModEntry.T("rec_cat_craft_in");
+                case CatUseOut: return ModEntry.T("rec_cat_use_out");
+                case CatUsedBy: return ModEntry.T("rec_cat_use_in");
+                case CatLoot: return ModEntry.T("src_loot");
+                case CatLootUse: return ModEntry.T("loot_use");
+                case CatLock: return ModEntry.T("loot_use");
+                default: return "?";
+            }
+        }
+
         private static string CategoryLabel()
         {
-            // 标题位置只负责说明「这是来源还是用途」：分类名都是客人/地点，
-            // 写在中间反而看不出方向。具体是哪一类，内容区自己会说明。
-            return ModEntry.T(_asUse ? "dir_use" : "dir_source");
+            if (_categories.Count == 0) return "-";
+            return (_category + 1) + "/" + _categories.Count + "  " + CategoryTitle(_categories[_category]);
         }
 
         /// <summary>大类切换：到头就停，不循环。</summary>
