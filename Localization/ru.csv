@@ -7,7 +7,7 @@ tt_ingredient,Состав
 tt_impurity,Примеси
 build_log,Каталог предметов готов: {0}
 search_placeholder,Поиск по названию или ID записей
-take_toggle,Чит-режим (клик — забрать)
+take_toggle,Чит-режим
 rec_title,Рецепты
 rec_mats,Материалы
 rec_tools,Инструменты

@@ -410,7 +410,8 @@ namespace ItemCatalog.UI
             HideNativeTooltip();   // 切场景/重建前先把悬停提示框收掉
 
             AnchorOverride = null;   // 旧场景的对象已销毁，别拿它算锚点
-            _dropHighlight = null;   // 红底随窗口一起没了
+            _dropMark = null;        // 红底随窗口一起没了
+            _dropMarkHost = null;
 
             // 合成贴图与舞台随场景销毁（物品实例都没了，缓存全部失效）
             _compositeSprites.Clear();
@@ -1603,87 +1604,107 @@ namespace ItemCatalog.UI
         {
             _takeMode = value;
 
-            if (!value) SetDropHighlight(false);
+            if (!value) ClearDropMark();
         }
 
         /// <summary>作弊模式：点击拿取、拖到面板上删除，都只看这一个开关。</summary>
         internal static bool TakeMode { get { return _takeMode; } }
 
-        private static UnityEngine.UI.Image _dropHighlight;
+        private static GameObject _dropMark;
+        private static GameObject _dropMarkHost;
 
         /// <summary>
-        /// 拖动物品且指针压在面板上时，给整块面板蒙一层红底，提示「松手即删除」。
+        /// 拖动物品且指针压在图鉴上时，在**那只物品底下**垫一块红底，
+        /// 和容器放不下物品时游戏给出的红底是同一个意思：这里不能放，松手就没了。
         ///
-        /// 只在拖拽期间才做事：没在拖的时候这里只读一个静态字段就返回。
+        /// 红底挂在被拖动的 `GameItemElement` 下面并 `SetAsFirstSibling`，
+        /// 所以它永远在图标后面，跟着物品一起移动，不需要自己算坐标。
         /// </summary>
         internal static void DragHighlightTick()
         {
-            bool dragging = false;
+            GameItemElement dragged = null;
 
             try
             {
                 var handler = ItemMouseDragHandler.current;
-                dragging = handler != null && handler.IsDraggingItem;
+                if (handler != null && handler.IsDraggingItem)
+                    dragged = handler.GetCurrentItem() as GameItemElement;
             }
-            catch { dragging = false; }
+            catch { dragged = null; }
 
-            if (!dragging)
+            if (dragged == null)
             {
-                SetDropHighlight(false);
+                ClearDropMark();
                 return;
             }
 
             bool over = false;
-            try { over = IsPointerOverPanel(Input.mousePosition); }
+            try
+            {
+                var point = Input.mousePosition;
+                over = IsPointerOverPanel(point) || LauncherButton.IsPointerOver(point);
+            }
             catch { }
 
             // 只有作弊模式下松手才会删，普通模式不该给这种暗示
-            SetDropHighlight(over && _takeMode);
-        }
-
-        private static void SetDropHighlight(bool on)
-        {
-            if (!on)
+            if (!over || !_takeMode)
             {
-                if (_dropHighlight != null) _dropHighlight.gameObject.SetActive(false);
+                ClearDropMark();
                 return;
             }
 
-            if (_window == null || !_window.IsAlive || !_window.IsVisible) return;
+            ShowDropMark(dragged);
+        }
 
-            var root = _window.Rect;
-            if (root == null) return;
-
+        private static void ShowDropMark(GameItemElement dragged)
+        {
             try
             {
-                if (_dropHighlight == null || _dropHighlight.transform.parent != root)
+                // GameItemElement 不是 MonoBehaviour，节点要从 rectTransform 拿
+                var host = dragged.rectTransform;
+                if (host == null) return;
+
+                if (_dropMark != null && _dropMarkHost == host.gameObject)
                 {
-                    var go = new GameObject("dropHighlight",
-                        typeof(RectTransform), typeof(UnityEngine.UI.Image));
-
-                    var rect = (RectTransform)go.transform;
-                    rect.SetParent(root, false);
-                    rect.anchorMin = Vector2.zero;
-                    rect.anchorMax = Vector2.one;
-                    rect.offsetMin = Vector2.zero;
-                    rect.offsetMax = Vector2.zero;
-
-                    var image = go.GetComponent<UnityEngine.UI.Image>();
-                    image.color = new Color(0.85f, 0.12f, 0.12f, 0.35f);
-                    image.raycastTarget = false;
-
-                    go.layer = root.gameObject.layer;
-
-                    _dropHighlight = image;
+                    if (!_dropMark.activeSelf) _dropMark.SetActive(true);
+                    return;
                 }
 
-                if (!_dropHighlight.gameObject.activeSelf)
-                    _dropHighlight.gameObject.SetActive(true);
+                ClearDropMark();
 
-                // 盖在最上层，但不吃射线
-                _dropHighlight.transform.SetAsLastSibling();
+                var go = new GameObject("catalogDropRed",
+                    typeof(RectTransform), typeof(UnityEngine.UI.Image));
+
+                var rect = (RectTransform)go.transform;
+                rect.SetParent(host, false);
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.offsetMin = new Vector2(-2f, -2f);
+                rect.offsetMax = new Vector2(2f, 2f);
+
+                var image = go.GetComponent<UnityEngine.UI.Image>();
+                image.color = new Color(0.85f, 0.1f, 0.1f, 0.6f);
+                image.raycastTarget = false;
+
+                // 排到最前面 → 渲染在物品图标底下，就是「物品底下的红底」
+                go.transform.SetAsFirstSibling();
+                go.layer = host.gameObject.layer;
+
+                _dropMark = go;
+                _dropMarkHost = host.gameObject;
             }
-            catch (Exception e) { Warn("drop highlight: " + e.Message); }
+            catch (Exception e) { Warn("drop mark: " + e.Message); }
+        }
+
+        private static void ClearDropMark()
+        {
+            if (_dropMark != null)
+            {
+                try { UnityEngine.Object.Destroy(_dropMark); } catch { }
+            }
+
+            _dropMark = null;
+            _dropMarkHost = null;
         }
 
         /// <summary>外部窗口用 AddButton 建格子时，左键回调直接复用图鉴的选中动作。</summary>

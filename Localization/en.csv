@@ -7,7 +7,7 @@ tt_ingredient,Ingredient
 tt_impurity,Impurities
 build_log,Probably Enough Items ready: {0} entries
 search_placeholder,Search name or ID
-take_toggle,Cheat mode (click to take)
+take_toggle,Cheat mode
 rec_title,Recipes
 rec_mats,Materials
 rec_tools,Tools
