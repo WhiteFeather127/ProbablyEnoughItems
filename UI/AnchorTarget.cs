@@ -261,13 +261,15 @@ namespace ItemCatalog.UI
                             rt.name, rect.width, rect.height, rect.center.x, rect.center.y));
                     }
 
-                    if (rect.width < 260f || rect.height < 60f) continue;
+                    // 阈值只用来排除图标/文字这种小块，不要卡得太严：
+                    // 店铺底部那排本身不高（约 150），卡太紧会在场景刚加载时漏掉它。
+                    if (rect.width < 120f || rect.height < 40f) continue;
                     if (rect.width < bestWidth) continue;
 
-                    // 只要「靠下」的：中心在下半屏
+                    // 只要「靠下」的：中心在画布下方 60% 以内
                     var canvasRect = CanvasRectOf(rt);
                     if (canvasRect.height <= 1f) continue;
-                    if (rect.center.y > canvasRect.yMin + canvasRect.height * 0.45f) continue;
+                    if (rect.center.y > canvasRect.yMin + canvasRect.height * 0.6f) continue;
 
                     // 满屏的容器不要（那是画布/根节点本身）
                     if (rect.width >= canvasRect.width * 0.95f && rect.height >= canvasRect.height * 0.9f) continue;

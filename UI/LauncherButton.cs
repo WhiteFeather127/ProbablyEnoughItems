@@ -62,6 +62,8 @@ namespace ItemCatalog.UI
 
         internal static void OnGameLoaded()
         {
+            HookSceneLoaded();
+
             CatalogWindow.ResetForScene();
 
             // 换场景后旧画布连同按钮一起没了，清掉失效登记
@@ -69,43 +71,40 @@ namespace ItemCatalog.UI
 
             try { Refresh(); }
             catch (Exception e) { Warn("inject launch button: " + e.Message); }
-
-            BeginRetry();
         }
 
-        private static Coroutine _retry;
-        private const float RetrySeconds = 4f;
+        private static bool _hookedScene;
 
         /// <summary>
-        /// 换场景的瞬间店铺 UI 还没排好布局（矩形还是 0×0），这一帧解析不到目标，
-        /// 之后又没有窗口事件可等，按钮就只能等到某个偶然的事件才冒出来。
-        ///
-        /// 所以场景加载后开一段**有上限**的补挂：每帧试一次，挂上立刻停。
-        /// 这不是常驻轮询——按钮挂上后连这个协程都不存在了。
+        /// 订阅 Unity 的场景加载事件。`ModHook` 只有「游戏加载完成」那几个，没有换场景的，
+        /// 而进店铺是直接换场景——不挂这个钩子，店铺那枚按钮就只能等窗口事件。
         /// </summary>
-        private static void BeginRetry()
+        private static void HookSceneLoaded()
         {
-            if (_retry != null) return;
+            if (_hookedScene) return;
+            _hookedScene = true;
 
-            try { _retry = ModHelper.StartCoroutine(ModEntry.MOD_ID, RetryRoutine()); }
-            catch (Exception e) { Warn("retry start: " + e.Message); _retry = null; }
+            try
+            {
+                UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
+            }
+            catch (Exception e) { Warn("hook sceneLoaded: " + e.Message); }
         }
 
-        private static IEnumerator RetryRoutine()
+        /// <summary>
+        /// 场景加载完成后**同一帧**挂按钮：先强制结算布局，再量矩形，
+        /// 因此不需要任何补挂协程，按钮和界面一起出现在淡入里。
+        /// </summary>
+        private static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene,
+                                          UnityEngine.SceneManagement.LoadSceneMode mode)
         {
-            float deadline = Time.unscaledTime + RetrySeconds;
-
-            while (Time.unscaledTime < deadline)
+            try
             {
-                yield return null;
-
-                if (_docks.Count > 0) break;   // 已经挂上，收工
-
-                try { Refresh(); }
-                catch { }
+                CatalogWindow.ResetForScene();
+                Cleanup();
+                Refresh();
             }
-
-            _retry = null;
+            catch (Exception e) { Warn("scene loaded: " + e.Message); }
         }
 
         /// <summary>
@@ -114,6 +113,10 @@ namespace ItemCatalog.UI
         /// </summary>
         internal static void Refresh()
         {
+            // 同步量一次：让布局立即结算，否则拿到的可能是上一帧的 0×0 矩形
+            try { Canvas.ForceUpdateCanvases(); }
+            catch { }
+
             // 主场景：物品栏窗口
             var inventory = AnchorTarget.ResolveInventoryNode();
             Update("inventory", inventory);
