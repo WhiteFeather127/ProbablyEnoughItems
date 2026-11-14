@@ -39,12 +39,16 @@ namespace ItemCatalog.UI
                 return window;
             }
 
-            // ② 店铺场景：进店是直接换场景，物品栏窗口整个不在（`invWindow` 为空/未激活），
-            //    这时贴店铺自己的窗口（展示柜 / 前后台库存 …），不然按钮根本挂不上去。
+            // ② 店铺场景：物品栏窗口整个不在（进店是换场景），改贴底部那排 UI
+            //    （地面 / 口袋机 / 管口 / 口袋边）—— 那里才是能放东西带走的地方。
+            window = ResolveScenePanel();
+            if (window != null) return window;
+
+            // ③ 再退一步：店铺自己的容器窗口（展示柜 / 前后台库存 …）
             window = ResolveShopWindow();
             if (window != null) return window;
 
-            // ③ 名字像物品栏的可见节点
+            // ④ 名字像物品栏的可见节点
             return FindInventoryLike();
         }
 
@@ -197,6 +201,102 @@ namespace ItemCatalog.UI
             catch (Exception e) { Warn("resolve pocket: " + e.Message); }
 
             return null;
+        }
+
+        // ── 店铺场景：底部那排 UI（地面 / 口袋机 / 管口 / 口袋边）───────────────
+        // 这几个区块没有挂在 EmporiumEntry 的属性上，只能按结构找：
+        // 画布下方、够宽、不是满屏的那一块。找到后按钮贴它右端、图鉴左端贴它右端，
+        // 和主场景里「贴物品栏」完全同一套（见 CatalogWindow.ApplyPlacement）。
+        private static RectTransform _scenePanel;
+        private static float _nextScenePanelScanAt;
+
+        internal static RectTransform ResolveScenePanel()
+        {
+            var cached = _scenePanel;
+            if (cached != null)
+            {
+                try
+                {
+                    if (cached.gameObject.activeInHierarchy)
+                    {
+                        var cachedRect = DockedLayout.ToWorldRect(cached);
+                        if (cachedRect.width > 100f && cachedRect.height > 40f) return cached;
+                    }
+                }
+                catch { }
+
+                _scenePanel = null;
+            }
+
+            if (Time.unscaledTime < _nextScenePanelScanAt) return null;
+            _nextScenePanelScanAt = Time.unscaledTime + 1f;
+
+            RectTransform best = null;
+            float bestWidth = 0f;
+            Rect bestRect = new Rect();
+
+            try
+            {
+                var all = UnityEngine.Object.FindObjectsOfType<RectTransform>();
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var rt = all[i];
+                    if (rt == null || !rt.gameObject.activeInHierarchy) continue;
+                    if (rt.name == "WindowUICanvas") continue;
+
+                    Rect rect;
+                    try { rect = DockedLayout.ToWorldRect(rt); }
+                    catch { continue; }
+
+                    if (rect.width < 260f || rect.height < 60f) continue;
+                    if (rect.width < bestWidth) continue;
+
+                    // 只要「靠下」的：中心在下半屏
+                    var canvasRect = CanvasRectOf(rt);
+                    if (canvasRect.height <= 1f) continue;
+                    if (rect.center.y > canvasRect.yMin + canvasRect.height * 0.45f) continue;
+
+                    // 满屏的容器不要（那是画布/根节点本身）
+                    if (rect.width >= canvasRect.width * 0.95f && rect.height >= canvasRect.height * 0.9f) continue;
+
+                    if (rect.width > bestWidth)
+                    {
+                        best = rt;
+                        bestWidth = rect.width;
+                        bestRect = rect;
+                    }
+                }
+            }
+            catch (Exception e) { Warn("resolve scene panel: " + e.Message); }
+
+            if (best == null) return null;
+            _scenePanel = best;
+
+            if (ModEntry.Log != null)
+            {
+                ModEntry.Log.Log(string.Format(
+                    "[anchor] scene panel '{0}' ({1:F0},{2:F0},{3:F0}x{4:F0})",
+                    DockedLayout.HierarchyPath(best), bestRect.x, bestRect.y, bestRect.width, bestRect.height));
+            }
+
+            return best;
+        }
+
+        /// <summary>节点所属画布的屏幕矩形；拿不到返回全屏。</summary>
+        private static Rect CanvasRectOf(RectTransform node)
+        {
+            try
+            {
+                var canvas = node.GetComponentInParent<Canvas>();
+                if (canvas != null)
+                {
+                    var rt = canvas.transform as RectTransform;
+                    if (rt != null) return DockedLayout.ToWorldRect(rt);
+                }
+            }
+            catch { }
+
+            return new Rect(0f, 0f, Screen.width, Screen.height);
         }
 
         internal static RectTransform Resolve()

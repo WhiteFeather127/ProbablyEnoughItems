@@ -247,18 +247,11 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 贴靠目标：店铺场景里优先贴「口袋#2」这一块（那里才是能把东西带走的口袋），
-        /// 其余情况贴物品栏窗口。
+        /// 贴靠目标：主场景是物品栏窗口，店铺场景是底部那排 UI（地面 / 口袋机 / 管口 / 口袋边）。
+        /// 两者都由 <see cref="AnchorTarget.ResolveWindow"/> 决定，这里只做转发。
         /// </summary>
         private static RectTransform ResolveDockTarget(out bool pocket)
         {
-            var node = AnchorTarget.ResolvePocket("pocket2");
-            if (node != null)
-            {
-                pocket = true;
-                return node;
-            }
-
             pocket = false;
             return AnchorTarget.ResolveWindow();
         }
