@@ -133,7 +133,7 @@ client,Georgio2,name_georgio,,,其他,george,,,,,packet_red_cigarette|birth_cont
 # 仓储客的 machine_bay_ext / storage_bay_large、剧情引导客的 furnace / ingot_book / 三个随机模块
 # 都已在继承来的清单里，所以这里只写唯一多出来的 flux_agent（解析器会去重）。
 # 两条同名（name_dr._jackson），靠 kind=client / kind=location 分到不同大类。
-client,InventorVisit,name_dr._jackson,,src_doctor_shop,其他,pool:GetInventorSpriteName,,,MATERIAL|system_module_corrupt|system_module_ruined,,flux_agent,dr_jackson,satchel|backpack_large|backpack_medium|backpack_small|energy_credit_dis|advanced_flux_agent|turbo_booster_adv,,
+client,InventorVisit,name_dr._jackson,,src_doctor_shop,其他,pool:GetInventorSpriteName,,,MATERIAL,system_module_corrupt|system_module_ruined,flux_agent,dr_jackson,satchel|backpack_large|backpack_medium|backpack_small|energy_credit_dis|advanced_flux_agent|turbo_booster_adv,,
 client,MentorClientVisualInspection,name_the_mentor,,,其他,mentor,,,,,cigarette_color|cigarette_guide|magnifier|sign_food|sign_household|sign_material|sign_water,,,,
 client,StoryAppraisalBoard,name_appraiser_board_member,,,其他,pool:GetClerkSpriteName,,,,,cert1|hand_guide|magnifier,,,,
 client,ThirstySpacer,name_thirsty_spacer,,,其他,pool:GetRandomLowerLevelSpriteName,,,WATER,,bottled_water|small_bottled_water,,,,
@@ -239,7 +239,7 @@ client,shadyMerchant,name_shady_merchant,,,,pool:GetShadyMerchantSpriteName,,,CO
 # --- 安保 ---
 faction,faction_name_security,,,,,
 client,offDutyOfficerStoryTreat,name_off_duty_officer,,,,pool:GetRandomOffDutySecSpriteName,,,TREAT|CIGARETTE_TAG,,,,,,
-client,patrolOfficer,name_security_officer,,,,pool:GetRandomSecSpriteName,,,TREAT|CIGARETTE_TAG|caffeine_pill,,,,,,
+client,patrolOfficer,name_security_officer,,,,pool:GetRandomSecSpriteName,,,TREAT|CIGARETTE_TAG,caffeine_pill,,,,,
 
 # --- 革命 ---
 faction,faction_name_revolution,,,,,
@@ -250,8 +250,8 @@ client,wanted4Normal,name_odin,,,,wanted4,,,AMMUNITION|WEAPON|MELEE_WEAPON|ACCES
 faction,faction_none,,,,,
 client,foodieTourist,name_foodie_tourist,,,,pool:GetFoodieSpriteName,,,FOOD|BREVAGE,,,,,,
 client,caseEnjoyerReturning,name_case_enjoyer,,,,pool:GetCaseEnjoyerSpriteName,,,ACCESS_CARD|SUPPLY_CRATE,,,,,,
-client,officerLunVisit,name_lun,,,,officer_lun,,,FOOD|MEDICAL|NARCOTIC|black_injector,,,,,,
-client,wanted6_supply,,,,,pool:GetRandomLowerLevelSpriteName,,,common_chemical|restricted_chemical,,,,,,
+client,officerLunVisit,name_lun,,,,officer_lun,,,FOOD|MEDICAL|NARCOTIC,black_injector,,,,,
+client,wanted6_supply,,,,,pool:GetRandomLowerLevelSpriteName,,,,common_chemical|restricted_chemical,,,,,
 client,offDutyOfficerStoryBeer,name_off_duty_officer,,,,pool:GetRandomOffDutySecSpriteName,,,ALCOHOL,,,,,,
 client,revolutionaryBuyer,name_revolutionary_fighter,,,,pool:GetRandomRevSpriteName,,,WEAPON|MUNITION|AMMUNITION|MEDICAL,,,,,,
 client,conspiracyMinor,name_conspiracy_theorist,,,,pool:GetRandomScavMaleSpriteName,,,SUBSTANCE,,,,,,

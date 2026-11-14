@@ -1422,8 +1422,20 @@ namespace ItemCatalog.UI
             {
                 case "LIQUID_CONTAINER_TAG": return ModEntry.T("buy_tag_container");
                 case "GUN_CALIBER_TAG": return ModEntry.T("buy_tag_caliber");
-                default: return key;
+                default: break;
             }
+
+            // 兜底：数据里误把物品 id 写进「标签」列（`black_injector` 这种），
+            // 不要把它原样印在界面上——能查到物品就用物品名，查不到才退回原字符串。
+            try
+            {
+                var entry = RecipeIndex.FindEntry(key);
+                if (entry != null && !string.IsNullOrEmpty(entry.DisplayName))
+                    return entry.DisplayName;
+            }
+            catch { }
+
+            return key;
         }
 
         /// <summary>
