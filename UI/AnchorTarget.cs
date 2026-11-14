@@ -17,7 +17,12 @@ namespace ItemCatalog.UI
         /// <summary>上次命中 invWindow 的日志标记，避免每秒重复打印。</summary>
         private static bool _loggedWindowTarget;
 
-        internal static RectTransform Resolve()
+        /// <summary>
+        /// 只解析**真正的物品栏窗口节点**（①②），**不含**画布兜底。
+        /// 要把按钮挂成窗口子物体时必须用这个：画布是整屏矩形，
+        /// 挂上去就会跑到屏幕右下角（历史上的「按钮偏移」就是这么来的）。
+        /// </summary>
+        internal static RectTransform ResolveWindow()
         {
             // ① 最可靠：游戏自己维护的物品栏窗口
             var window = ResolveInventoryWindow();
@@ -35,8 +40,13 @@ namespace ItemCatalog.UI
             }
 
             // ② 名字像物品栏的可见节点
-            var auto = FindInventoryLike();
-            if (auto != null) return auto;
+            return FindInventoryLike();
+        }
+
+        internal static RectTransform Resolve()
+        {
+            var window = ResolveWindow();
+            if (window != null) return window;
 
             // ③ 画布兜底（位置不精确，但至少能用）
             var store = StoreUIManager.Instance;
