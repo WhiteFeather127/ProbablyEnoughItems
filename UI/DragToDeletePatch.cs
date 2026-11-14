@@ -116,8 +116,12 @@ namespace ItemCatalog.UI
 
         private static FieldInfo _multiItems;
 
-        /// <summary>多选处理器当前拖着的那些物品（私有字段，只读一次句柄）。</summary>
-        private static List<GameItem> SelectedItems(ItemMultiSelectHandler handler)
+        /// <summary>
+        /// 多选处理器当前拖着的那些元素（私有字段 `selectedItems`）。
+        /// 注意它的真实类型是 <c>List&lt;GameItemElement&gt;</c>，不是 `List&lt;GameItem&gt;`
+        /// （泛型没有协变，直接 cast 会得到 null），所以要按 IEnumerable 逐个转。
+        /// </summary>
+        private static System.Collections.IEnumerable RawSelected(ItemMultiSelectHandler handler)
         {
             if (handler == null) return null;
 
@@ -131,9 +135,43 @@ namespace ItemCatalog.UI
 
                 if (_multiItems == null) return null;
 
-                return _multiItems.GetValue(handler) as List<GameItem>;
+                return _multiItems.GetValue(handler) as System.Collections.IEnumerable;
             }
             catch { return null; }
+        }
+
+        private static List<GameItem> SelectedItems(ItemMultiSelectHandler handler)
+        {
+            var raw = RawSelected(handler);
+            if (raw == null) return null;
+
+            var list = new List<GameItem>();
+            foreach (var item in raw)
+            {
+                var gameItem = item as GameItem;
+                if (gameItem != null) list.Add(gameItem);
+            }
+
+            return list;
+        }
+
+        /// <summary>多选里第一个元素，用来给红底量尺寸（群组拖拽时没有单只的“当前物品”）。</summary>
+        internal static GameItemElement FirstSelectedElement()
+        {
+            try
+            {
+                var raw = RawSelected(ItemMultiSelectHandler.current);
+                if (raw == null) return null;
+
+                foreach (var item in raw)
+                {
+                    var element = item as GameItemElement;
+                    if (element != null) return element;
+                }
+            }
+            catch { }
+
+            return null;
         }
 
         /// <summary>

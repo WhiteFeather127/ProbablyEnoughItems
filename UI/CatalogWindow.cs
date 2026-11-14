@@ -1633,11 +1633,15 @@ namespace ItemCatalog.UI
 
             if (dragged == null)
             {
-                // 框选一次拖一堆：没有单只的 GameItemElement，给一块默认大小的红底
+                // 框选一次拖一堆：没有“当前物品”，拿选中的第一只来量尺寸
                 try
                 {
                     var multi = ItemMultiSelectHandler.current;
-                    groupDragging = multi != null && multi.IsGroupDragging;
+                    if (multi != null && multi.IsGroupDragging)
+                    {
+                        groupDragging = true;
+                        dragged = DragToDeletePatch.FirstSelectedElement();
+                    }
                 }
                 catch { groupDragging = false; }
 
