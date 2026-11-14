@@ -183,6 +183,7 @@ namespace ItemCatalog.UI
             internal string[] Tags;                 // 这一条里要画的标签
             internal int Base;                      // 格子 id 起点
             internal string CurrentId;              // 当前详情物品，用于「它自己就在标签里」判定
+            internal HashSet<string> Exclude;       // 已经单独列出的具体物品，别在标签格里重复画
         }
 
         internal static void OpenFor(ItemEntry entry)
@@ -387,17 +388,84 @@ namespace ItemCatalog.UI
             var builder = new CustomUIBuilder(manager, _window, strip.Host);
             for (int i = 0; i < strip.Tags.Length; i++)
             {
-                RenderTagSourceCell(builder, strip.Tags[i], strip.Base + i, strip.CurrentId);
+                string tag = strip.Tags[i];
 
-                // 格子下面写一行说明：水这类写「水质」（当前轮播到的那瓶水的档位），
-                // 其余标签写标签名。轮播换物品时这行会跟着重建。
-                string caption = CaptionFor(strip.Tags[i], strip.CurrentId);
-                if (!string.IsNullOrEmpty(caption))
-                    builder.AddLabel(caption, "tagcap" + (strip.Base + i));
+                // 什么都收的客人：不展开物品（那是全注册表），只写一行「全部物品」
+                if (tag != null && tag.StartsWith("ALL_TYPE", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.AddLabel(ModEntry.T("all_items"), "tag_all" + (strip.Base + i));
+                    continue;
+                }
+
+                var cell = RenderTagSourceCell(builder, tag, strip.Base + i, strip.CurrentId, strip.Exclude);
+                // 说明叠在格子上（半透明黑底），不是另起一行
+                AddOverlayCaption(builder, cell, CaptionFor(tag, strip.CurrentId), "tagcap" + (strip.Base + i));
             }
             builder.End();
 
             CustomUIBuilder.RebuildLayout(strip.Host);
+        }
+
+        private const float CaptionHeight = 15f;
+        private const float CaptionFontSize = 10f;
+
+        /// <summary>
+        /// 把说明文字叠到刚画好的那一格上：半透明黑底 + 白字，贴在格子底部，
+        /// 和原版「容器名称」在物品图标上的写法一致。
+        ///
+        /// 做法：正常 AddLabel 出一个元素（这样沿用窗口的字体/材质），再把它从布局里
+        /// 摘出来挂到格子上、拉伸成底栏，并在它下面插一张 55% 黑底的 Image。
+        /// </summary>
+        private static void AddOverlayCaption(CustomUIBuilder builder, CustomUIElement cell, string text, string id)
+        {
+            if (builder == null || string.IsNullOrEmpty(text)) return;
+            if (cell == null || cell.Rect == null) return;
+
+            builder.AddLabel(text, id);
+            var label = builder.Last;
+            if (label == null || label.Rect == null) return;
+
+            var rect = label.Rect;
+            var host = cell.Rect;
+
+            try
+            {
+                rect.SetParent(host, false);
+                rect.anchorMin = new Vector2(0f, 0f);
+                rect.anchorMax = new Vector2(1f, 0f);
+                rect.pivot = new Vector2(0.5f, 0f);
+                rect.anchoredPosition = Vector2.zero;
+                rect.sizeDelta = new Vector2(0f, CaptionHeight);
+                rect.localScale = Vector3.one;
+
+                // 半透明黑底，插在文字前面（同级先画的在下）
+                var bgGo = new GameObject("caption_bg",
+                    typeof(RectTransform), typeof(UnityEngine.UI.Image));
+                var bgRect = (RectTransform)bgGo.transform;
+                bgRect.SetParent(rect, false);
+                bgRect.anchorMin = Vector2.zero;
+                bgRect.anchorMax = Vector2.one;
+                bgRect.offsetMin = Vector2.zero;
+                bgRect.offsetMax = Vector2.zero;
+                bgRect.SetAsFirstSibling();
+
+                var bg = bgGo.GetComponent<UnityEngine.UI.Image>();
+                bg.color = new Color(0f, 0f, 0f, 0.55f);
+                bg.raycastTarget = false;
+                bgGo.layer = host.gameObject.layer;
+
+                var tmp = rect.GetComponentInChildren<TMPro.TMP_Text>(true);
+                if (tmp != null)
+                {
+                    tmp.fontSize = CaptionFontSize;
+                    tmp.alignment = TMPro.TextAlignmentOptions.Center;
+                    tmp.color = Color.white;
+                    tmp.raycastTarget = false;
+                    tmp.enableWordWrapping = false;
+                    tmp.overflowMode = TMPro.TextOverflowModes.Truncate;
+                }
+            }
+            catch (Exception e) { Warn("caption overlay: " + e.Message); }
         }
 
         private static void StopPortrait()
@@ -1077,25 +1145,23 @@ namespace ItemCatalog.UI
                 }
 
                 // 每个收购标签给一格「这一类」的物品：当前物品属于该类就固定显示它，
-                // 否则显示该类第一件，一样能点、能悬停、命中时有绿底。
-                // 不轮播：来源页重建会打断客人立绘的每秒轮播。
-                for (int i = 0; i < tags.Length; i++)
+                // 否则轮播该类全部物品。标签格圈进自己的容器，轮播时只重建这一条，
+                // 不会整页重画、也就不会打断客人立绘的每秒轮播。
+                builder.BeginColumn(2f);
+                var buyStripHost = builder.CurrentContainer;
+                builder.End();
+
+                var buyStrip = new TagStrip
                 {
-                    // 什么都收的客人：不展开物品（那是全注册表），只写一行「全部物品」。
-                    if (tags[i] != null && tags[i].StartsWith("ALL_TYPE", StringComparison.OrdinalIgnoreCase))
-                    {
-                        builder.AddLabel(ModEntry.T("all_items"), "buytag_all");
-                        continue;
-                    }
-
-                    RenderTagSourceCell(builder, tags[i], 800 + i,
-                        _entry == null ? null : _entry.Id, exclude);
-
-                    // 水只写水质档位，不写「水」；成分在 tooltip 里
-                    string caption = CaptionFor(tags[i], _entry == null ? null : _entry.Id);
-                    if (!string.IsNullOrEmpty(caption))
-                        builder.AddLabel(caption, "buytagcap" + i);
-                }
+                    Host = buyStripHost,
+                    Tags = tags,
+                    Base = 800 + _tagStripSeq * 8,
+                    CurrentId = _entry == null ? null : _entry.Id,
+                    Exclude = exclude
+                };
+                _tagStripSeq++;
+                _tagStrips.Add(buyStrip);
+                RenderTagStrip(buyStrip);
             }
 
             if (!hasItems) return;
@@ -1133,22 +1199,25 @@ namespace ItemCatalog.UI
             }
         }
 
-        /// <summary>种类标签 → 可读名字。recognize 不到的标签原样显示（方便发现新标签）。</summary>
+        /// <summary>
+        /// 种类标签 → 可读名字。
+        ///
+        /// 物品类型一律走游戏自带的 `type_*` 翻译（`TagDisplayName`）：
+        /// 我们自己那份 `buy_tag_household` 写的是「家居用品」，游戏写「日用品」，
+        /// 同一件东西在汇总行和格子说明里出现两个名字，所以删掉这层自译。
+        /// 只有游戏没有类型键的标签（容器、口径、物资）才用模组自己的文案。
+        /// </summary>
         private static string BuyTagName(string tag)
         {
-            switch ((tag ?? string.Empty).Trim())
+            string key = (tag ?? string.Empty).Trim();
+            if (key.Length == 0) return key;
+
+            switch (key)
             {
-                case "WATER": return ModEntry.T("buy_tag_water");
-                case "FOOD": return ModEntry.T("buy_tag_food");
-                case "SUBSTANCE": return ModEntry.T("buy_tag_substance");
-                case "WEAPON": return ModEntry.T("buy_tag_weapon");
-                case "ARMOR": return ModEntry.T("buy_tag_armor");
-                case "AMMUNITION": return ModEntry.T("buy_tag_ammunition");
-                case "HOUSEHOLD_GOOD": return ModEntry.T("buy_tag_household");
                 case "LIQUID_CONTAINER_TAG": return ModEntry.T("buy_tag_container");
                 case "GUN_CALIBER_TAG": return ModEntry.T("buy_tag_caliber");
-                case "BREVAGE": return ModEntry.T("buy_tag_drink");
-                default: return tag;
+                case "SUBSTANCE": return ModEntry.T("buy_tag_substance");
+                default: return TagDisplayName(key);
             }
         }
 
@@ -1650,11 +1719,11 @@ namespace ItemCatalog.UI
         /// - 否则 → **整格**每秒换成下一个物品（不是换格子里的精灵图），
         ///   由 `TickTagRolls` 推进索引后重建正文，图标 / 悬停 / 点击 / 绿底一起换
         /// </summary>
-        private static void RenderTagSourceCell(CustomUIBuilder builder, string tag, int idBase, string currentId, HashSet<string> exclude = null)
+        private static CustomUIElement RenderTagSourceCell(CustomUIBuilder builder, string tag, int idBase, string currentId, HashSet<string> exclude = null)
         {
             var ids = ItemsWithTag(tag);
             if (exclude != null && exclude.Count > 0) ids.RemoveAll(exclude.Contains);
-            if (ids.Count == 0) return;
+            if (ids.Count == 0) return null;
 
             // 游戏内部的 `_TAG`（ADV_GUN_TAG / BLADE_ITEM_TAG / BROKEN_MACHINE_TAG）
             // 是代码判定用的标记，玩家看不懂也不该看到。直接展开成具体物品：
@@ -1662,7 +1731,7 @@ namespace ItemCatalog.UI
             if (IsInternalTag(tag))
             {
                 RenderItemGrid(builder, ids.ToArray(), idBase);
-                return;
+                return null;
             }
 
             bool self = !string.IsNullOrEmpty(currentId) && ids.Contains(currentId);
@@ -1689,6 +1758,9 @@ namespace ItemCatalog.UI
             var host = builder.CurrentContainer;
             builder.BeginGrid(GridColumns, CellWidth, CellHeight, CellSpacing);
             RenderGoods(builder, showId, match, idBase, false);
+
+            // 先记下格子元素再收容器：End() 之后 builder.Last 不再保证指向它
+            var cell = builder.Last;
             builder.End();
 
             if (host != null)
@@ -1699,6 +1771,7 @@ namespace ItemCatalog.UI
             }
 
             // 轮播由外层容器统一驱动（见 _tagStrips），这里不再登记
+            return cell;
         }
 
         /// <summary>把标签翻译成人话；没收录的原样显示。</summary>
