@@ -39,8 +39,8 @@ namespace ItemCatalog.UI
         private const float TextHeight = 30f;
 
         /// <summary>图标按钮保留游戏按钮框后的外框尺寸（正方形）。</summary>
-        private const float IconButtonWidth = 34f;
-        private const float IconButtonHeight = 34f;
+        private const float IconButtonWidth = 46f;
+        private const float IconButtonHeight = 46f;
 
         /// <summary>实际用的按钮尺寸：有图标就套在按钮框里，没有才用文字宽度。</summary>
         private static float _width = IconButtonWidth;
@@ -73,7 +73,8 @@ namespace ItemCatalog.UI
                     return null;
                 }
 
-                tex.filterMode = FilterMode.Point;
+                // 图标会被放大到 40 像素左右，双线性比点采样更平滑（32→40 不是整数倍）
+                tex.filterMode = FilterMode.Bilinear;
                 tex.wrapMode = TextureWrapMode.Clamp;
 
                 _icon = Sprite.Create(tex, new Rect(0f, 0f, tex.width, tex.height),
