@@ -1474,10 +1474,16 @@ namespace ItemCatalog.UI
                     return faction;
                 }
 
-                // 没翻译时游戏回显 key 或空串，退回原 key 至少不至于显示空白
+                // 没翻译时游戏回显 key 或空串：先试模组自己的表（faction_name_church
+                // 这类游戏没有的阵营，只有我们才提供名字），最后才退回 key
                 if (string.IsNullOrEmpty(name) ||
                     name.IndexOf("faction_name_", StringComparison.Ordinal) >= 0)
-                    return faction;
+                {
+                    string own = ModEntry.T(faction);
+                    return string.IsNullOrEmpty(own) || string.Equals(own, faction, StringComparison.Ordinal)
+                        ? faction
+                        : own;
+                }
 
                 return name;
             }

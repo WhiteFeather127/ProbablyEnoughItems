@@ -179,6 +179,16 @@ faction,faction_name_cartel,,,,,
 client,ShadyFarmer,name_shady_farmer,,,农业/食品,pool:GetRandomFarmerSpriteName,,,,,coffee_bean|dream_cap|dream_cap_seed|kotton_fabric|nightmare_cap|nutrifruit,,,,
 # ---- 其他 ----
 client,CartelIntro,name_cartel_handler,,,其他,pool:GetCartelHandlerSpriteName,,,,,common_chemical|dream_cap,,,,
+# ===== 神经教会 =====
+faction,faction_name_church,,,,,
+client,abby1,name_abby,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,abby2,name_abby,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,abby3,name_abby,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,abby4,name_abby,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,abby5,name_abby,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,church_engineer_unique,name_church_engineer,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,church_engineer_unique2,name_church_engineer,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+
 # ===== 无阵营 =====
 faction,faction_none,,,,,
 # ---- 医药/化学 ----
@@ -269,18 +279,11 @@ client,wanted4Normal,name_odin,,,,pool:GetRandomRevSpriteName,,,AMMUNITION|WEAPO
 
 # --- 无阵营 ---
 faction,faction_none,,,,,
-client,billy1,,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
-client,addictGeneralTrailer,,,,,pool:GetRandomScavSpriteName,,,SUBSTANCE,advanced_flux_agent|birth_control_pill|blood_bag|box_cutter|box_tampon|c4|combat_knife|common_chemical|common_medical|energy_credit_breeder|glass_shard_shiv|kotton_fabric|pipe_weapon|screwdriver|system_capped_neural_core|system_module_eco|system_module_efficiancy|system_module_fineness|system_module_overclock|system_module_performance|system_module_quality|wire|wire_cutter,,,,,
-client,shadyBuyerStory,,,,,pool:GetRandomLowerLevelSpriteName,,,ORGAN,,,,,,
-client,abby1,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
-client,abby2,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
-client,abby3,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
-client,abby4,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
-client,abby5,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
-client,church_engineer_unique,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
-client,church_engineer_unique2,,,,,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,billy1,name_billy,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+client,addictGeneralTrailer,name_addict,,,,pool:GetRandomScavSpriteName,,,SUBSTANCE,advanced_flux_agent|birth_control_pill|blood_bag|box_cutter|box_tampon|c4|combat_knife|common_chemical|common_medical|energy_credit_breeder|glass_shard_shiv|kotton_fabric|pipe_weapon|screwdriver|system_capped_neural_core|system_module_eco|system_module_efficiancy|system_module_fineness|system_module_overclock|system_module_performance|system_module_quality|wire|wire_cutter,,,,,
+client,shadyBuyerStory,name_shady_buyer,,,,pool:GetRandomLowerLevelSpriteName,,,ORGAN,,,,,,
 client,foodieTourist,name_foodie_tourist,,,,pool:GetFoodieSpriteName,,,FOOD|BREVAGE,,,,,,
-client,caseEnjoyerReturning,,,,,pool:GetCaseEnjoyerSpriteName,,,ACCESS_CARD|SUPPLY_CRATE,,,,,,
+client,caseEnjoyerReturning,name_case_enjoyer,,,,pool:GetCaseEnjoyerSpriteName,,,ACCESS_CARD|SUPPLY_CRATE,,,,,,
 client,foodieTouristReturning,name_foodie_tourist,,,,pool:GetFoodieSpriteName,,,FOOD|BREVAGE,,,,,,
 client,officerLunVisit,name_lun,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
 client,officerLunShot,name_lun,,,,pool:GetRandomLowerLevelSpriteName,,,MEDICAL|NARCOTIC,,,,,,
@@ -289,7 +292,7 @@ client,wanted6_supply,,,,,pool:GetRandomLowerLevelSpriteName,,,common_chemical|r
 client,offDutyOfficerStoryBeer,name_off_duty_officer,,,,pool:GetRandomOffDutySecSpriteName,,,ALCOHOL,,,,,,
 client,chemical_returning_client,,,,,pool:GetRandomLowerLevelSpriteName,,,WATER,,,,,,
 client,revolutionaryBuyer,name_revolutionary_fighter,,,,pool:GetRandomRevSpriteName,,,WEAPON|MUNITION|AMMUNITION|MEDICAL,,,,,,
-client,revSupplyBuyerTrailer,,,,,pool:GetRandomRevSpriteName,,,WEAPON|AMMUNITION|MEDICAL,,,,,,
+client,revSupplyBuyerTrailer,name_revolution_quartermaster,,,,pool:GetRandomRevSpriteName,,,WEAPON|AMMUNITION|MEDICAL,,,,,,
 client,conspiracyMinor,name_conspiracy_theorist,,,,pool:GetRandomScavMaleSpriteName,,,SUBSTANCE,,,,,,
 client,upperLevelServantHoboParty,name_upper_level_servant,,,,pool:GetRandomUpperSpriteName,,,FOOD|TREAT|BREVAGE,,,,,,
 client,foreman,name_foreman,,,,pool:GetRandomEngSpriteName,,,MATERIAL,,,,,,
@@ -310,8 +313,8 @@ client,touristJunkSouvenirBuyer,name_station_tourist,,,,pool:GetRandomLowerLevel
 client,foodBankBuyer,name_food_bank_supplier,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
 client,criminalBuyerThief,name_shopping_thief,,,,pool:GetRandomShadySpriteName,,,ACCESS_CARD|MEDICAL|MELEE_WEAPON,,,,,,
 client,criminalBuyerMerc,name_shopping_mercenary,,,,pool:GetRandomMercSpriteName,,,ARMOR|MEDICAL|WEAPON|MUNITION|AMMUNITION,,,,,,
-client,aug_med,,,,,pool:GetRandomLowerLevelSpriteName,,,MEDICAL,,,,,,
-client,aug_material,,,,,pool:GetRandomLowerLevelSpriteName,,,MATERIAL|ENERGY_CELL,,,,,,
+client,aug_med,name_aug_med,,,,pool:GetRandomLowerLevelSpriteName,,,MEDICAL,,,,,,
+client,aug_material,name_aug_material,,,,pool:GetRandomLowerLevelSpriteName,,,MATERIAL|ENERGY_CELL,,,,,,
 
 # 什么都收的客人放最后
 client,businessPermitOfficial,name_trade_board_official,,,,pool:GetClerkSpriteName,,,ALL_TYPE,,,,,,

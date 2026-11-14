@@ -257,6 +257,19 @@ namespace ItemCatalog.Catalog
                     if (IsUsableName(name)) return name;
                 }
                 catch { }
+
+                // 游戏没有这个客人名键（Abby、教会工程师这类只有英文字面量的客人）：
+                // 用模组自己的本地化补上，否则会直接显示 id
+                try
+                {
+                    string own = ModEntry.T(source.NameKey);
+                    if (IsUsableName(own) &&
+                        !string.Equals(own, source.NameKey, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return own;
+                    }
+                }
+                catch { }
             }
 
             return string.IsNullOrEmpty(source.Name) ? "?" : source.Name;

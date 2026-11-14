@@ -75,3 +75,10 @@ use_tag_xeno,xeno corpses
 rec_cat_wanted,Wanted
 use_tag_water,water quality
 all_items,All items
+
+faction_name_church,Neural Church
+name_abby,Abby
+name_church_engineer,Church Engineer
+name_billy,Billy
+name_aug_med,Augmentation Medic
+name_aug_material,Augmentation Supplier
