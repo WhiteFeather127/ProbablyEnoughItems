@@ -30,9 +30,55 @@ namespace ItemCatalog.UI
     internal static class LauncherButton
     {
         private const string ButtonName = "ItemCatalog.LaunchButton";
-        private const float ButtonWidth = 100f;
-        private const float ButtonHeight = 30f;
+
+        /// <summary>图标按钮边长（`button.png` 是 32×32 的方图）。</summary>
+        private const float IconSize = 32f;
+
+        /// <summary>没有图标时的文字按钮尺寸。</summary>
+        private const float TextWidth = 100f;
+        private const float TextHeight = 30f;
+
+        /// <summary>实际用的按钮尺寸：有图标就是方图，没有才用文字按钮的宽高。</summary>
+        private static float _width = IconSize;
+        private static float _height = IconSize;
+
         private const float Gap = 4f;
+
+        private static Sprite _icon;
+        private static bool _iconTried;
+
+        /// <summary>模组目录里的 `button.png` → Sprite；读不到返回 null（退回文字按钮）。</summary>
+        private static Sprite LoadIcon()
+        {
+            if (_iconTried) return _icon;
+            _iconTried = true;
+
+            try
+            {
+                var bytes = ModHelper.ReadModFileBytes(ModEntry.MOD_ID, "button.png");
+                if (bytes == null || bytes.Length == 0)
+                {
+                    Warn("button.png not found");
+                    return null;
+                }
+
+                var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                if (!tex.LoadImage(bytes))
+                {
+                    Warn("button.png decode failed");
+                    return null;
+                }
+
+                tex.filterMode = FilterMode.Point;
+                tex.wrapMode = TextureWrapMode.Clamp;
+
+                _icon = Sprite.Create(tex, new Rect(0f, 0f, tex.width, tex.height),
+                    new Vector2(0.5f, 0.5f), 1f);
+            }
+            catch (Exception e) { Warn("load button.png: " + e.Message); }
+
+            return _icon;
+        }
 
         /// <summary>一枚按钮 = 一个贴靠目标。</summary>
         private sealed class Dock
@@ -278,14 +324,33 @@ namespace ItemCatalog.UI
             try
             {
                 var builder = manager.BuildInto(rect, false, ModEntry.MOD_ID + ".button." + key);
-                builder.AddButton(ModEntry.T("btn_open"), delegate { OpenFor(dock); }, "open");
+
+                var icon = LoadIcon();
+                if (icon != null)
+                {
+                    // 图标按钮：`button.png` 直接当按钮表面，不再显示文字
+                    var image = builder.AddImage(icon, IconSize, IconSize, "open").Last;
+                    if (image != null)
+                    {
+                        // 图片元素本身没有点击能力，要挂 Unity Button 才吃得到射线
+                        CatalogWindow.MakeClickable(image, delegate { OpenFor(dock); });
+                    }
+                }
+                else
+                {
+                    // 读不到图就退回文字按钮，至少能点
+                    _width = TextWidth;
+                    _height = TextHeight;
+                    builder.AddButton(ModEntry.T("btn_open"), delegate { OpenFor(dock); }, "open");
+                }
+
                 CustomUIBuilder.RebuildLayout(rect);
 
                 var element = builder.Last;
                 if (element != null && element.Rect != null &&
                     (element.Rect.rect.width < 1f || element.Rect.rect.height < 1f))
                 {
-                    element.Rect.sizeDelta = new Vector2(ButtonWidth, ButtonHeight);
+                    element.Rect.sizeDelta = new Vector2(_width, _height);
                 }
             }
             catch (Exception e) { Warn("build button: " + e.Message); }
@@ -336,7 +401,7 @@ namespace ItemCatalog.UI
             rect.anchorMin = anchor;
             rect.anchorMax = anchor;
             rect.pivot = inside ? new Vector2(1f, pivotY) : new Vector2(0f, pivotY);
-            rect.sizeDelta = new Vector2(ButtonWidth, ButtonHeight);
+            rect.sizeDelta = new Vector2(_width, _height);
             rect.anchoredPosition = inside ? new Vector2(-Gap, offsetY) : new Vector2(Gap, offsetY);
         }
 

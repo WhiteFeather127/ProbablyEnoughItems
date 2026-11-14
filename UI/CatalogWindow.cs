@@ -3530,7 +3530,7 @@ namespace ItemCatalog.UI
         /// 图片元素默认不接收射线。AddImage 把真正的 Image 放在子节点上，
         /// 所以要在子节点里找出那个 Graphic 挂 Button，并返回它作为悬停事件的宿主。
         /// </summary>
-        private static GameObject MakeClickable(CustomUIElement element, Action onClick)
+        internal static GameObject MakeClickable(CustomUIElement element, Action onClick)
         {
             if (element == null || onClick == null) return null;
 

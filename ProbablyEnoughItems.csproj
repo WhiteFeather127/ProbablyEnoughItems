@@ -54,6 +54,10 @@
       <HintPath>$(ManagedDir)\UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(ManagedDir)\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Unity.TextMeshPro">
       <HintPath>$(ManagedDir)\Unity.TextMeshPro.dll</HintPath>
       <Private>false</Private>
@@ -88,6 +92,8 @@
     <Copy SourceFiles="$(MSBuildProjectDirectory)\manifest.xml" DestinationFolder="$(ModDir)" ContinueOnError="true" />
     <!-- 模组菜单横幅：创意工坊预览图优先，本地文件夹没有时就退回这张 -->
     <Copy SourceFiles="$(MSBuildProjectDirectory)\preview.png" DestinationFolder="$(ModDir)" ContinueOnError="true" Condition="Exists('$(MSBuildProjectDirectory)\preview.png')" />
+    <!-- 图鉴按钮图标（运行时由模组自己读入） -->
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\button.png" DestinationFolder="$(ModDir)" ContinueOnError="true" Condition="Exists('$(MSBuildProjectDirectory)\button.png')" />
     <Copy SourceFiles="@(LocFiles)" DestinationFolder="$(ModDir)\Localization" ContinueOnError="true" Condition="'@(LocFiles)' != ''" />
     <Copy SourceFiles="@(SourceFiles)" DestinationFolder="$(ModDir)\Data" ContinueOnError="true" Condition="'@(SourceFiles)' != ''" />
     <Message Importance="high" Text="[ProbablyEnoughItems] 已尝试安装到 $(ModDir)（若权限不足请用 install.ps1 以管理员运行）" />
