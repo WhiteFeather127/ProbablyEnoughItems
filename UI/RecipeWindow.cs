@@ -712,30 +712,6 @@ namespace ItemCatalog.UI
             if (picked != null) _categories.Add(new Category { Kind = kind, Sources = picked });
         }
 
-        private static string CategoryTitle(Category category)
-        {
-            if (category == null) return "?";
-
-            // 掉落池按「地方」分大类：垃圾倾倒场 / 小偷 / 装着它的箱子
-            if (category.Kind == CatLoot && !string.IsNullOrEmpty(category.Site))
-                return SiteName(category.Site);
-
-            switch (category.Kind)
-            {
-                case CatClient: return ModEntry.T("src_clients");
-                case CatLocation: return ModEntry.T("src_locations");
-                case CatCraftOut: return ModEntry.T("rec_cat_craft_out");
-                case CatCraftIn: return ModEntry.T("rec_cat_craft_in");
-                case CatUseOut: return ModEntry.T("rec_cat_use_out");
-                case CatUsedBy: return ModEntry.T("rec_cat_use_in");
-                case CatLoot: return ModEntry.T("src_loot");
-                case CatLootUse: return ModEntry.T("loot_use");
-                case CatLock: return ModEntry.T("loot_use");
-                case CatWanted: return ModEntry.T("rec_cat_wanted");
-                default: return "?";
-            }
-        }
-
         // ---------------------------------------------------------------- 窗口
 
         private static void Create()
@@ -869,8 +845,9 @@ namespace ItemCatalog.UI
 
         private static string CategoryLabel()
         {
-            if (_categories.Count == 0) return "-";
-            return (_category + 1) + "/" + _categories.Count + "  " + CategoryTitle(_categories[_category]);
+            // 标题位置只负责说明「这是来源还是用途」：分类名都是客人/地点，
+            // 写在中间反而看不出方向。具体是哪一类，内容区自己会说明。
+            return ModEntry.T(_asUse ? "dir_use" : "dir_source");
         }
 
         /// <summary>大类切换：到头就停，不循环。</summary>
@@ -1251,7 +1228,7 @@ namespace ItemCatalog.UI
             if (!hasTags && !hasItems) return;
 
             // 求购页本身就叫「求购」，正文里不再重复一个同名标题
-            if (withHeader) builder.AddHeader(ModEntry.T("src_buys"), "src_buys");
+            if (withHeader) builder.AddHeader(ModEntry.T("src_clients"), "src_buys");
 
             if (hasTags)
             {

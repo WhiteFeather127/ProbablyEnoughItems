@@ -14,7 +14,7 @@ rec_tools,Tools
 rec_result,Result
 src_commissary,Commissary
 src_none,No known source
-src_clients,From clients
+src_clients,Clients
 src_locations,Location shops
 src_client_supplier,Supply runner
 src_client_scavenger,Scavenger
@@ -32,7 +32,6 @@ use_kind_drink,Drinking
 use_kind_apply,Applying
 use_kind_combine,Combining
 use_kind_use,Using
-src_buys,Wanted
 buy_tag_water,Water
 buy_tag_food,Food
 buy_tag_substance,Substances
@@ -72,7 +71,6 @@ use_tag_blade,blades
 use_tag_broken_machine,broken machines
 use_tag_humanoid,humanoid corpses
 use_tag_xeno,xeno corpses
-rec_cat_wanted,Wanted
 use_tag_water,water quality
 all_items,All items
 
@@ -82,3 +80,5 @@ name_church_engineer,Church Engineer
 name_billy,Billy
 name_aug_med,Augmentation Medic
 name_aug_material,Augmentation Supplier
+dir_source,Source
+dir_use,Uses

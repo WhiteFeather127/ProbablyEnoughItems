@@ -14,7 +14,7 @@ rec_tools,Инструменты
 rec_result,Результат
 src_commissary,Снабжение
 src_none,Источники неизвестны
-src_clients,У клиентов
+src_clients,Клиенты
 src_locations,Магазины локаций
 src_client_supplier,Поставщик
 src_client_scavenger,Старьёвщик
@@ -32,7 +32,6 @@ use_kind_drink,Выпить
 use_kind_apply,Применить
 use_kind_combine,Совместить
 use_kind_use,Использовать
-src_buys,Скупка
 buy_tag_water,Вода
 buy_tag_food,Еда
 buy_tag_substance,Вещества
@@ -75,10 +74,11 @@ name_billy,Билли
 name_aug_med,Медик аугментаций
 name_aug_material,Поставщик аугментаций
 all_items,Все предметы
-rec_cat_wanted,Скупка
 use_tag_blade,ножи
 use_tag_broken_machine,сломанные машины
 use_tag_gun,огнестрельное оружие
 use_tag_humanoid,трупы гуманоидов
 use_tag_water,качество воды
 use_tag_xeno,трупы ксеносов
+dir_source,Источник
+dir_use,Применение
