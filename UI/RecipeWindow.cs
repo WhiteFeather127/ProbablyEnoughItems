@@ -393,29 +393,69 @@ namespace ItemCatalog.UI
             CustomUIBuilder.ClearContainer(strip.Host);
 
             var builder = new CustomUIBuilder(manager, _window, strip.Host);
+
+            // 所有标签格共用一张网格：以前每格各自 BeginGrid 一次，结果竖着排成一列
+            builder.BeginGrid(GridColumns, CellWidth, CellHeight, CellSpacing);
+
             for (int i = 0; i < strip.Tags.Length; i++)
             {
                 string tag = strip.Tags[i];
+                if (string.IsNullOrEmpty(tag)) continue;
 
                 // 什么都收的客人：不展开物品（那是全注册表），只写一行「全部物品」
-                if (tag != null && tag.StartsWith("ALL_TYPE", StringComparison.OrdinalIgnoreCase))
+                if (tag.StartsWith("ALL_TYPE", StringComparison.OrdinalIgnoreCase))
                 {
                     // 原版有 `type_all_type` / `type_all_type_except_contraband`，直接用它的文案
                     string allName = BuyTagName(tag);
-                    if (string.IsNullOrEmpty(allName) || allName.StartsWith("ALL_TYPE", StringComparison.OrdinalIgnoreCase))
+                    if (string.IsNullOrEmpty(allName) ||
+                        allName.StartsWith("ALL_TYPE", StringComparison.OrdinalIgnoreCase))
+                    {
                         allName = ModEntry.T("all_items");
+                    }
 
                     builder.AddLabel(allName, "tag_all" + (strip.Base + i));
                     continue;
                 }
 
-                var cell = RenderTagSourceCell(builder, tag, strip.Base + i, strip.CurrentId, strip.Exclude);
-                // 说明叠在格子上（半透明黑底），不是另起一行
-                AddOverlayCaption(builder, cell, CaptionFor(tag, strip.CurrentId), "tagcap" + (strip.Base + i));
+                var ids = ItemsWithTag(tag);
+                if (strip.Exclude != null && strip.Exclude.Count > 0) ids.RemoveAll(strip.Exclude.Contains);
+                if (ids.Count == 0) continue;
+
+                // 内部标记（ADV_GUN_TAG 这类）不写名字，直接展开成具体物品
+                if (IsInternalTag(tag))
+                {
+                    for (int k = 0; k < ids.Count; k++)
+                        RenderGoods(builder, ids[k], false, strip.Base + i * 8 + k, false);
+                    continue;
+                }
+
+                // 当前物品自己就在这一类里 → 固定显示它；否则按轮播索引取一件
+                bool self = !string.IsNullOrEmpty(strip.CurrentId) && ids.Contains(strip.CurrentId);
+
+                string showId;
+                if (self)
+                {
+                    showId = strip.CurrentId;
+                }
+                else
+                {
+                    int index;
+                    if (!_tagRollIndex.TryGetValue(tag, out index)) index = 0;
+                    index = ((index % ids.Count) + ids.Count) % ids.Count;
+                    showId = ids[index];
+                }
+
+                // 绿底表示「这一类里有当前这件」，与轮播到哪一件无关（MatchMatch 用 self 判定）
+                RenderGoods(builder, showId, self, strip.Base + i, false);
+                AddOverlayCaption(builder, builder.Last, CaptionFor(tag, strip.CurrentId), "tagcap" + (strip.Base + i));
             }
+
             builder.End();
 
             CustomUIBuilder.RebuildLayout(strip.Host);
+
+            // 局部重建后绿底是新对象，必须立刻对齐一次，否则会停在默认位置（画面上那块大绿方块）
+            SyncHighlights();
         }
 
         private const float CaptionHeight = 15f;
@@ -1739,74 +1779,6 @@ namespace ItemCatalog.UI
             }
 
             return list;
-        }
-
-        /// <summary>
-        /// 标签源的格子：把该标签下所有物品的图标收起来，画第一件并注册到 `_cellAnims`，
-        /// 由 CatalogTicker 每秒换下一件（和客人立绘、货单容器共用同一个 1 秒节拍）。
-        /// 这样「拆解任意枪械」看到的是整类在转，不是固定在某一支枪上。
-        /// </summary>
-        /// <summary>
-        /// 标签源的格子：用 `RenderGoods` 画成**真正的物品格**（有底板、悬停提示、点击跳转）。
-        ///
-        /// 轮播规则：
-        /// - 当前查看的物品**自己就带这个标签** → 只显示它自己，不轮播
-        ///   （查一支手枪时，「螺丝刀拆解」那格就是这支枪，不会转成别的枪）
-        /// - 否则 → **整格**每秒换成下一个物品（不是换格子里的精灵图），
-        ///   由 `TickTagRolls` 推进索引后重建正文，图标 / 悬停 / 点击 / 绿底一起换
-        /// </summary>
-        private static CustomUIElement RenderTagSourceCell(CustomUIBuilder builder, string tag, int idBase, string currentId, HashSet<string> exclude = null)
-        {
-            var ids = ItemsWithTag(tag);
-            if (exclude != null && exclude.Count > 0) ids.RemoveAll(exclude.Contains);
-            if (ids.Count == 0) return null;
-
-            // 游戏内部的 `_TAG`（ADV_GUN_TAG / BLADE_ITEM_TAG / BROKEN_MACHINE_TAG）
-            // 是代码判定用的标记，玩家看不懂也不该看到。直接展开成具体物品：
-            // 一格一件、能点能悬停，不写标签名、不轮播。
-            if (IsInternalTag(tag))
-            {
-                RenderItemGrid(builder, ids.ToArray(), idBase);
-                return null;
-            }
-
-            bool self = !string.IsNullOrEmpty(currentId) && ids.Contains(currentId);
-
-            string showId;
-            if (self)
-            {
-                // 当前物品自己就在这一类里：固定显示它自己，不轮播
-                showId = currentId;
-            }
-            else
-            {
-                int index;
-                if (!_tagRollIndex.TryGetValue(tag, out index)) index = 0;
-                index = ((index % ids.Count) + ids.Count) % ids.Count;
-                showId = ids[index];
-            }
-
-            // 绿底表示「这一类里有当前这件物品」，与此刻轮播到哪一件无关：
-            // 用 self 判定而不是 showId，否则每秒轮播时绿底会跟着一闪一闪。
-            bool match = self;
-
-            var host = builder.CurrentContainer;
-            builder.BeginGrid(GridColumns, CellWidth, CellHeight, CellSpacing);
-            RenderGoods(builder, showId, match, idBase, false);
-
-            // 先记下格子元素再收容器：End() 之后 builder.Last 不再保证指向它
-            var cell = builder.Last;
-            builder.End();
-
-            if (host != null)
-            {
-                var layout = EnsureLayoutElement(host);
-                layout.flexibleHeight = 0f;
-                layout.minHeight = CellHeight;
-            }
-
-            // 轮播由外层容器统一驱动（见 _tagStrips），这里不再登记
-            return cell;
         }
 
         /// <summary>把标签翻译成人话；没收录的原样显示。</summary>
