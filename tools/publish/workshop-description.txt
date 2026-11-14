@@ -1,0 +1,136 @@
+[h1]Probably Enough Items[/h1]
+A catalog mod for looking up where an item comes from and what it is used for. It reads the game's own item directories, customer lists and tooltip chain, and introduces no new data format.
+
+It gathers all 27 item directories in the game, along with entries injected by other mods, into a single panel. Unused and debug entries stay hidden by default.
+
+[hr][/hr]
+[h2]Opening[/h2]
+[list]
+[*][b]Open the catalog[/b]: click the Catalog button docked to the right edge of the inventory window
+[*][b]Turn pages[/b]: click the paging buttons at the bottom; the current page is shown as x / y
+[/list]
+
+[h2]Search[/h2]
+[list]
+[*][b]By name[/b]: type an item name into the search box at the top
+[*][b]By item id[/b]: type an id into the same box, such as [b]water[/b]
+[*][b]By type[/b]: type a type name, such as [b]luxury[/b], [b]household good[/b] or [b]document[/b]. Every item carrying that type is listed
+[*][b]By tag[/b]: tag names work too, such as [b]ADV_GUN_TAG[/b]
+[/list]
+
+[h2]Tooltips[/h2]
+[list]
+[*][b]Item id[/b]: hover a cell; the tooltip gains an extra ID line
+[*][b]Ingredients and impurities[/b]: containers also report their ranges
+[/list]
+
+[h2]Item details[/h2]
+[list]
+[*]The item's own types are listed under the title, the same set the tooltip shows
+[*][b]Sources[/b]: left-click an item
+[*][b]Uses[/b]: right-click an item
+[/list]
+
+[h2]States[/h2]
+[list]
+[*]Enumerable looks occupy separate cells: cigarettes 5, immunity injectors 5, food stamps 30, module footprint by effect, berries 6
+[*]Values that change continuously stay in one cell and are re-rolled every second
+[/list]
+
+[h2]Source pages[/h2]
+[list]
+[*]Each page opens with the faction and the customer portrait, followed by every item that source can place on the table
+[*]Containers show the fill water as that particular customer pours it, down to the bottle
+[/list]
+
+[h2]Wanted pages[/h2]
+[list]
+[*]The first category on the uses side is [b]Wanted[/b]: one page per customer who buys this item, laid out exactly like a source page
+[*]The body lists what that customer is buying — type tags plus specific items
+[*]Water is shown as its quality tier rather than as "water"; the composition stays in the tooltip
+[/list]
+
+[h2]Taking items[/h2]
+[list]
+[*][b]Dragging[/b]: enable the Take item checkbox at the top, then drag a cell out of the catalog
+[*]Without the checkbox a drag is ignored, and a plain click only opens the details
+[/list]
+
+[h2]Extension API[/h2]
+[list]
+[*][b]Variants[/b]: other mods call the API through reflection and add no dependency
+[*][b]Entries[/b]: whole catalog entries can be appended
+[/list]
+
+Verified against game version 0.46D.
+
+[hr][/hr]
+[h1]中文说明[/h1]
+用于查询物品来源与用途的图鉴模组，直接读取游戏自身的物品目录、客人清单与提示框体系，不引入新的数据格式。
+
+它把游戏内全部 27 个物品目录，连同其它模组注入的条目，收进一块面板。未使用条目与调试条目默认隐藏。
+
+[hr][/hr]
+[h2]打开[/h2]
+[list]
+[*][b]打开图鉴[/b]：单击停靠在物品栏窗口右边缘的「图鉴」按钮
+[*][b]翻页[/b]：单击面板底部的翻页按钮，当前页码显示为 x / y
+[/list]
+
+[h2]搜索[/h2]
+[list]
+[*][b]按名称[/b]：在顶部搜索框键入物品名称
+[*][b]按 ID[/b]：同一搜索框键入物品 ID，如 [b]water[/b]
+[*][b]按类型[/b]：如 [b]奢侈品[/b]、[b]日用品[/b]、[b]文档[/b]，会列出所有带该类型的物品
+[*][b]按标签[/b]：标签名同样可搜，如 [b]ADV_GUN_TAG[/b]
+[/list]
+
+[h2]提示框[/h2]
+[list]
+[*][b]物品 ID[/b]：悬停格子，提示框追加一行 ID
+[*][b]成分与杂质[/b]：容器类物品额外显示成分与杂质区间
+[/list]
+
+[h2]物品详情[/h2]
+[list]
+[*]标题下方列出这件物品自身的类型，与游戏提示框一致
+[*][b]查看来源[/b]：左键单击物品
+[*][b]查看用途[/b]：右键单击物品
+[/list]
+
+[h2]状态[/h2]
+[list]
+[*]可枚举外观各自占格：香烟 5、免疫宁注射器 5、食品券 30、模块「占格形状 × 效果」、浆果 6
+[*]连续变化的值保持单格，每秒重掷
+[/list]
+
+[h2]来源页[/h2]
+[list]
+[*]每页以阵营与客人立绘开篇，随后列出该来源可能摆上桌的全部物品
+[*]容器按该客人实际灌入的水显示，细到瓶身
+[/list]
+
+[h2]求购页[/h2]
+[list]
+[*]用途侧第一类为 [b]求购[/b]：一个客人一页，版式与来源页完全一致
+[*]正文列出该客人收什么 —— 类型标签 + 具体物品
+[*]水只写水质档位，不写「水」；成分仍然在提示框里
+[/list]
+
+[h2]拿取[/h2]
+[list]
+[*][b]起拖[/b]：先勾选顶部的「拿取物品」，再从格子拖出
+[*]未勾选时拖拽不生效，单击只打开详情
+[/list]
+
+[h2]扩展接口[/h2]
+[list]
+[*][b]注册变体[/b]：其它模组以反射调用接口，不新增依赖
+[*][b]注册条目[/b]：可追加整条图鉴条目
+[/list]
+
+适配游戏版本 0.46D。
+
+[hr][/hr]
+[h2]Repository / 仓库[/h2]
+[url=https://github.com/WhiteFeather127/ProbablyEnoughItems]github.com/WhiteFeather127/ProbablyEnoughItems[/url]

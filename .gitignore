@@ -5,9 +5,11 @@ obj/
 *.suo
 .vs/
 
-# 创意工坊发布包（tools/publish/publish.ps1 生成）
-publish/
-.publish/
+# 创意工坊发布包（publish.ps1 生成，只在仓库根）
+# 注意必须写成 /publish/：写成 publish/ 会把 tools/publish/ 里的
+# publish.ps1、workshop-description.txt、changenote.txt 一起忽略掉。
+/publish/
+/.publish/
 
 # 系统文件
 Thumbs.db
