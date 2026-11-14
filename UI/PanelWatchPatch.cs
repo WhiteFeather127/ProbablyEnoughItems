@@ -89,6 +89,19 @@ namespace ItemCatalog.UI
                     patched++;
                 }
 
+                // 物品栏窗口是游戏自己创好再赋给 EmporiumEntry.invWindow 的：
+                // 钩住赋值那一刻，物品栏那枚按钮也能在「场景构建期」就挂上，
+                // 而不是等窗口 Show 之后。
+                var invSetter = AccessTools.PropertySetter(typeof(EmporiumEntry), "invWindow");
+                if (invSetter != null)
+                {
+                    var invAssigned = new HarmonyMethod(typeof(PanelWatchPatch)
+                        .GetMethod(nameof(OnInventoryWindowAssigned), BindingFlags.NonPublic | BindingFlags.Static));
+
+                    harmony.Patch(invSetter, postfix: invAssigned);
+                    patched++;
+                }
+
                 if (ModEntry.Log != null)
                     ModEntry.Log.Log("[panelwatch] patched " + patched + " PixelWindow lifecycle method(s)");
             }
@@ -103,6 +116,16 @@ namespace ItemCatalog.UI
         private static void OnWindowCreated(PixelWindow __instance)
         {
             try { LauncherButton.OnPanelCreated(__instance); }
+            catch { }
+        }
+
+        /// <summary>物品栏窗口刚被赋给 `EmporiumEntry.invWindow` 的瞬间。</summary>
+        private static void OnInventoryWindowAssigned(EmporiumEntry __instance)
+        {
+            try
+            {
+                if (__instance != null) LauncherButton.OnPanelCreated(__instance.invWindow);
+            }
             catch { }
         }
 
