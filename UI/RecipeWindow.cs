@@ -383,6 +383,13 @@ namespace ItemCatalog.UI
             var manager = CustomUIManager.Instance;
             if (manager == null || _window == null || !_window.IsAlive) return;
 
+            // 旧的格子和绿底随容器一起销毁，先把悬空登记清掉（否则每秒轮播会一直累积）
+            for (int i = _highlights.Count - 1; i >= 0; i--)
+            {
+                if (_highlights[i].Key == null || _highlights[i].Value == null)
+                    _highlights.RemoveAt(i);
+            }
+
             CustomUIBuilder.ClearContainer(strip.Host);
 
             var builder = new CustomUIBuilder(manager, _window, strip.Host);
@@ -443,28 +450,43 @@ namespace ItemCatalog.UI
                 rect.sizeDelta = new Vector2(0f, CaptionHeight);
                 rect.localScale = Vector3.one;
 
-                // 半透明黑底，插在文字前面（同级先画的在下）
+                // 格子内部可能带布局组：不排除的话这条底栏会把格子撑高、把图标挤小，
+                // 绿底是按格子矩形画的，于是看起来「绿底画歪了」。
+                var ignore = rect.GetComponent<UnityEngine.UI.LayoutElement>();
+                if (ignore == null) ignore = rect.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
+                ignore.ignoreLayout = true;
+
+                // 黑底必须是「格子的子物体、排在文字之前」：
+                // 做成文字的子物体就画在文字之上，字会显得发黑发透。
                 var bgGo = new GameObject("caption_bg",
                     typeof(RectTransform), typeof(UnityEngine.UI.Image));
+
                 var bgRect = (RectTransform)bgGo.transform;
-                bgRect.SetParent(rect, false);
-                bgRect.anchorMin = Vector2.zero;
-                bgRect.anchorMax = Vector2.one;
-                bgRect.offsetMin = Vector2.zero;
-                bgRect.offsetMax = Vector2.zero;
-                bgRect.SetAsFirstSibling();
+                bgRect.SetParent(host, false);
+                bgRect.anchorMin = new Vector2(0f, 0f);
+                bgRect.anchorMax = new Vector2(1f, 0f);
+                bgRect.pivot = new Vector2(0.5f, 0f);
+                bgRect.anchoredPosition = Vector2.zero;
+                bgRect.sizeDelta = new Vector2(0f, CaptionHeight);
+                bgRect.localScale = Vector3.one;
 
                 var bg = bgGo.GetComponent<UnityEngine.UI.Image>();
-                bg.color = new Color(0f, 0f, 0f, 0.55f);
+                bg.color = new Color(0f, 0f, 0f, 0.6f);
                 bg.raycastTarget = false;
                 bgGo.layer = host.gameObject.layer;
+
+                var bgIgnore = bgGo.AddComponent<UnityEngine.UI.LayoutElement>();
+                bgIgnore.ignoreLayout = true;
+
+                // 紧挨在文字前面 → 先画底、后画字
+                bgRect.SetSiblingIndex(rect.GetSiblingIndex());
 
                 var tmp = rect.GetComponentInChildren<TMPro.TMP_Text>(true);
                 if (tmp != null)
                 {
                     tmp.fontSize = CaptionFontSize;
                     tmp.alignment = TMPro.TextAlignmentOptions.Center;
-                    tmp.color = Color.white;
+                    tmp.color = new Color(1f, 1f, 1f, 1f);   // 不透明，别继承窗口的半透明样式
                     tmp.raycastTarget = false;
                     tmp.enableWordWrapping = false;
                     tmp.overflowMode = TMPro.TextOverflowModes.Truncate;
@@ -1764,10 +1786,9 @@ namespace ItemCatalog.UI
                 showId = ids[index];
             }
 
-            // 整格轮播：每次重建画的就是「当前那一件」，
-            // 所以图标、悬停提示、点击目标、绿底自然都跟着它走。
-            bool match = !string.IsNullOrEmpty(currentId) &&
-                         string.Equals(showId, currentId, StringComparison.Ordinal);
+            // 绿底表示「这一类里有当前这件物品」，与此刻轮播到哪一件无关：
+            // 用 self 判定而不是 showId，否则每秒轮播时绿底会跟着一闪一闪。
+            bool match = self;
 
             var host = builder.CurrentContainer;
             builder.BeginGrid(GridColumns, CellWidth, CellHeight, CellSpacing);
