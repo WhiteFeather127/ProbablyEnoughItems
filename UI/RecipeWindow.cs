@@ -319,19 +319,6 @@ namespace ItemCatalog.UI
         /// 也不会每次重建都把滚动位置和立绘轮播重置掉。
         /// 返回 true 表示这一轮重建过（旧 `_cellAnims` 已随容器销毁）。
         /// </summary>
-        /// <summary>指针是否压在这个节点上（用于临时停掉轮播，别打断正在看的东西）。</summary>
-        private static bool IsPointerOver(RectTransform rect)
-        {
-            if (rect == null) return false;
-
-            try
-            {
-                return UnityEngine.RectTransformUtility.RectangleContainsScreenPoint(
-                    rect, UnityEngine.Input.mousePosition, null);
-            }
-            catch { return false; }
-        }
-
         private static bool TickTagRolls()
         {
             if (!IsOpen || _tagStrips.Count == 0) return false;
@@ -342,10 +329,6 @@ namespace ItemCatalog.UI
                 var strip = _tagStrips[i];
                 if (strip == null || strip.Tags == null) continue;
                 if (strip.Host == null) continue;   // 容器已被别的重建销毁
-
-                // 指针停在这一块上时先别轮播：重建会把这些格子连同提示框一起换掉，
-                // 正好在看的物品会闪一下
-                if (IsPointerOver(strip.Host)) continue;
 
                 bool stripMoved = false;
                 for (int k = 0; k < strip.Tags.Length; k++)
@@ -926,6 +909,16 @@ namespace ItemCatalog.UI
                 var clone = UnityEngine.Object.Instantiate(title.gameObject, _window.Rect);
                 clone.name = "directionLabel";
 
+                // 窗口根上挂着竖排布局组，直接塞子物体会被当成第三行排到最底下。
+                // 先让布局组忽略它，再自己锚定位置。
+                try
+                {
+                    var ignore = clone.GetComponent<UnityEngine.UI.LayoutElement>();
+                    if (ignore == null) ignore = clone.AddComponent<UnityEngine.UI.LayoutElement>();
+                    ignore.ignoreLayout = true;
+                }
+                catch { }
+
                 var rect = clone.transform as RectTransform;
                 if (rect != null)
                 {
@@ -940,6 +933,9 @@ namespace ItemCatalog.UI
                     rect.anchoredPosition = new Vector2(10f, -barHeight * 0.5f);
                     rect.sizeDelta = new Vector2(140f, barHeight);
                 }
+
+                // 画在最上层，否则会被窗口背景/内容盖住
+                try { clone.transform.SetAsLastSibling(); } catch { }
 
                 _dirLabel = clone.GetComponent<TMPro.TMP_Text>();
                 if (_dirLabel != null)
