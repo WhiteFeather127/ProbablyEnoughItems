@@ -36,6 +36,9 @@ namespace ItemCatalog.UI
             CatalogWindow.AutoRefreshTick();
             CatalogWindow.DragTick();
 
+            // 每枚图鉴按钮各自跟随自己的目标对象：目标没了按钮就消失（内部 0.2 秒门限）
+            try { LauncherButton.Tick(); } catch { }
+
             // 详情窗口的客人立绘：同一客人多种外观时每秒轮播（内部自己掐间隔）
             RecipeWindow.TickPortrait();
 

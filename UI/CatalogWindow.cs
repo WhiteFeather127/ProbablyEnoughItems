@@ -204,6 +204,12 @@ namespace ItemCatalog.UI
         private static bool _overlayShown;
         private static int _overlayWarned;
 
+        /// <summary>
+        /// 面板贴靠的对象。谁按的按钮就贴谁：物品栏窗口那枚贴物品栏，
+        /// 店铺底部那排那枚贴底部那排。为 null 时走原来的自动解析。
+        /// </summary>
+        internal static RectTransform AnchorOverride;
+
         internal static void Toggle()
         {
             var manager = CustomUIManager.Instance;
@@ -213,7 +219,7 @@ namespace ItemCatalog.UI
                 return;
             }
 
-            _inventoryRect = AnchorTarget.Resolve();
+            _inventoryRect = AnchorOverride != null ? AnchorOverride : AnchorTarget.Resolve();
 
             if (_window != null && _window.IsAlive)
             {
@@ -369,9 +375,21 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>场景切换后窗口会随场景销毁，句柄必须作废。</summary>
+        /// <summary>
+        /// 从某个界面上的图鉴按钮打开：面板贴到那枚按钮绑定的对象上
+        /// （物品栏窗口 / 店铺底部那排 UI）。两枚按钮共用同一个窗口，只是锚点不同。
+        /// </summary>
+        internal static void OpenAt(RectTransform anchor)
+        {
+            AnchorOverride = anchor;
+            Toggle();
+        }
+
         internal static void ResetForScene()
         {
             HideNativeTooltip();   // 切场景/重建前先把悬停提示框收掉
+
+            AnchorOverride = null;   // 旧场景的对象已销毁，别拿它算锚点
 
             // 合成贴图与舞台随场景销毁（物品实例都没了，缓存全部失效）
             _compositeSprites.Clear();
@@ -440,7 +458,7 @@ namespace ItemCatalog.UI
                 CatalogDataBuilder.EnsureBuilt();
             }
             _page = 0;
-            _inventoryRect = AnchorTarget.Resolve();
+            _inventoryRect = AnchorOverride != null ? AnchorOverride : AnchorTarget.Resolve();
 
             CustomUIBuilder builder;
             try
@@ -5558,8 +5576,9 @@ namespace ItemCatalog.UI
 
             try
             {
+                // 按钮指定的贴靠对象优先；没有才走自动解析。
                 // 只认真窗口：解析退化到整块画布时会让面板按「右侧 55%」兜底，反而跳一下
-                var resolved = AnchorTarget.ResolveWindow();
+                var resolved = AnchorOverride != null ? AnchorOverride : AnchorTarget.ResolveWindow();
                 if (resolved != null) _inventoryRect = resolved;
 
                 ApplyPlacement(_window, _inventoryRect);

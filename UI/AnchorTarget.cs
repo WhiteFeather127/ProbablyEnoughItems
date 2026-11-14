@@ -299,6 +299,13 @@ namespace ItemCatalog.UI
             return new Rect(0f, 0f, Screen.width, Screen.height);
         }
 
+        /// <summary>只认物品栏窗口（`EmporiumEntry.invWindow`），不给任何兜底。</summary>
+        internal static RectTransform ResolveInventoryNode()
+        {
+            try { return ResolveInventoryWindow(); }
+            catch { return null; }
+        }
+
         internal static RectTransform Resolve()
         {
             var window = ResolveWindow();
