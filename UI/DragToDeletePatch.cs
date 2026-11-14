@@ -81,6 +81,10 @@ namespace ItemCatalog.UI
 
             try
             {
+                // 只认作弊模式：那个开关同时管「点击拿取」和「拖过来删除」，
+                // 普通模式误拖到图鉴上不该把东西弄没
+                if (!CatalogWindow.TakeMode) return;
+
                 if (!IsPointerOverCatalog(Input.mousePosition)) return;
 
                 // 直接销毁：数量 -1 = 全部涂掉，和游戏自己清店铺库存用的是同一句

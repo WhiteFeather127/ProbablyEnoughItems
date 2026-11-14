@@ -36,6 +36,9 @@ namespace ItemCatalog.UI
             CatalogWindow.AutoRefreshTick();
             CatalogWindow.DragTick();
 
+            // 拖拽中也每帧刷一下红底提示（没在拖时这里只读一个静态字段就返回）
+            try { CatalogWindow.DragHighlightTick(); } catch { }
+
             // 详情窗口的客人立绘：同一客人多种外观时每秒轮播（内部自己掐间隔）
             RecipeWindow.TickPortrait();
 

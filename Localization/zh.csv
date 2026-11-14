@@ -7,7 +7,7 @@ tt_ingredient,成分
 tt_impurity,杂质
 build_log,物品图鉴已就绪：{0} 项
 search_placeholder,搜索物品名或 ID
-take_toggle,拿取物品
+take_toggle,作弊模式（点击拿取）
 rec_title,合成表
 rec_mats,材料
 rec_tools,工具

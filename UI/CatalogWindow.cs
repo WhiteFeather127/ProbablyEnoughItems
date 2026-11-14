@@ -410,6 +410,7 @@ namespace ItemCatalog.UI
             HideNativeTooltip();   // 切场景/重建前先把悬停提示框收掉
 
             AnchorOverride = null;   // 旧场景的对象已销毁，别拿它算锚点
+            _dropHighlight = null;   // 红底随窗口一起没了
 
             // 合成贴图与舞台随场景销毁（物品实例都没了，缓存全部失效）
             _compositeSprites.Clear();
@@ -1601,6 +1602,88 @@ namespace ItemCatalog.UI
         private static void OnTakeModeChanged(bool value)
         {
             _takeMode = value;
+
+            if (!value) SetDropHighlight(false);
+        }
+
+        /// <summary>作弊模式：点击拿取、拖到面板上删除，都只看这一个开关。</summary>
+        internal static bool TakeMode { get { return _takeMode; } }
+
+        private static UnityEngine.UI.Image _dropHighlight;
+
+        /// <summary>
+        /// 拖动物品且指针压在面板上时，给整块面板蒙一层红底，提示「松手即删除」。
+        ///
+        /// 只在拖拽期间才做事：没在拖的时候这里只读一个静态字段就返回。
+        /// </summary>
+        internal static void DragHighlightTick()
+        {
+            bool dragging = false;
+
+            try
+            {
+                var handler = ItemMouseDragHandler.current;
+                dragging = handler != null && handler.IsDraggingItem;
+            }
+            catch { dragging = false; }
+
+            if (!dragging)
+            {
+                SetDropHighlight(false);
+                return;
+            }
+
+            bool over = false;
+            try { over = IsPointerOverPanel(Input.mousePosition); }
+            catch { }
+
+            // 只有作弊模式下松手才会删，普通模式不该给这种暗示
+            SetDropHighlight(over && _takeMode);
+        }
+
+        private static void SetDropHighlight(bool on)
+        {
+            if (!on)
+            {
+                if (_dropHighlight != null) _dropHighlight.gameObject.SetActive(false);
+                return;
+            }
+
+            if (_window == null || !_window.IsAlive || !_window.IsVisible) return;
+
+            var root = _window.Rect;
+            if (root == null) return;
+
+            try
+            {
+                if (_dropHighlight == null || _dropHighlight.transform.parent != root)
+                {
+                    var go = new GameObject("dropHighlight",
+                        typeof(RectTransform), typeof(UnityEngine.UI.Image));
+
+                    var rect = (RectTransform)go.transform;
+                    rect.SetParent(root, false);
+                    rect.anchorMin = Vector2.zero;
+                    rect.anchorMax = Vector2.one;
+                    rect.offsetMin = Vector2.zero;
+                    rect.offsetMax = Vector2.zero;
+
+                    var image = go.GetComponent<UnityEngine.UI.Image>();
+                    image.color = new Color(0.85f, 0.12f, 0.12f, 0.35f);
+                    image.raycastTarget = false;
+
+                    go.layer = root.gameObject.layer;
+
+                    _dropHighlight = image;
+                }
+
+                if (!_dropHighlight.gameObject.activeSelf)
+                    _dropHighlight.gameObject.SetActive(true);
+
+                // 盖在最上层，但不吃射线
+                _dropHighlight.transform.SetAsLastSibling();
+            }
+            catch (Exception e) { Warn("drop highlight: " + e.Message); }
         }
 
         /// <summary>外部窗口用 AddButton 建格子时，左键回调直接复用图鉴的选中动作。</summary>
@@ -1715,19 +1798,23 @@ namespace ItemCatalog.UI
                 // 刚拖拽过：这次松手不再当成点击，否则会多取一件
                 if (Time.unscaledTime < _suppressClickUntil) return;
 
-                // 点击拿取已注释掉（用户要求）：点击不再把物品放进背包，只保留拖拽。
-                // 恢复时解开下面这行，以及 TakeItem 方法上的 #if false。
-                // if (_takeMode) TakeItem(entry);
+                // 作弊模式：点击直接把物品塞进背包（和 JEI 的作弊模式一致），
+                // 不打开合成表——要查来源就去点右键，或关掉作弊模式。
+                if (_takeMode)
+                {
+                    TakeItem(entry);
+                    return;
+                }
 
-                // 点击改为打开这件物品的合成表（只读）
+                // 普通模式：点击打开这件物品的合成表（只读）
                 RecipeWindow.OpenFor(entry);
             };
         }
 
-#if false   // 点击拿取已注释（只保留拖拽）；恢复时连同 MakeSelect 里的调用一起解开
         /// <summary>
         /// 把这一格对应的物品放进玩家背包：先按图鉴的规则造一份全新实例
         /// （变体、纯度、灌装都和图鉴里显示的一致），再交给原版接口找空位放入。
+        /// 只在作弊模式下由点击触发。
         /// </summary>
         private static void TakeItem(ItemEntry entry)
         {
@@ -1747,7 +1834,6 @@ namespace ItemCatalog.UI
                     + " count=" + item.unitCount + " -> inventory");
             }
         }
-#endif
 
         /// <summary>
         /// 按图鉴这一格的规则造一份全新实例（变体 / 纯度 / 灌装 / 去号码都一致）。
