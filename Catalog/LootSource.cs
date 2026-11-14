@@ -173,6 +173,73 @@ namespace ItemCatalog.Catalog
             return _boxPools.TryGetValue(boxId, out pool) ? pool : null;
         }
 
+        /// <summary>
+        /// 池 id → 使用它的地方（`Data/loot_pools.csv`）。
+        ///
+        /// 掉落池本身只是个数据表，玩家真正遇到它是在某个具体场合：
+        /// 探险点的垃圾堆、小偷身上的货、拾荒者的货单、某个箱子的内容物。
+        /// 这张表把这些场合写下来，来源页就不必只甩一个 `medicalTable` 给玩家。
+        /// </summary>
+        private static readonly Dictionary<string, string[]> _poolUses =
+            new Dictionary<string, string[]>(StringComparer.Ordinal);
+
+        private static bool _poolUsesLoaded;
+
+        internal static string[] UsesFor(string poolId)
+        {
+            if (string.IsNullOrEmpty(poolId)) return new string[0];
+
+            EnsurePoolUses();
+
+            string[] uses;
+            return _poolUses.TryGetValue(poolId, out uses) && uses != null ? uses : new string[0];
+        }
+
+        private static void EnsurePoolUses()
+        {
+            if (_poolUsesLoaded) return;
+            _poolUsesLoaded = true;
+
+            string text = null;
+            try { text = ModHelper.ReadModFileText(ModEntry.MOD_ID, "Data/loot_pools.csv"); }
+            catch (Exception e) { Warn("loot_pools: " + e.Message); }
+
+            if (string.IsNullOrEmpty(text)) return;
+
+            var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (line.Length == 0 || line[0] == '#') continue;
+
+                string[] cols;
+                try { cols = SourceIndex.ParseCsvRow(line); }
+                catch { continue; }
+
+                if (cols.Length < 2) continue;
+
+                string pool = cols[0].Trim();
+                string uses = cols[1].Trim();
+
+                if (pool.Length == 0 || uses.Length == 0) continue;
+                if (string.Equals(pool, "pool", StringComparison.OrdinalIgnoreCase)) continue;   // 表头
+
+                string[] parts = uses.Split('|');
+                var list = new List<string>(parts.Length);
+                for (int k = 0; k < parts.Length; k++)
+                {
+                    string part = parts[k].Trim();
+                    if (part.Length > 0) list.Add(part);
+                }
+
+                if (list.Count > 0) _poolUses[pool] = list.ToArray();
+            }
+
+            if (ModEntry.Log != null)
+                ModEntry.Log.Log("[loot] pool->uses rows=" + _poolUses.Count);
+        }
+
         /// <summary>反查：这个池是哪个箱子开出来的（取第一个登记的箱子）；没有返回 null。</summary>
         internal static string BoxForPool(string poolId)
         {

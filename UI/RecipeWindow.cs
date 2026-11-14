@@ -1516,7 +1516,28 @@ namespace ItemCatalog.UI
             // 箱子旁边并排画那张卡（`box_pools.csv` 第 3 列，或锁标签推出来）
             string keyId = LootKeyFor(boxId, boxEntry);
 
-            if (boxEntry == null) builder.AddLabel(PoolName(table.TableId), "loot_pool");
+            if (boxEntry == null)
+            {
+                // 这个池没有对应的箱子：写清「哪个场合在用它」——
+                // 垃圾堆、小偷随身货、拾荒者货单之类，玩家真正遇到池的地方。
+                var uses = LootSource.UsesFor(table.TableId);
+                var names = new List<string>(uses.Length);
+                for (int i = 0; i < uses.Length; i++)
+                {
+                    string name = PoolUseName(uses[i]);
+                    if (!string.IsNullOrEmpty(name)) names.Add(name);
+                }
+
+                if (names.Count > 0)
+                {
+                    builder.AddLabel(Loc("loot_where", "用这个池的地方"), "loot_where");
+                    builder.AddLabel(string.Join(" · ", names.ToArray()), "loot_where_list");
+                }
+                else
+                {
+                    builder.AddLabel(PoolName(table.TableId), "loot_pool");
+                }
+            }
 
             var pair = new List<string>(2);
             if (boxEntry != null) pair.Add(boxId);
@@ -1643,6 +1664,40 @@ namespace ItemCatalog.UI
         /// 掉落池 id → 可读名。认不出来的原样显示，方便发现新池子。
         /// 已知的 12 个来自日志：`[loot] tables=13 ids=…`
         /// </summary>
+        /// <summary>
+        /// 解析 `loot_pools.csv` 里的一个「使用处」记号：
+        /// `key:loot_use_junk_pile` 取模组本地化，`item:scav_crate` 取物品显示名，
+        /// 其它记号原样当文字。
+        /// </summary>
+        private static string PoolUseName(string token)
+        {
+            if (string.IsNullOrEmpty(token)) return null;
+
+            string value = token.Trim();
+
+            if (value.StartsWith("key:", StringComparison.OrdinalIgnoreCase))
+            {
+                string key = value.Substring(4).Trim();
+                if (key.Length == 0) return null;
+
+                string text = ModEntry.T(key);
+                return string.IsNullOrEmpty(text) || string.Equals(text, key, StringComparison.Ordinal)
+                    ? null
+                    : text;
+            }
+
+            if (value.StartsWith("item:", StringComparison.OrdinalIgnoreCase))
+            {
+                string id = value.Substring(5).Trim();
+                if (id.Length == 0) return null;
+
+                var entry = RecipeIndex.FindEntry(id);
+                return entry == null ? id : entry.DisplayName;
+            }
+
+            return value;
+        }
+
         private static string PoolName(string tableId)
         {
             switch ((tableId ?? string.Empty).Trim())

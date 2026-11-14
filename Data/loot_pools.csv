@@ -1,0 +1,39 @@
+# Probably Enough Items · 掉落池的使用场合
+#
+# 掉落池本身只是数据表，玩家真正遇到它是在某个具体场合：探险点的垃圾堆、
+# 小偷身上的货、拾荒者的货单、某个箱子的内容物。这张表把这些场合写下来，
+# 来源页的「掉落池」就不必只甩一个 `medicalTable` 给玩家。
+#
+# 列：pool,uses
+#   pool  掉落池 id（可用值看日志 `[loot] tables=… ids=…`）
+#   uses  使用它的地方，多个用 `|` 分隔。记号三种：
+#           key:<模组本地化键>   → 取 zh/en/ru.csv 里的文案
+#           item:<物品 id>       → 画成物品名
+#           其它                 → 原样当文字
+#
+# 只有「找不到对应箱子」（box_pools.csv 里没登记）的池才需要写在这里：
+# 有箱子的池，来源页会直接把那个箱子画出来。
+#
+# 数据来源：Assembly-CSharp.dll 里按池 id 反查引用它的方法（2026-11-14）：
+#   junkTable            ← ExpeditionPoiList::JunkPile / SpawnDumpingGroundLoot / PullDumpingGround
+#   materialTable        ← Eleanor5 剧情分支
+#   householdTable       ← CreatePettyThief（小偷随身货）
+#   packedFoodTable      ← 拾荒者货单 / 食品过剩商 / 小偷 / FillService（服务箱内容）
+#   medicalTable         ← CreatePettyThief
+#   dumpingGroundTG      ← ExpeditionPoiList::ScrapPile / ScavHelper::SpawnDumpingGroundLoot
+#   dumpingGroundFreshTG ← ExpeditionPoiList::FreshScrapPile
+#   POI_dumpingGround    ← ExpeditionLocationList::DumpingGrounds
+#
+# 剩下这 6 个池在代码里没有直接引用（只出现在 level1 / sharedassets1 的场景数据中，
+# 属于布置在场景里的容器）：accessCardTable、allModuleTable、makeshiftWeaponTable、
+# t1moduleTable、t2moduleTable、toolTable。它们暂时只能显示池名。
+
+pool,uses
+POI_dumpingGround,key:loot_use_dump_ground
+junkTable,key:loot_use_junk_pile|key:loot_use_dump_dig
+materialTable,key:loot_use_eleanor_story
+householdTable,key:loot_use_thief
+packedFoodTable,key:loot_use_scav_stock|key:loot_use_food_surplus|key:loot_use_thief|key:loot_use_service_box
+medicalTable,key:loot_use_thief
+dumpingGroundTG,key:loot_use_scrap_pile|key:loot_use_dump_dig
+dumpingGroundFreshTG,key:loot_use_fresh_pile
