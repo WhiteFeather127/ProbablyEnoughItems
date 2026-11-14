@@ -38,9 +38,9 @@ namespace ItemCatalog.UI
         private const float TextWidth = 100f;
         private const float TextHeight = 30f;
 
-        /// <summary>图标按钮保留游戏按钮框后的外框尺寸。</summary>
-        private const float IconButtonWidth = 40f;
-        private const float IconButtonHeight = 32f;
+        /// <summary>图标按钮保留游戏按钮框后的外框尺寸（正方形）。</summary>
+        private const float IconButtonWidth = 34f;
+        private const float IconButtonHeight = 34f;
 
         /// <summary>实际用的按钮尺寸：有图标就套在按钮框里，没有才用文字宽度。</summary>
         private static float _width = IconButtonWidth;
@@ -123,6 +123,49 @@ namespace ItemCatalog.UI
                 go.layer = host.gameObject.layer;
             }
             catch (Exception e) { Warn("attach icon: " + e.Message); }
+        }
+
+        /// <summary>
+        /// 把按钮钉成正方形。
+        ///
+        /// `BuildInto` 给容器挂的布局组默认 `childForceExpandWidth = true`，
+        /// 会把子按钮横向拉满整行，于是看起来是条横杠。这里关掉强制扩展，
+        /// 再用 LayoutElement 把首选尺寸固定成边长。
+        /// </summary>
+        private static void ForceSquare(CustomUIElement element, float side)
+        {
+            if (element == null || element.Rect == null) return;
+
+            try
+            {
+                var rect = element.Rect;
+
+                var parent = rect.parent;
+                if (parent != null)
+                {
+                    var group = parent.GetComponent<UnityEngine.UI.HorizontalOrVerticalLayoutGroup>();
+                    if (group != null)
+                    {
+                        group.childControlWidth = true;
+                        group.childControlHeight = true;
+                        group.childForceExpandWidth = false;
+                        group.childForceExpandHeight = false;
+                    }
+                }
+
+                var layout = rect.GetComponent<UnityEngine.UI.LayoutElement>();
+                if (layout == null) layout = rect.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
+
+                layout.minWidth = side;
+                layout.minHeight = side;
+                layout.preferredWidth = side;
+                layout.preferredHeight = side;
+                layout.flexibleWidth = 0f;
+                layout.flexibleHeight = 0f;
+
+                rect.sizeDelta = new Vector2(side, side);
+            }
+            catch (Exception e) { Warn("force square: " + e.Message); }
         }
 
         /// <summary>一枚按钮 = 一个贴靠目标。</summary>
@@ -391,7 +434,11 @@ namespace ItemCatalog.UI
                 CustomUIBuilder.RebuildLayout(rect);
 
                 // 布局算完再塞图标：图标是拉伸铺满按钮框的，此时父节点尺寸才可靠
-                if (icon != null) AttachIcon(button, icon);
+                if (icon != null)
+                {
+                    ForceSquare(button, IconButtonWidth);
+                    AttachIcon(button, icon);
+                }
 
                 var element = builder.Last;
                 if (element != null && element.Rect != null &&
