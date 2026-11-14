@@ -120,7 +120,7 @@ client,RetiredWaterMerchant,name_retired_water_merchant,,,退休者,pool:GetRand
 client,RetiredWinemaker,name_retired_winemaker,,,退休者,pool:GetRandomFarmerSpriteName,,,,,water_ration|wine_berry|wine_bottle|wine_superyeast|wine_yeast|wine_yeast_infinite,,,,
 # ---- 商贩/买家 ----
 client,CorporateBuyerClient,name_corporate_representative,,,商贩/买家,pool:GetRandomUpperSpriteName,,,,bottled_water_premium,bottled_water|bottled_water_premium|large_bottled_water,,,,
-client,LotteryRep,name_lottery_representative,,,商贩/买家,lotteryRep,,,,,lottery_info|lottery_ticket|scratcher,,,,
+client,lotteryRep,name_lottery_representative,,,商贩/买家,pool:GetRandomScavSpriteName,,,,,lottery_info|lottery_ticket|scratcher,,,,
 client,PanicBuyerClient,name_spacer,,,商贩/买家,pool:GetRandomLowerLevelSpriteName,,,FOOD|HOUSEHOLD_GOOD|BREVAGE,,bottled_water|large_bottled_water|small_bottled_water,,,,
 # ---- 其他 ----
 client,BrokenMachineIntroduction,name_scrapper,,,其他,pool:GetRandomScavSpriteName,,,,,ruined_machine_small,,,,
