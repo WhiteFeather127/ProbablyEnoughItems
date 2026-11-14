@@ -573,7 +573,16 @@ namespace ItemCatalog.UI
                 var loot = LootSource.For(_entry.Id);
                 if (loot.Count > 0)
                 {
-                    _categories.Add(new Category { Kind = CatLoot, Loot = loot });
+                    // 只留「玩家真能遇到」的池：能对到箱子，或写明了使用场合。
+                    // 只埋在场景数据里的池直接不列。
+                    var used = new List<LootTableInfo>(loot.Count);
+                    for (int i = 0; i < loot.Count; i++)
+                    {
+                        if (LootSource.IsUsed(loot[i])) used.Add(loot[i]);
+                    }
+
+                    if (used.Count > 0)
+                        _categories.Add(new Category { Kind = CatLoot, Loot = used });
                 }
             }
             else

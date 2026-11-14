@@ -185,6 +185,20 @@ namespace ItemCatalog.Catalog
 
         private static bool _poolUsesLoaded;
 
+        /// <summary>
+        /// 这个池有没有「玩家能遇到」的去处：要么登记了箱子（`box_pools.csv`），
+        /// 要么写了使用场合（`loot_pools.csv`）。
+        ///
+        /// 都没有的池（只埋在场景数据里的那几个），玩家永远碰不到，
+        /// 来源页干脆不列——列出来只会让人以为「某个地方能开，但查不到是哪」。
+        /// </summary>
+        internal static bool IsUsed(LootTableInfo table)
+        {
+            if (table == null || string.IsNullOrEmpty(table.TableId)) return false;
+            if (!string.IsNullOrEmpty(BoxForPool(table.TableId))) return true;
+            return UsesFor(table.TableId).Length > 0;
+        }
+
         internal static string[] UsesFor(string poolId)
         {
             if (string.IsNullOrEmpty(poolId)) return new string[0];
