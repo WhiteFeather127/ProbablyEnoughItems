@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -68,6 +69,43 @@ namespace ItemCatalog.UI
 
             try { Refresh(); }
             catch (Exception e) { Warn("inject launch button: " + e.Message); }
+
+            BeginRetry();
+        }
+
+        private static Coroutine _retry;
+        private const float RetrySeconds = 4f;
+
+        /// <summary>
+        /// 换场景的瞬间店铺 UI 还没排好布局（矩形还是 0×0），这一帧解析不到目标，
+        /// 之后又没有窗口事件可等，按钮就只能等到某个偶然的事件才冒出来。
+        ///
+        /// 所以场景加载后开一段**有上限**的补挂：每帧试一次，挂上立刻停。
+        /// 这不是常驻轮询——按钮挂上后连这个协程都不存在了。
+        /// </summary>
+        private static void BeginRetry()
+        {
+            if (_retry != null) return;
+
+            try { _retry = ModHelper.StartCoroutine(ModEntry.MOD_ID, RetryRoutine()); }
+            catch (Exception e) { Warn("retry start: " + e.Message); _retry = null; }
+        }
+
+        private static IEnumerator RetryRoutine()
+        {
+            float deadline = Time.unscaledTime + RetrySeconds;
+
+            while (Time.unscaledTime < deadline)
+            {
+                yield return null;
+
+                if (_docks.Count > 0) break;   // 已经挂上，收工
+
+                try { Refresh(); }
+                catch { }
+            }
+
+            _retry = null;
         }
 
         /// <summary>

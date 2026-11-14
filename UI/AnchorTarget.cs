@@ -228,8 +228,10 @@ namespace ItemCatalog.UI
                 _scenePanel = null;
             }
 
+            // 换场景后界面还在构建，底部区块会晚几帧才有尺寸：扫描间隔放短，
+            // 但真正跑多久由 LauncherButton 那段有上限的补挂决定。
             if (Time.unscaledTime < _nextScenePanelScanAt) return null;
-            _nextScenePanelScanAt = Time.unscaledTime + 1f;
+            _nextScenePanelScanAt = Time.unscaledTime + 0.15f;
 
             RectTransform best = null;
             float bestWidth = 0f;
