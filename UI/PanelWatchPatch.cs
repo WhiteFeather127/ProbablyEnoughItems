@@ -77,6 +77,18 @@ namespace ItemCatalog.UI
                     patched++;
                 }
 
+                // 构造函数也钩：窗口节点就是在这一刻被 new 出来的。
+                // 有了这个回调，就不用在场景里 FindObjectsOfType 猜「哪块 UI 是刚建的」。
+                var created = new HarmonyMethod(typeof(PanelWatchPatch)
+                    .GetMethod(nameof(OnWindowCreated), BindingFlags.NonPublic | BindingFlags.Static));
+
+                var ctor = AccessTools.Constructor(typeof(PixelWindow));
+                if (ctor != null)
+                {
+                    harmony.Patch(ctor, postfix: created);
+                    patched++;
+                }
+
                 if (ModEntry.Log != null)
                     ModEntry.Log.Log("[panelwatch] patched " + patched + " PixelWindow lifecycle method(s)");
             }
@@ -85,6 +97,13 @@ namespace ItemCatalog.UI
                 if (ModEntry.Log != null)
                     ModEntry.Log.Warning("[panelwatch] install failed (launcher button will not follow panel geometry): " + e.Message);
             }
+        }
+
+        /// <summary>构造钩子：窗口对象刚被 new 出来的瞬间。</summary>
+        private static void OnWindowCreated(PixelWindow __instance)
+        {
+            try { LauncherButton.OnPanelCreated(__instance); }
+            catch { }
         }
 
         /// <summary>实例方法钩子：任何窗口的显示/隐藏/布局变化。</summary>

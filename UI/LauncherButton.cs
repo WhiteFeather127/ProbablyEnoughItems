@@ -132,6 +132,31 @@ namespace ItemCatalog.UI
             Cleanup();
         }
 
+        /// <summary>
+        /// 窗口对象刚被 new 出来的瞬间（`PixelWindow..ctor` 后置钩子）。
+        /// 把它记进候选名单并立刻试挂一次——不需要再在场景里扫。
+        /// </summary>
+        internal static void OnPanelCreated(PixelWindow window)
+        {
+            if (window == null) return;
+
+            try
+            {
+                var node = AnchorTarget.WindowRectOf(window);
+                if (node != null) AnchorTarget.RegisterPanel(node);
+            }
+            catch { }
+
+            // 一次场景加载会构造几十个窗口，同一帧内不必每个都重排
+            if (Time.unscaledTime < _nextCreatedRefreshAt) return;
+            _nextCreatedRefreshAt = Time.unscaledTime + 0.05f;
+
+            try { Refresh(); }
+            catch (Exception e) { Warn("panel created: " + e.Message); }
+        }
+
+        private static float _nextCreatedRefreshAt;
+
         /// <summary>窗口几何变了：立刻重排一次。</summary>
         internal static void OnPanelGeometryChanged(PixelWindow window)
         {

@@ -212,6 +212,22 @@ namespace ItemCatalog.UI
         private static float _nextScenePanelScanAt;
         private static float _nextSceneProbeLogAt;
 
+        /// <summary>构造时登记过的窗口节点（`PanelWatchPatch` 的构造钩子写入）。</summary>
+        private static readonly List<RectTransform> _panels = new List<RectTransform>(16);
+
+        /// <summary>窗口刚被 new 出来时登记：之后找「底部那排」只在这份名单里找。</summary>
+        internal static void RegisterPanel(RectTransform node)
+        {
+            if (node == null) return;
+
+            for (int i = 0; i < _panels.Count; i++)
+            {
+                if (_panels[i] == node) return;
+            }
+
+            _panels.Add(node);
+        }
+
         internal static RectTransform ResolveScenePanel()
         {
             var cached = _scenePanel;
@@ -230,10 +246,16 @@ namespace ItemCatalog.UI
                 _scenePanel = null;
             }
 
-            // 换场景后界面还在构建，底部区块会晚几帧才有尺寸：扫描间隔放短，
-            // 但真正跑多久由 LauncherButton 那段有上限的补挂决定。
+            // 名单很短（只有窗口节点），扫描本身很便宜，所以基本不节流：
+            // 窗口一被构造我们就会收到回调，这里能立刻看到它。
             if (Time.unscaledTime < _nextScenePanelScanAt) return null;
-            _nextScenePanelScanAt = Time.unscaledTime + 0.15f;
+            _nextScenePanelScanAt = Time.unscaledTime + 0.02f;
+
+            // 场景卸载后节点会被销毁，名单里留着的引用就变成 null，顺手清掉
+            for (int i = _panels.Count - 1; i >= 0; i--)
+            {
+                if (_panels[i] == null) _panels.RemoveAt(i);
+            }
 
             RectTransform best = null;
             float bestWidth = 0f;
@@ -246,24 +268,27 @@ namespace ItemCatalog.UI
 
             try
             {
-                var all = UnityEngine.Object.FindObjectsOfType<RectTransform>();
-                for (int i = 0; i < all.Length; i++)
+                // 只查「登记过的窗口节点」：每个 PixelWindow 在构造时由 PanelWatchPatch 记进来。
+                // 以前是全场景 FindObjectsOfType 猜哪块 UI 是刚建的，既慢又抓不准时机。
+                for (int i = 0; i < _panels.Count; i++)
                 {
-                    var rt = all[i];
+                    var rt = _panels[i];
                     if (rt == null || !rt.gameObject.activeInHierarchy) continue;
-                    if (rt.name == "WindowUICanvas") continue;
 
                     scanned++;
 
+                    // PixelWindow 的 rectTransform 常是 0×0 的壳，真正的尺寸在子节点上
+                    var node = PickSizedNode(rt) ?? rt;
+
                     Rect rect;
-                    try { rect = DockedLayout.ToWorldRect(rt); }
+                    try { rect = DockedLayout.ToWorldRect(node); }
                     catch { continue; }
 
                     if (rect.width > 80f && rect.height > 30f)
                     {
                         probes.Add(new KeyValuePair<float, string>(rect.width, string.Format(
                             "{0}  {1:F0}x{2:F0} @({3:F0},{4:F0})",
-                            rt.name, rect.width, rect.height, rect.center.x, rect.center.y)));
+                            node.name, rect.width, rect.height, rect.center.x, rect.center.y)));
                     }
 
                     // 阈值只用来排除图标/文字这种小块，不要卡得太严：
@@ -281,7 +306,7 @@ namespace ItemCatalog.UI
 
                     if (rect.width > bestWidth)
                     {
-                        best = rt;
+                        best = node;
                         bestWidth = rect.width;
                         bestRect = rect;
                     }
