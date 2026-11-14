@@ -38,9 +38,13 @@ namespace ItemCatalog.UI
         private const float TextWidth = 100f;
         private const float TextHeight = 30f;
 
-        /// <summary>图标按钮保留游戏按钮框后的外框尺寸（正方形）。</summary>
-        private const float IconButtonWidth = 46f;
-        private const float IconButtonHeight = 46f;
+        /// <summary>
+        /// 图标按钮的外框尺寸（正方形）。
+        /// 取 70 = 32（图标原始边长）× 2 倍 + 两侧各 3 像素内边距，
+        /// 保证像素图按整数倍放大，不会被拉糊。
+        /// </summary>
+        private const float IconButtonWidth = 70f;
+        private const float IconButtonHeight = 70f;
 
         /// <summary>实际用的按钮尺寸：有图标就套在按钮框里，没有才用文字宽度。</summary>
         private static float _width = IconButtonWidth;
@@ -73,8 +77,8 @@ namespace ItemCatalog.UI
                     return null;
                 }
 
-                // 图标会被放大到 40 像素左右，双线性比点采样更平滑（32→40 不是整数倍）
-                tex.filterMode = FilterMode.Bilinear;
+                // 像素图：点采样 + 整数倍放大，否则边缘会糊
+                tex.filterMode = FilterMode.Point;
                 tex.wrapMode = TextureWrapMode.Clamp;
 
                 _icon = Sprite.Create(tex, new Rect(0f, 0f, tex.width, tex.height),
@@ -108,13 +112,17 @@ namespace ItemCatalog.UI
                 var rect = (RectTransform)go.transform;
                 rect.SetParent(host, false);
 
-                // 拉伸铺满按钮框（四周留 3 像素内边距）：这样按钮多大图标就多大，
-                // 不用等布局算完再去量尺寸
-                rect.anchorMin = Vector2.zero;
-                rect.anchorMax = Vector2.one;
+                // 整数倍放大：32 的图在 70 的框里放 2 倍（64），点采样下每个像素都是方块，
+                // 不做任意比例缩放（那样必然出现粗细不一的像素边）
+                int native = Mathf.Max(1, Mathf.RoundToInt(icon.rect.width));
+                int scale = Mathf.Max(1, Mathf.FloorToInt((IconButtonWidth - 6f) / native));
+                float side = native * scale;
+
+                rect.anchorMin = new Vector2(0.5f, 0.5f);
+                rect.anchorMax = new Vector2(0.5f, 0.5f);
                 rect.pivot = new Vector2(0.5f, 0.5f);
-                rect.offsetMin = new Vector2(3f, 3f);
-                rect.offsetMax = new Vector2(-3f, -3f);
+                rect.anchoredPosition = Vector2.zero;
+                rect.sizeDelta = new Vector2(side, side);
 
                 var image = go.GetComponent<UnityEngine.UI.Image>();
                 image.sprite = icon;
