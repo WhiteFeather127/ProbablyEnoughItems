@@ -213,14 +213,14 @@ namespace ItemCatalog.UI
             _page = 0;
 
             if (_window == null || !_window.IsAlive) Create();
-            else Render();
-
-            // 窗口是复用的：不提到最前就会被图鉴盖住，看起来像「点了没反应」。
-            // 图鉴自己也是这么做的（CatalogWindow 打开时 BringToFront）。
-            if (_window != null && _window.IsAlive)
+            else
             {
-                try { _window.BringToFront(); } catch { }
+                // 复用时窗口可能只是被隐藏了：先显示再重画
+                try { _window.Show(); } catch { }
+                Render();
             }
+
+            if (_window != null && _window.IsAlive) Raise();
 
             // 这一帧往后一点点再提一次：点击事件里图鉴自己也会 BringToFront，
             // 谁后执行谁在上面，晚一帧补一次才稳。
@@ -231,10 +231,50 @@ namespace ItemCatalog.UI
                 try
                 {
                     ModEntry.Log.Log("[recipe] open id=" + entry.Id + " asUse=" + asUse
-                                     + " cats=" + _categories.Count);
+                                     + " cats=" + _categories.Count + " " + State());
                 }
                 catch { }
             }
+        }
+
+        /// <summary>
+        /// 把窗口提到最前并确保处于显示状态。
+        ///
+        /// `BringToFront` 只处理窗口管理器自己的顺序，可能仍被同层的其他节点压住，
+        /// 所以再补一次 `SetAsLastSibling`。
+        /// </summary>
+        private static void Raise()
+        {
+            if (_window == null || !_window.IsAlive) return;
+
+            try { _window.Show(); } catch { }
+            try { _window.BringToFront(); } catch { }
+
+            try
+            {
+                var root = _window.root;
+                if (root != null) root.transform.SetAsLastSibling();
+            }
+            catch { }
+        }
+
+        /// <summary>一行窗口状态，用来判断「打开了但看不见」是尺寸还是层级问题。</summary>
+        private static string State()
+        {
+            try
+            {
+                var rect = _window.Rect;
+                if (rect == null) return "state rect=null";
+
+                var size = rect.rect;
+                var pos = rect.position;
+
+                return string.Format(
+                    "visible={0} size={1:F0}x{2:F0} pos=({3:F0},{4:F0}) sibling={5} parent={6}",
+                    _window.IsVisible, size.width, size.height, pos.x, pos.y,
+                    rect.GetSiblingIndex(), rect.parent == null ? "?" : rect.parent.name);
+            }
+            catch (Exception e) { return "state error: " + e.Message; }
         }
 
         /// <summary>窗口是否还开着：图鉴的拖拽 / 提示框允许详情窗口单独存在。</summary>
@@ -286,7 +326,7 @@ namespace ItemCatalog.UI
             if (_raiseAt > 0f && Time.unscaledTime >= _raiseAt)
             {
                 _raiseAt = 0f;
-                try { _window.BringToFront(); } catch { }
+                Raise();
             }
 
             if (Time.unscaledTime < _portraitNextAt) return;   // 立绘与货单图标共用同一个 1 秒节拍
