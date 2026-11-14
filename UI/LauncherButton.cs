@@ -176,6 +176,22 @@ namespace ItemCatalog.UI
             // 布局还没跑完（0 尺寸）时先保持现状，等下一次布局事件
             if (bounds.width < 2f || bounds.height < 2f) return;
 
+            // 画布兜底不能当锚点。`AnchorTarget.Resolve` 找不到物品栏窗口时会退回
+            // `StoreUIManager.inventoryCanvas`，那是整屏矩形（日志里见过的
+            // `bounds=1920x1080@(0,0)`），照它摆就会把按钮甩到屏幕右下角 —— 这就是
+            // 「按钮偏移」。这种尺寸直接忽略，保持上一次的正确位置。
+            var parentRect = parent.rect;
+            if (bounds.width >= parentRect.width - 1f && bounds.height >= parentRect.height - 1f)
+            {
+                if (ModEntry.Log != null && Time.unscaledTime > _nextCanvasSkipLogAt)
+                {
+                    _nextCanvasSkipLogAt = Time.unscaledTime + 60f;
+                    ModEntry.Log.Log("[button] 目标退化成整块画布，保持上次位置："
+                        + Mathf.RoundToInt(bounds.width) + "x" + Mathf.RoundToInt(bounds.height));
+                }
+                return;
+            }
+
             // 矩形没变就不动（Validate 这类钩子可能很频繁）
             if (RectNear(bounds, _dockedBounds)) return;
 
@@ -201,6 +217,7 @@ namespace ItemCatalog.UI
 
         private static int _dockLogCount;
         private static float _nextDockLogAt;
+        private static float _nextCanvasSkipLogAt;   // 「目标退化成画布」这条日志的节流
 
         private static void OpenCatalog()
         {
