@@ -83,13 +83,3 @@ name_billy,Billy
 name_aug_med,Augmentation Medic
 name_aug_material,Augmentation Supplier
 loot_where,Where this pool is used
-loot_use_dump_ground,Dumping grounds
-loot_use_junk_pile,Junk pile
-loot_use_scrap_pile,Scrap pile
-loot_use_fresh_pile,Fresh scrap pile
-loot_use_dump_dig,Digging the dumping ground
-loot_use_thief,Thief's pockets
-loot_use_scav_stock,Scav stock
-loot_use_food_surplus,Food surplus client
-loot_use_service_box,Service box contents
-loot_use_eleanor_story,Eleanor storyline

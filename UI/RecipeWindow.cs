@@ -1674,8 +1674,46 @@ namespace ItemCatalog.UI
         /// 已知的 12 个来自日志：`[loot] tables=13 ids=…`
         /// </summary>
         /// <summary>
+        /// 直接查游戏自己的本地化表（不经过我们那份 csv）。
+        ///
+        /// 依次试 ClientName / UI / 机制 / 通用四张表；取不到（回显 key 或
+        /// `Translation Error"…"`）都算失败，返回 null。
+        /// </summary>
+        private static string GameLocText(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return null;
+
+            string text = null;
+
+            try { text = LocHelper.GetLocalizedClientName(key); } catch { }
+            if (IsMissingTranslation(text, key))
+            {
+                try { text = LocHelper.GetLocalizedUIOrDefault(key, null); } catch { }
+            }
+            if (IsMissingTranslation(text, key))
+            {
+                try { text = LocHelper.GetLocalizedMechanicOrDefault(key, null); } catch { }
+            }
+            if (IsMissingTranslation(text, key))
+            {
+                try { text = LocHelper.GetLocalized(key, null); } catch { }
+            }
+
+            return IsMissingTranslation(text, key) ? null : text;
+        }
+
+        /// <summary>空串、回显 key、或游戏那句 `Translation Error"…"` 都算没翻出来。</summary>
+        private static bool IsMissingTranslation(string text, string key)
+        {
+            if (string.IsNullOrEmpty(text)) return true;
+            if (string.Equals(text, key, StringComparison.OrdinalIgnoreCase)) return true;
+            return text.IndexOf("Translation Error", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
         /// 解析 `loot_pools.csv` 里的一个「使用处」记号：
-        /// `key:loot_use_junk_pile` 取模组本地化，`item:scav_crate` 取物品显示名，
+        /// `game:dumping_ground_pile` 取**游戏自己的**本地化（地点、客人名、UI 文案都走这条），
+        /// `item:service_box` 取物品显示名，`key:<模组键>` 取模组本地化，
         /// 其它记号原样当文字。
         /// </summary>
         private static string PoolUseName(string token)
@@ -1683,6 +1721,15 @@ namespace ItemCatalog.UI
             if (string.IsNullOrEmpty(token)) return null;
 
             string value = token.Trim();
+
+            // 官方键优先：垃圾堆、垃圾场、小偷这些场合本来就是游戏里的名词，
+            // 直接借游戏的翻译，不用我们再编一套。
+            if (value.StartsWith("game:", StringComparison.OrdinalIgnoreCase))
+            {
+                string key = value.Substring(5).Trim();
+                if (key.Length == 0) return null;
+                return GameLocText(key);
+            }
 
             if (value.StartsWith("key:", StringComparison.OrdinalIgnoreCase))
             {
