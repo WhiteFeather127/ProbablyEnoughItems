@@ -251,7 +251,8 @@ client,mercenaryBuyer,name_mercenary,,,,pool:GetRandomMercSpriteName,,,WEAPON|AR
 
 # --- 黑市 ---
 faction,faction_name_black_market,,,,,
-client,wanted5,name_lou,,,,pool:GetRandomShadySpriteName,,,MELEE_WEAPON|welder|screwdriver,,,,,,
+client,louDemandCollect,name_lou,,,黑市/求购,wanted5,,,WEAPON|FIREARM|MELEE_WEAPON|AMMUNITION|MEDICAL,bribeDonation,,,,
+client,wanted5,name_lou,,,,wanted5,,,MELEE_WEAPON|welder|screwdriver,,,,,,
 client,woundedMan,name_wounded_man,,,,pool:GetRandomBMMaleSpriteName,,,MEDICAL,,,,,,
 client,poisonBuyer,name_shady_buyer,,,,pool:GetRandomShadySpriteName,,,POISON|CHEMICAL_SUPPLIES,,,,,,
 client,shadyMerchant,name_shady_merchant,,,,pool:GetShadyMerchantSpriteName,,,CONTRABAND|ACCESS_CARD,,,,,,
@@ -284,7 +285,6 @@ client,foodieTouristReturning,name_foodie_tourist,,,,pool:GetFoodieSpriteName,,,
 client,officerLunVisit,name_lun,,,,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
 client,officerLunShot,name_lun,,,,pool:GetRandomLowerLevelSpriteName,,,MEDICAL|NARCOTIC,,,,,,
 client,officerLunBackOnDuty,name_lun,,,,pool:GetRandomLowerLevelSpriteName,,,NARCOTIC|black_injector,,,,,,
-client,louDemandCollect,,,,,pool:GetRandomLowerLevelSpriteName,,,WEAPON|FIREARM|MELEE_WEAPON|AMMUNITION|MEDICAL,,,,,,
 client,wanted6_supply,,,,,pool:GetRandomLowerLevelSpriteName,,,common_chemical|restricted_chemical,,,,,,
 client,offDutyOfficerStoryBeer,name_off_duty_officer,,,,pool:GetRandomOffDutySecSpriteName,,,ALCOHOL,,,,,,
 client,chemical_returning_client,,,,,pool:GetRandomLowerLevelSpriteName,,,WATER,,,,,,
