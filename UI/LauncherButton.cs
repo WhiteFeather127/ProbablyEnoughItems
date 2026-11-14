@@ -32,7 +32,6 @@ namespace ItemCatalog.UI
         private const float ButtonWidth = 100f;
         private const float ButtonHeight = 30f;
         private const float Gap = 4f;
-        private const float TickSeconds = 0.2f;
 
         /// <summary>一枚按钮 = 一个贴靠目标。</summary>
         private sealed class Dock
@@ -44,7 +43,21 @@ namespace ItemCatalog.UI
         }
 
         private static readonly List<Dock> _docks = new List<Dock>();
-        private static float _nextTickAt;
+
+        /// <summary>
+        /// 挂在**目标节点**上的生命周期钩子：目标销毁/隐藏，按钮跟着走。
+        ///
+        /// 这样就不需要每帧去问「目标还在不在」——Unity 自己会在节点销毁时调 OnDestroy。
+        /// 面板移动/改尺寸仍然由 <see cref="PanelWatchPatch"/> 的窗口事件驱动重排。
+        /// </summary>
+        private sealed class DockWatcher : MonoBehaviour
+        {
+            internal Dock Dock;
+
+            private void OnDestroy() { OnTargetDestroyed(Dock); }
+            private void OnDisable() { OnTargetHidden(Dock, true); }
+            private void OnEnable() { OnTargetHidden(Dock, false); }
+        }
 
         internal static void OnGameLoaded()
         {
@@ -52,18 +65,17 @@ namespace ItemCatalog.UI
 
             // 换场景后旧画布连同按钮一起没了，清掉失效登记
             Cleanup();
-            _nextTickAt = 0f;
 
-            try { Tick(); }
+            try { Refresh(); }
             catch (Exception e) { Warn("inject launch button: " + e.Message); }
         }
 
-        /// <summary>常驻节拍（由 CatalogTicker 每帧调用），内部 0.2 秒门限。</summary>
-        internal static void Tick()
+        /// <summary>
+        /// 重新解析一遍目标并挂按钮。只在**事件**里调用：场景加载、窗口显隐/几何变化、
+        /// 打开/关闭物品栏。不做每帧轮询——存活性由 <see cref="DockWatcher"/> 负责。
+        /// </summary>
+        internal static void Refresh()
         {
-            if (Time.unscaledTime < _nextTickAt) return;
-            _nextTickAt = Time.unscaledTime + TickSeconds;
-
             // 主场景：物品栏窗口
             var inventory = AnchorTarget.ResolveInventoryNode();
             Update("inventory", inventory);
@@ -75,12 +87,30 @@ namespace ItemCatalog.UI
             Cleanup();
         }
 
-        /// <summary>窗口几何变了：立刻重排一次（不等节拍）。</summary>
+        /// <summary>窗口几何变了：立刻重排一次。</summary>
         internal static void OnPanelGeometryChanged(PixelWindow window)
         {
-            _nextTickAt = 0f;
-            try { Tick(); }
+            try { Refresh(); }
             catch (Exception e) { Warn("dock on panel change: " + e.Message); }
+        }
+
+        // ---------------------------------------------------------------- 目标生灭
+
+        private static void OnTargetDestroyed(Dock dock)
+        {
+            if (dock == null) return;
+            DestroyDock(dock);
+        }
+
+        private static void OnTargetHidden(Dock dock, bool hidden)
+        {
+            if (dock == null || dock.Root == null) return;
+
+            try { dock.Root.gameObject.SetActive(!hidden); }
+            catch { }
+
+            // 重新显示时窗口可能已经挪过位置，顺手对齐一次
+            if (!hidden) PlaceCurrent(dock);
         }
 
         /// <summary>图鉴面板量到目标矩形后回喂一次，保证按钮和面板用同一份测量。</summary>
@@ -91,6 +121,21 @@ namespace ItemCatalog.UI
 
             try { PlaceAt(dock.Root, dock.Parent, bounds); }
             catch (Exception e) { Warn("sync button: " + e.Message); }
+        }
+
+        /// <summary>按目标当前的矩形把这一枚按钮重新摆一次。</summary>
+        private static void PlaceCurrent(Dock dock)
+        {
+            if (dock == null || dock.Root == null || dock.Parent == null || dock.Target == null) return;
+
+            Rect bounds;
+            try { bounds = DockedLayout.ToWorldRect(dock.Target); }
+            catch { return; }
+
+            if (bounds.width < 2f || bounds.height < 2f) return;
+
+            try { PlaceAt(dock.Root, dock.Parent, bounds); }
+            catch (Exception e) { Warn("place button: " + e.Message); }
         }
 
         // ---------------------------------------------------------------- 每枚按钮
@@ -150,6 +195,15 @@ namespace ItemCatalog.UI
 
             var dock = new Dock { Key = key, Target = target, Root = rect, Parent = canvas };
             _docks.Add(dock);
+
+            // 把按钮的寿命挂在目标对象上：目标销毁 → 按钮跟着销毁，不用轮询
+            try
+            {
+                var watcher = target.GetComponent<DockWatcher>();
+                if (watcher == null) watcher = target.gameObject.AddComponent<DockWatcher>();
+                watcher.Dock = dock;
+            }
+            catch (Exception e) { Warn("watch target: " + e.Message); }
 
             try
             {

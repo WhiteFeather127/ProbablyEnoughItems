@@ -232,10 +232,15 @@ namespace ItemCatalog.UI
 
                 _window.Show();
                 _window.BringToFront();
+
+                // 打开面板属于「界面变了」的事件点：顺手让按钮重新认一次目标
+                try { LauncherButton.Refresh(); } catch { }
                 return;
             }
 
             Create();
+
+            try { LauncherButton.Refresh(); } catch { }
         }
 
         /// <summary>数据重建后按当前布局重新打开。</summary>
