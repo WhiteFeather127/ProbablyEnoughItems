@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 
 using HarmonyLib;
@@ -7,11 +8,11 @@ using UnityEngine;
 namespace ItemCatalog.UI
 {
     /// <summary>
-    /// 把物品拖到「图鉴」上 → 丢进店里的垃圾桶。
+    /// 把物品拖到「图鉴」上 → 直接删除（不进垃圾桶）。
     ///
-    /// 不去自己删物品：游戏给了 <c>ModHelper.MoveItemToTrash(GameItem)</c>，
-    /// 它做的事就是把物品塞进 `EmporiumEntry.trashInvElement`（店里那口垃圾桶），
-    /// 和玩家手动往垃圾桶里拖完全同一条路径，库存、堆叠、存档都由游戏自己收尾。
+    /// 删除走游戏自己的 <c>GraphUtils.TryDestroyAll(list, -1)</c>：数量传负数表示「全部销毁」，
+    /// 这是 `PlayerStore.RemoveItemFromStoreInventory` 内部用的同一句，
+    /// 会先把物品从所属库存摘掉再销毁，不留半条记录。
     ///
     /// 判定时机：拖拽统一走 <c>ItemMouseDragHandler</c>（静态 `current`），
     /// 松手在私有方法 `OnEventRelease` 里决定落到哪个格子。
@@ -82,13 +83,14 @@ namespace ItemCatalog.UI
             {
                 if (!IsPointerOverCatalog(Input.mousePosition)) return;
 
-                // 垃圾桶属于店铺场景（EmporiumEntry.trashInvElement），别处没有可丢的地方
-                if (EmporiumEntry.Instance == null) return;
+                // 直接销毁：数量 -1 = 全部涂掉，和游戏自己清店铺库存用的是同一句
+                var doomed = new List<GameItem>(1);
+                doomed.Add(__state);
 
-                ModHelper.MoveItemToTrash(__state);
+                GraphUtils.TryDestroyAll(doomed, -1);
 
                 if (ModEntry.Log != null)
-                    ModEntry.Log.Log("[dragdelete] trashed " + __state.identifier);
+                    ModEntry.Log.Log("[dragdelete] destroyed " + __state.identifier);
             }
             catch (Exception e)
             {
