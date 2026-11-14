@@ -1842,44 +1842,13 @@ namespace ItemCatalog.UI
         {
             return delegate
             {
-                // 刚拖拽过：这次松手不再当成点击，否则会多取一件
+                // 刚拖拽过：这次松手不再当成点击
                 if (Time.unscaledTime < _suppressClickUntil) return;
 
-                // 作弊模式：点击直接把物品塞进背包（和 JEI 的作弊模式一致），
-                // 不打开合成表——要查来源就去点右键，或关掉作弊模式。
-                if (_takeMode)
-                {
-                    TakeItem(entry);
-                    return;
-                }
-
-                // 普通模式：点击打开这件物品的合成表（只读）
+                // 点击只用来查看：打开这件物品的合成表（只读）。
+                // 作弊模式不再管点击——它只管「能不能从图鉴里拖出物品」。
                 RecipeWindow.OpenFor(entry);
             };
-        }
-
-        /// <summary>
-        /// 把这一格对应的物品放进玩家背包：先按图鉴的规则造一份全新实例
-        /// （变体、纯度、灌装都和图鉴里显示的一致），再交给原版接口找空位放入。
-        /// 只在作弊模式下由点击触发。
-        /// </summary>
-        private static void TakeItem(ItemEntry entry)
-        {
-            var item = BuildItemForTake(entry);
-            if (item == null) return;
-
-            try { ModHelper.MoveItemToInventory(item); }
-            catch (Exception e)
-            {
-                Warn("move to inventory '" + entry.Id + "': " + e.Message);
-                return;
-            }
-
-            if (ModEntry.Log != null)
-            {
-                ModEntry.Log.Log("[take] " + entry.Id + " #" + entry.VariantIndex
-                    + " count=" + item.unitCount + " -> inventory");
-            }
         }
 
         /// <summary>

@@ -22,7 +22,7 @@ A JEI-style item catalog for *Probably Stolen*. It lays every item in the game �
 - **Sources and uses**: in the detail window, left-click shows *where this item comes from* (customers, shops, loot tables, machines, farming …), right-click shows *what it is used for*.
 - **State expansion**: enumerable states become separate cells — cigarettes 5, immunity injectors 5, food stamps 30 (5 denominations × 6 states), modules "footprint shape × effect", berries 6 forms — while continuously random values stay in one cell and are re-rolled every second.
 - **Source pages**: one page per source, with the faction heading, the customer portrait (multiple looks cycling every second) and every item that source can put on the table; containers reflect the water **that specific customer** fills them with, down to the bottle body.
-- **Cheat mode**: tick it and click an item to take one; drag an item onto the catalog to delete it.
+- **Cheat mode**: tick it and drag an item straight out of the catalog; drag an item onto the catalog to delete it.
 - **Extension API**: other mods can register variants and extra entries through plain reflection, with zero dependencies.
 
 ## Install
