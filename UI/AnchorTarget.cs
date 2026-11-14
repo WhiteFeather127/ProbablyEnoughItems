@@ -136,6 +136,69 @@ namespace ItemCatalog.UI
             return null;
         }
 
+        /// <summary>
+        /// 按名字找容器界面里的一个具体区块（`pocket1` / `pocket2` / `backpack` …）。
+        ///
+        /// 店铺场景里真正能装东西带走的是这些「口袋」，它们是同一扇窗口里的子区块，
+        /// 名字来自 `EquipmentDirectory.CreateExpeditionBoxWindow`
+        /// （`pocket1` / `pocket2` / `backpack`，标签键 `item_expedition_box_label_*`）。
+        /// </summary>
+        private static RectTransform _pocketNode;
+        private static float _nextPocketScanAt;
+
+        internal static RectTransform ResolvePocket(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+
+            // 上次找到的还活着就复用：每 0.25 秒扫全场景太贵
+            var cached = _pocketNode;
+            if (cached != null)
+            {
+                try
+                {
+                    if (cached.gameObject.activeInHierarchy)
+                    {
+                        var cachedRect = DockedLayout.ToWorldRect(cached);
+                        if (cachedRect.width > 20f && cachedRect.height > 20f) return cached;
+                    }
+                }
+                catch { }
+
+                _pocketNode = null;
+            }
+
+            if (Time.unscaledTime < _nextPocketScanAt) return null;
+            _nextPocketScanAt = Time.unscaledTime + 1f;
+
+            try
+            {
+                var all = UnityEngine.Object.FindObjectsOfType<RectTransform>();
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var rt = all[i];
+                    if (rt == null || !rt.gameObject.activeInHierarchy) continue;
+                    if (rt.name.IndexOf(id, StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                    var rect = DockedLayout.ToWorldRect(rt);
+                    if (rect.width < 20f || rect.height < 20f) continue;
+
+                    _pocketNode = rt;
+
+                    if (ModEntry.Log != null)
+                    {
+                        ModEntry.Log.Log(string.Format(
+                            "[anchor] pocket '{0}' -> '{1}' ({2:F0},{3:F0},{4:F0}x{5:F0})",
+                            id, DockedLayout.HierarchyPath(rt), rect.x, rect.y, rect.width, rect.height));
+                    }
+
+                    return rt;
+                }
+            }
+            catch (Exception e) { Warn("resolve pocket: " + e.Message); }
+
+            return null;
+        }
+
         internal static RectTransform Resolve()
         {
             var window = ResolveWindow();

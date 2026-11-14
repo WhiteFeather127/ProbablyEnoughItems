@@ -56,7 +56,8 @@ namespace ItemCatalog.UI
             if (manager == null) { Warn("CustomUIManager is not ready"); return; }
 
             // 只认真正的物品栏窗口节点，不接受画布兜底（画布兜底会把按钮甩到屏幕角）
-            var target = AnchorTarget.ResolveWindow();
+            bool dockPocket;
+            var target = ResolveDockTarget(out dockPocket);
             if (target == null)
             {
                 Warn("no inventory window resolved, will retry on next panel event");
@@ -108,7 +109,7 @@ namespace ItemCatalog.UI
 
             _buttonRoot = rect;
             _dockParent = parent;
-            PlaceAt(rect, parent, bounds);
+            PlaceAt(rect, parent, bounds, dockPocket);
 
             // 吞掉按下/拖拽：按钮和图鉴面板同层，不拦的话拖按钮会牵动下面的窗口
             try
@@ -170,12 +171,15 @@ namespace ItemCatalog.UI
         /// 右边放不下时（窗口已顶到画布右缘）翻到内侧。
         /// 锚点用 `DockedLayout.ToNormalized` 归一化到父层，和图鉴面板同一套算法。
         /// </summary>
-        private static void PlaceAt(RectTransform rect, RectTransform parent, Rect bounds)
+        private static void PlaceAt(RectTransform rect, RectTransform parent, Rect bounds, bool alignTop = false)
         {
             if (rect == null || parent == null) return;
             if (bounds.width < 2f || bounds.height < 2f) return;
 
-            var anchor = DockedLayout.ToNormalized(parent, DockedLayout.BottomRight(bounds));
+            // 口袋那种「一格一格」的界面：按钮对齐上沿、贴在右侧，
+            // 和标签同一行，看起来像挂在这一块旁边的按钮。
+            var corner = alignTop ? DockedLayout.TopRight(bounds) : DockedLayout.BottomRight(bounds);
+            var anchor = DockedLayout.ToNormalized(parent, corner);
             anchor.x = Mathf.Clamp01(anchor.x);
             anchor.y = Mathf.Clamp01(anchor.y);
 
@@ -183,11 +187,14 @@ namespace ItemCatalog.UI
 
             if (rect.parent != parent) rect.SetParent(parent, false);
 
+            float pivotY = alignTop ? 1f : 0f;
+            float offsetY = alignTop ? -Gap : Gap;
+
             rect.anchorMin = anchor;
             rect.anchorMax = anchor;
-            rect.pivot = inside ? new Vector2(1f, 0f) : new Vector2(0f, 0f);
+            rect.pivot = inside ? new Vector2(1f, pivotY) : new Vector2(0f, pivotY);
             rect.sizeDelta = new Vector2(ButtonWidth, ButtonHeight);
-            rect.anchoredPosition = inside ? new Vector2(-Gap, Gap) : new Vector2(Gap, Gap);
+            rect.anchoredPosition = inside ? new Vector2(-Gap, offsetY) : new Vector2(Gap, offsetY);
 
             _lastAnchor = anchor;
             _lastInside = inside;
@@ -211,9 +218,10 @@ namespace ItemCatalog.UI
 
             RectTransform target;
             Rect bounds;
+            bool dockPocket;
             try
             {
-                target = AnchorTarget.ResolveWindow();
+                target = ResolveDockTarget(out dockPocket);
                 if (target == null) return;               // 窗口还没出来，保持现状
                 bounds = DockedLayout.ToWorldRect(target);
             }
@@ -234,8 +242,25 @@ namespace ItemCatalog.UI
                 return;
             }
 
-            try { PlaceAt(rect, parent, bounds); }
+            try { PlaceAt(rect, parent, bounds, dockPocket); }
             catch (Exception e) { Warn("place button: " + e.Message); }
+        }
+
+        /// <summary>
+        /// 贴靠目标：店铺场景里优先贴「口袋#2」这一块（那里才是能把东西带走的口袋），
+        /// 其余情况贴物品栏窗口。
+        /// </summary>
+        private static RectTransform ResolveDockTarget(out bool pocket)
+        {
+            var node = AnchorTarget.ResolvePocket("pocket2");
+            if (node != null)
+            {
+                pocket = true;
+                return node;
+            }
+
+            pocket = false;
+            return AnchorTarget.ResolveWindow();
         }
 
         /// <summary>面板布局时把量到的物品栏矩形喂过来（与图鉴面板共用同一次测量）。</summary>

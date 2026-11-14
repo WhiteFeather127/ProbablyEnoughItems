@@ -74,6 +74,11 @@ namespace ItemCatalog.UI
             return new Vector3(worldRect.xMax, worldRect.yMin, 0f);
         }
 
+        internal static Vector3 TopRight(Rect worldRect)
+        {
+            return new Vector3(worldRect.xMax, worldRect.yMax, 0f);
+        }
+
         private static void Accumulate(RectTransform node, Rect rootRect, float rootArea,
             ref Rect union, ref bool has, int depth)
         {
