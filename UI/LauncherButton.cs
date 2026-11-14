@@ -40,11 +40,11 @@ namespace ItemCatalog.UI
 
         /// <summary>
         /// 图标按钮的外框尺寸（正方形）。
-        /// 取 70 = 32（图标原始边长）× 2 倍 + 两侧各 3 像素内边距，
-        /// 保证像素图按整数倍放大，不会被拉糊。
+        /// 46 的框里图标按 1 倍（32）居中放，剩下的是游戏按钮框的内边距——
+        /// 像素图只按整数倍缩放，1 倍最清晰，2 倍（70 的框）偏大。
         /// </summary>
-        private const float IconButtonWidth = 70f;
-        private const float IconButtonHeight = 70f;
+        private const float IconButtonWidth = 46f;
+        private const float IconButtonHeight = 46f;
 
         /// <summary>实际用的按钮尺寸：有图标就套在按钮框里，没有才用文字宽度。</summary>
         private static float _width = IconButtonWidth;
