@@ -1778,8 +1778,14 @@ namespace ItemCatalog.UI
                 if (hit) list.Add(all[i].Id);
             }
 
+            // 一个标签命中 0 件时记一行：求购区块空着多半是这里没匹配上（每个标签只记一次）
+            if (list.Count == 0 && _emptyTagLogged.Add(tag) && ModEntry.Log != null)
+                ModEntry.Log.Log("[tag] '" + tag + "' matched 0 items");
+
             return list;
         }
+
+        private static readonly HashSet<string> _emptyTagLogged = new HashSet<string>(StringComparer.Ordinal);
 
         /// <summary>把标签翻译成人话；没收录的原样显示。</summary>
         private static string DescribeTags(string[] tags)

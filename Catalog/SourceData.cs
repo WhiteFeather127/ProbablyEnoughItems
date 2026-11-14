@@ -175,8 +175,14 @@ namespace ItemCatalog.Catalog
                     }
                 }
 
-                // 空货单的静态行没有意义，跳过；dynamic 行本来就不该有 items
-                if (!dynamic && def.Items.Length == 0 && def.RandomItems.Length == 0)
+                // 只买不卖的客人（woundedMan / clinicNurse / pharmacist / cartelWoundedSoldier …）
+                // 货单是空的，但它要出现在「求购」里。以前这里一律跳过，
+                // 于是这些买家整个被丢掉，医疗品、毒品的求购列表就空了。
+                bool buys = (def.BuysTags != null && def.BuysTags.Length > 0)
+                         || (def.BuysItems != null && def.BuysItems.Length > 0);
+
+                // 既不卖也不买的静态行没有意义；dynamic 行本来就不该有 items
+                if (!dynamic && !buys && def.Items.Length == 0 && def.RandomItems.Length == 0)
                 {
                     Warn("'" + def.Id + "' has no items, skipped");
                     continue;
