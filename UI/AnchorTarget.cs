@@ -39,8 +39,101 @@ namespace ItemCatalog.UI
                 return window;
             }
 
-            // ② 名字像物品栏的可见节点
+            // ② 店铺场景：进店是直接换场景，物品栏窗口整个不在（`invWindow` 为空/未激活），
+            //    这时贴店铺自己的窗口（展示柜 / 前后台库存 …），不然按钮根本挂不上去。
+            window = ResolveShopWindow();
+            if (window != null) return window;
+
+            // ③ 名字像物品栏的可见节点
             return FindInventoryLike();
+        }
+
+        /// <summary>
+        /// 店铺场景里可贴的窗口，按「玩家看得最久」排序：展示柜优先，
+        /// 然后前台/后台库存、巴扎左柜、垃圾桶、文件柜、排液口。
+        /// </summary>
+        private static readonly WindowProp[] ShopWindowOrder =
+        {
+            WindowProp.Showcase,
+            WindowProp.FrontInv,
+            WindowProp.BackInv,
+            WindowProp.BazarLeft,
+            WindowProp.Trash,
+            WindowProp.DocInv,
+            WindowProp.DrainInv
+        };
+
+        private static string _loggedShopTarget;
+        private static float _nextShopProbeLogAt;
+
+        /// <summary>店铺场景里第一个「活着且有尺寸」的容器窗口；都没有返回 null。</summary>
+        private static RectTransform ResolveShopWindow()
+        {
+            EmporiumEntry emporium;
+            try { emporium = EmporiumEntry.Instance; }
+            catch { return null; }
+
+            if (emporium == null) return null;
+
+            for (int i = 0; i < ShopWindowOrder.Length; i++)
+            {
+                WindowProp prop = ShopWindowOrder[i];
+
+                PixelWindow win = null;
+                try { win = GetWindow(emporium, prop); }
+                catch { }
+
+                if (win == null) continue;
+
+                var node = WindowRectOf(win);
+                if (node == null || !node.gameObject.activeInHierarchy) continue;
+
+                var sized = PickSizedNode(node);
+                if (sized == null) continue;
+
+                Rect rect;
+                try { rect = DockedLayout.ToWorldRect(sized); }
+                catch { continue; }
+
+                if (rect.width < 2f || rect.height < 2f) continue;
+
+                if (_loggedShopTarget != prop.ToString() && ModEntry.Log != null)
+                {
+                    _loggedShopTarget = prop.ToString();
+                    ModEntry.Log.Log(string.Format(
+                        "[anchor] shop window {0} '{1}' -> ({2:F0},{3:F0},{4:F0}x{5:F0})",
+                        prop, DockedLayout.HierarchyPath(sized), rect.x, rect.y, rect.width, rect.height));
+                }
+
+                return sized;
+            }
+
+            // 一个都没有：把候选状态打一次，方便判断店铺场景到底开了哪扇窗
+            if (ModEntry.Log != null && Time.unscaledTime > _nextShopProbeLogAt)
+            {
+                _nextShopProbeLogAt = Time.unscaledTime + 10f;
+
+                for (int i = 0; i < ShopWindowOrder.Length; i++)
+                {
+                    WindowProp prop = ShopWindowOrder[i];
+
+                    PixelWindow win = null;
+                    try { win = GetWindow(emporium, prop); }
+                    catch { }
+
+                    string state = "null";
+                    if (win != null)
+                    {
+                        var node = WindowRectOf(win);
+                        bool active = node != null && node.gameObject.activeInHierarchy;
+                        state = active ? "active" : "inactive";
+                    }
+
+                    ModEntry.Log.Log("[anchor] shop probe " + prop + " = " + state);
+                }
+            }
+
+            return null;
         }
 
         internal static RectTransform Resolve()
@@ -143,8 +236,11 @@ namespace ItemCatalog.UI
             Inv,
             FrontInv,
             BackInv,
+            BazarLeft,
             Showcase,
-            Trash
+            Trash,
+            DocInv,
+            DrainInv
         }
 
         /// <summary>
@@ -163,8 +259,11 @@ namespace ItemCatalog.UI
                     case WindowProp.Inv: return emporium.invWindow;
                     case WindowProp.FrontInv: return emporium.frontInvWindow;
                     case WindowProp.BackInv: return emporium.backInvWindow;
+                    case WindowProp.BazarLeft: return emporium.bazarLeftInvWindow;
                     case WindowProp.Showcase: return emporium.showcaseWindow;
                     case WindowProp.Trash: return emporium.trashInvWindow;
+                    case WindowProp.DocInv: return emporium.docInvWindow;
+                    case WindowProp.DrainInv: return emporium.drainInvWindow;
                     default: return null;
                 }
             }
