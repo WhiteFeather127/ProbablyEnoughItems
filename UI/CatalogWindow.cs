@@ -375,6 +375,7 @@ namespace ItemCatalog.UI
 
             // 合成贴图与舞台随场景销毁（物品实例都没了，缓存全部失效）
             _compositeSprites.Clear();
+            _compositeByCell.Clear();
             DestroyCompositeStage();
 
             _window = null;
@@ -386,6 +387,13 @@ namespace ItemCatalog.UI
             // 变体来源（接口提供者 / 硬编码生成器表）与场景无关，这里无需清理。
             _pageEntries.Clear();
             _pageImages.Clear();
+
+            // 分帧建格/刷新是跨帧状态，切场景必须断掉（旧 builder 的容器已随场景销毁）
+            _building = false;
+            _buildBuilder = null;
+            _buildItems = null;
+            _refreshing = false;
+            _refreshCursor = 0;
             _cellOverlays.Clear();
             _pageRefreshNextAt = 0f;
 
@@ -517,6 +525,130 @@ namespace ItemCatalog.UI
             }
         }
 
+        // ── 分帧建格（懒加载）──────────────────────────────────────────────
+        // 一页 84 格一次性建完要 300~400ms，打开/翻页会明显卡一下。
+        // 现在每帧只建 CellsPerFrame 格，剩下的交给常驻节拍器继续，
+        // 首帧先建两批保证立刻有内容，不会出现整页空白。
+        private const int CellsPerFrame = 8;
+
+        // 每秒一轮的图标刷新同样分摊到多帧：机器容器单格就要 40~95ms，
+        // 一帧刷完 84 格是几百毫秒的硬卡。
+        private const int RefreshCellsPerFrame = 12;
+
+        private static bool _refreshing;
+        private static int _refreshCursor;
+
+        private static CustomUIBuilder _buildBuilder;
+        private static List<ItemEntry> _buildItems;
+        private static int _buildCursor;
+        private static int _buildEnd;
+        private static bool _building;
+
+        /// <summary>继续把当前页的格子建完（每帧调用，`budget` 为本次最多建几格）。</summary>
+        private static void PumpBuild(int budget)
+        {
+            if (!_building || _buildBuilder == null) return;
+
+            try
+            {
+                int built = 0;
+                while (_buildCursor < _buildEnd && built < budget)
+                {
+                    BuildCell(_buildBuilder, _buildItems[_buildCursor]);
+                    _buildCursor++;
+                    built++;
+                }
+
+                if (_buildCursor >= _buildEnd)
+                {
+                    _buildBuilder.End();
+                    CustomUIBuilder.RebuildLayout(_gridHost);
+                    _building = false;
+                    _buildBuilder = null;
+                    _buildItems = null;
+
+                    if (!_spriteSummaryLogged && ModEntry.Log != null)
+                    {
+                        _spriteSummaryLogged = true;
+                        ModEntry.Log.Log(string.Format(
+                            "[sprite] page 1 render: ok={0} miss={1}", _spriteHits, _spriteMisses));
+                    }
+                }
+                else
+                {
+                    // 已建好的格子先排好版，用户看到的是逐步填充而不是空白
+                    CustomUIBuilder.RebuildLayout(_gridHost);
+                }
+            }
+            catch (Exception e)
+            {
+                _building = false;
+                _buildBuilder = null;
+                _buildItems = null;
+                Error("render item grid", e);
+            }
+        }
+
+        /// <summary>建一格（分帧建格的单元，内容与原整页循环里的单格逻辑一致）。</summary>
+        private static void BuildCell(CustomUIBuilder builder, ItemEntry entry)
+        {
+            if (builder == null || entry == null) return;
+
+            // 变体格子：按需创建第 index 个实例（内部完成覆盖层采集）
+            EnsureCellItem(entry);
+
+            var sprite = GetSprite(entry);
+            string elementId = "i:" + entry.Key;
+
+            if (sprite != null)
+            {
+                // 液体容器：先合成后显示——有缓存用缓存，没有当场构建，
+                // 保证格子第一次出现就是灌装后的图（而不是先空瓶、1 秒后才换水）。
+                List<ContainerOverlay> overlays;
+                if (_cellOverlays.TryGetValue(entry.Key, out overlays) && overlays != null && overlays.Count > 0)
+                {
+                    var composite = BuildCompositeSprite(entry.Key, sprite, overlays);
+                    if (composite != null) sprite = composite;
+                }
+
+                // 按精灵图真实比例缩放，避免非正方形图标被拉扁
+                float iconW, iconH;
+                FitSprite(sprite, IconMaxSide, out iconW, out iconH);
+
+                // 不再挂 CustomUI 自带的文字 tooltip，悬停统一走原生物品提示框
+                builder.AddImage(sprite, iconW, iconH, elementId);
+
+                var element = builder.Last;
+                if (element != null) element.OnClick(MakeSelect(entry));
+
+                // MakeClickable 返回真正被射线命中的子物体（Image 挂在子节点上）
+                var hit = MakeClickable(element, MakeSelect(entry));
+                AttachHover(hit, entry);
+                AttachRightClick(hit, entry);
+
+                // 记下格子，供自动刷新原地图标
+                _pageEntries.Add(entry);
+                if (hit != null)
+                {
+                    var icon = hit.GetComponent<UnityEngine.UI.Image>();
+                    if (icon != null) _pageImages[entry.Key] = icon;
+                }
+            }
+            else
+            {
+                builder.AddButton(Shorten(entry.DisplayName), MakeSelect(entry), elementId);
+
+                // 和 BindCell(hasButton: true) 一致：事件挂在真正接收射线的子物体上。
+                var buttonElement = builder.Last;
+                if (buttonElement != null)
+                {
+                    var buttonHost = HitGraphic(buttonElement);
+                    AttachHover(buttonHost, entry);
+                    AttachRightClick(buttonHost, entry);
+                }
+            }
+        }
+
         private static void Render()
         {
             var manager = CustomUIManager.Instance;
@@ -534,6 +666,10 @@ namespace ItemCatalog.UI
 
             _pageEntries.Clear();
             _pageImages.Clear();
+
+            // 翻页/搜索会重建列表：正在进行的刷新游标要作废，否则会指向旧条目
+            _refreshing = false;
+            _refreshCursor = 0;
             // 注意：翻页重建不清理 _cellOverlays——key 是格子键、物品实例跨翻页存活，
             // 覆盖层仍然有效；清空会让「采集在重建前、应用在重建后」的时序全部丢失。
 
@@ -546,76 +682,15 @@ namespace ItemCatalog.UI
 
                 int start = _page * perPage;
                 int end = Math.Min(items.Count, start + perPage);
-                for (int i = start; i < end; i++)
-                {
-                    var entry = items[i];
 
-                    // 变体格子：按需创建第 index 个实例（内部完成覆盖层采集）
-                    EnsureCellItem(entry);
-
-                    var sprite = GetSprite(entry);
-                    string elementId = "i:" + entry.Key;
-                    if (sprite != null)
-                    {
-                        // 液体容器：先合成后显示——有缓存用缓存，没有当场构建，
-                        // 保证格子第一次出现就是灌装后的图（而不是先空瓶、1 秒后才换水）。
-                        // 精灵来自实例本身（灌装在目录构建期由接口/硬编码表完成，这里不造水）。
-                        List<ContainerOverlay> buildOv;
-                        if (_cellOverlays.TryGetValue(entry.Key, out buildOv) && buildOv != null && buildOv.Count > 0)
-                        {
-                            var composite = BuildCompositeSprite(entry.Key, sprite, buildOv);
-                            if (composite != null) sprite = composite;
-                        }
-
-                        // 按精灵图真实比例缩放，避免非正方形图标被拉扁
-                        float iconW, iconH;
-                        FitSprite(sprite, IconMaxSide, out iconW, out iconH);
-
-                        // 不再挂 CustomUI 自带的文字 tooltip，悬停统一走原生物品提示框
-                        builder.AddImage(sprite, iconW, iconH, elementId);
-
-                        var element = builder.Last;
-                        if (element != null) element.OnClick(MakeSelect(entry));
-
-                        // MakeClickable 返回真正被射线命中的子物体（Image 挂在子节点上）
-                        var hit = MakeClickable(element, MakeSelect(entry));
-                        AttachHover(hit, entry);
-                        AttachRightClick(hit, entry);
-
-                        // 记下格子，供自动刷新原地图标
-                        _pageEntries.Add(entry);
-                        if (hit != null)
-                        {
-                            var icon = hit.GetComponent<UnityEngine.UI.Image>();
-                            if (icon != null) _pageImages[entry.Key] = icon;
-                        }
-                    }
-                    else
-                    {
-                        builder.AddButton(Shorten(entry.DisplayName), MakeSelect(entry), elementId);
-
-                        // 和 BindCell(hasButton: true) 一致：事件挂在真正接收射线的子物体上。
-                        // 这个分支以前只 AddButton，没挂 hover / 右键，导致无精灵格子
-                        // 完全没有原生物品提示框。
-                        var buttonElement = builder.Last;
-                        if (buttonElement != null)
-                        {
-                            var buttonHost = HitGraphic(buttonElement);
-                            AttachHover(buttonHost, entry);
-                            AttachRightClick(buttonHost, entry);
-                        }
-                    }
-                }
-
-                builder.End();
-                CustomUIBuilder.RebuildLayout(_gridHost);
-
-                if (!_spriteSummaryLogged && ModEntry.Log != null)
-                {
-                    _spriteSummaryLogged = true;
-                    ModEntry.Log.Log(string.Format("[sprite] page 1 render: ok={0} miss={1} (total items={2})",
-                        _spriteHits, _spriteMisses, items.Count));
-                }
+                // 分帧建格：这一帧只建两批，剩下的由 AutoRefreshTick → PumpBuild 继续。
+                // 首帧就有内容，不会整页空白；打开/翻页也不会再整页卡一下。
+                _buildBuilder = builder;
+                _buildItems = items;
+                _buildCursor = start;
+                _buildEnd = end;
+                _building = true;
+                PumpBuild(CellsPerFrame * 2);
             }
             catch (Exception e)
             {
@@ -726,8 +801,6 @@ namespace ItemCatalog.UI
         /// <summary>格子展开结果变了，下次刷新节拍重绘一次。</summary>
         private static bool _pendingRender;
 
-        /// <summary>整页刷新耗时日志条数上限。</summary>
-        private static int _refreshPerfLogs;
 
 
 
@@ -2427,7 +2500,7 @@ namespace ItemCatalog.UI
 
             try
             {
-                if (!string.IsNullOrEmpty(entry.Key)) _compositeSprites.TryGetValue(entry.Key, out sprite);
+                if (!string.IsNullOrEmpty(entry.Key)) _compositeByCell.TryGetValue(entry.Key, out sprite);
             }
             catch { }
 
@@ -3875,6 +3948,29 @@ namespace ItemCatalog.UI
             }
 
 
+            // 分帧建格优先：还有格子没建完就接着建，别和整页刷新抢同一帧
+            if (_building)
+            {
+                PumpBuild(CellsPerFrame);
+                return;
+            }
+
+            // 刷新一轮（每秒一次）也是跨帧走的：每帧只刷 RefreshCellsPerFrame 格
+            if (_refreshing)
+            {
+                int total = _pageEntries.Count;
+                int done = 0;
+                while (_refreshCursor < total && done < RefreshCellsPerFrame)
+                {
+                    RefreshCellIcon(_pageEntries[_refreshCursor]);
+                    _refreshCursor++;
+                    done++;
+                }
+
+                if (_refreshCursor >= total) _refreshing = false;
+                return;
+            }
+
             if (Time.unscaledTime < _pageRefreshNextAt) return;
 
             _pageRefreshNextAt = Time.unscaledTime + PageRefreshSeconds;
@@ -3882,35 +3978,10 @@ namespace ItemCatalog.UI
             int count = _pageEntries.Count;
             if (count == 0) return;
 
-            // 整页统一刷新（间隔 1 秒，行为已固定，不要再改成分批）：
-            // 当前页每一项都过一遍，随机物品重掷、图标按需换图。
-            var refreshWatch = System.Diagnostics.Stopwatch.StartNew();
-            long totalMs = 0;
-            int slowestIdx = -1;
-            long slowestMs = 0;
-
-            for (int i = 0; i < count; i++)
-            {
-                var entry = _pageEntries[i];
-                if (entry == null) continue;
-
-                long start = refreshWatch.ElapsedMilliseconds;
-                RefreshCellIcon(entry);
-                long cost = refreshWatch.ElapsedMilliseconds - start;
-                totalMs += cost;
-
-                if (cost > slowestMs) { slowestMs = cost; slowestIdx = i; }
-            }
-
-            // 定位每秒整页刷新的卡顿：整页总耗时/最慢单格都记下来
-            if (totalMs > 60 && _refreshPerfLogs < 8 && ModEntry.Log != null)
-            {
-                _refreshPerfLogs++;
-                var slowest = slowestIdx >= 0 ? _pageEntries[slowestIdx] : null;
-                ModEntry.Log.Log(string.Format(
-                    "[refresh] page total={0}ms cells={1} slowest='{2}' {3}ms",
-                    totalMs, count, slowest == null ? "-" : slowest.Key, slowestMs));
-            }
+            // 一整页在一帧里刷完要 240~430ms（机器类单格就 40~95ms），
+            // 现在改成跨帧分摊：每秒发起一轮，每帧只刷 RefreshCellsPerFrame 格。
+            _refreshing = true;
+            _refreshCursor = 0;
 
             if (_refreshLogs < 3 && ModEntry.Log != null)
             {
@@ -4291,7 +4362,7 @@ namespace ItemCatalog.UI
             else _cellOverlays.Remove(key);
 
             // 覆盖层真的变了才作废旧合成图（下次刷新重建）
-            if (!unchanged && !string.IsNullOrEmpty(key)) _compositeSprites.Remove(key);
+            if (!unchanged) InvalidateComposite(key);
         }
 
 
@@ -4304,6 +4375,33 @@ namespace ItemCatalog.UI
         /// <summary>合成贴图缓存：格子 key → 已组合的完整图标（主精灵 + 液体层 + 高光层）。</summary>
         private static readonly Dictionary<string, UnityEngine.Sprite> _compositeSprites =
             new Dictionary<string, UnityEngine.Sprite>(StringComparer.Ordinal);
+
+        // 主缓存按「key|主精灵实例 id」分开存（主精灵换了就得重做），
+        // 这个索引只服务「取当前这一格现在显示什么」，O(1) 拿到、不受主精灵变化影响。
+        private static readonly Dictionary<string, UnityEngine.Sprite> _compositeByCell =
+            new Dictionary<string, UnityEngine.Sprite>(StringComparer.Ordinal);
+
+        /// <summary>覆盖层变了：把这一格所有主精灵变体的合成图一起作废。</summary>
+        private static void InvalidateComposite(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return;
+
+            _compositeByCell.Remove(key);
+
+            string prefix = key + "|";
+            List<string> dead = null;
+            foreach (var pair in _compositeSprites)
+            {
+                if (pair.Key.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    if (dead == null) dead = new List<string>();
+                    dead.Add(pair.Key);
+                }
+            }
+
+            if (dead == null) return;
+            for (int i = 0; i < dead.Count; i++) _compositeSprites.Remove(dead[i]);
+        }
 
         private static UnityEngine.Canvas _compositeCanvas;
         private static UnityEngine.Camera _compositeCamera;
@@ -4376,8 +4474,16 @@ namespace ItemCatalog.UI
         {
             if (main == null || overlays == null || overlays.Count == 0) return null;
 
+            // 缓存键带上主精灵实例 id：主图换了一张（变体/轮播换物品）必须重合成，
+            // 否则会一直返回旧图；覆盖层变化由 InvalidateComposite 负责作废。
+            string cacheKey = key + "|" + main.GetInstanceID();
+
             UnityEngine.Sprite cached;
-            if (_compositeSprites.TryGetValue(key, out cached) && cached != null) return cached;
+            if (_compositeSprites.TryGetValue(cacheKey, out cached) && cached != null)
+            {
+                _compositeByCell[key] = cached;
+                return cached;
+            }
 
             EnsureCompositeStage();
             if (_compositeRoot == null) return null;
@@ -4469,7 +4575,8 @@ namespace ItemCatalog.UI
                     new UnityEngine.Vector2(0.5f, 0.5f), ppu);
                 sprite.name = "composite_" + key;
 
-                _compositeSprites[key] = sprite;
+                _compositeSprites[cacheKey] = sprite;
+                _compositeByCell[key] = sprite;
                 return sprite;
             }
             catch (Exception e)

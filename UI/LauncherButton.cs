@@ -1,20 +1,21 @@
 using System;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace ItemCatalog.UI
 {
     /// <summary>
-    /// 把「图鉴」按钮**直接挂成物品栏窗口节点的子物体**。
+    /// 「图鉴」启动按钮。
     ///
-    /// 以前是把按钮创建在画布上、每 0.25 秒按「解析到的矩形」重新摆一次。
-    /// 那套做法有个致命退化：<see cref="AnchorTarget.Resolve"/> 找不到物品栏窗口时会
-    /// 退回 <c>StoreUIManager.inventoryCanvas</c>（整屏 1920x1080@0,0），按钮就被摆到
-    /// 屏幕右下角 —— 日志里的 <c>[button] sync bounds=1920x1080@(0,0) anchor=(1.000,0.000)</c>。
+    /// 定位方式和 <see cref="CatalogWindow.ApplyPlacement"/> 完全一致：
+    /// 把**物品栏窗口的世界矩形**归一化到**同一个 UI 层（画布根）**上用锚点贴住 ——
+    /// 图鉴面板的左边缘就是这么和物品栏右边缘对齐的，按钮也走同一条路。
     ///
-    /// 现在改成父子关系：窗口移动/缩放/隐藏由 Unity 的布局自动带着按钮走，
-    /// 既不需要每帧量矩形，也不会再出现「解析失败→跑到屏幕角落」。
-    /// 唯一要处理的是窗口节点被销毁重建（Unity 的 null 比较会返回 true），
-    /// 这时重新挂一次即可（见 <see cref="ApplyDock"/>）。
+    /// 曾经试过的两种做法都不要再用：
+    ///   ① 挂在物品栏窗口节点里 → 该节点是物品树的格子层（TreeNodeRender + RectMask2D），
+    ///      窗口背景是它之后的兄弟节点，按钮被盖住看不见；拖动按钮还会把窗口一起拖走。
+    ///   ② 不用归一化、直接算父节点本地坐标 → 父节点常是 0×0 或 pivot 在中心的空壳，
+    ///      算出来的位置直接跑到左上角。
     /// </summary>
     internal static class LauncherButton
     {
@@ -26,9 +27,14 @@ namespace ItemCatalog.UI
         private static CustomUIElement _buttonElement;
         private static string _buttonLabel;
 
-        private static RectTransform _buttonRoot;   // 按钮容器（挂在窗口节点下）
-        private static string _dockedPath;          // 当前绑定的窗口路径（仅用于日志）
+        private static RectTransform _buttonRoot;   // 按钮容器
+        private static RectTransform _dockParent;   // 所在的 UI 层（画布根）
+        private static string _dockedPath;          // 当前贴靠的窗口路径（仅用于日志）
+
+        private static Vector2 _lastAnchor;
+        private static bool _lastInside;
         private static float _nextDockCheckAt;
+        private static float _nextCanvasSkipLogAt;
 
         internal static void OnGameLoaded()
         {
@@ -44,16 +50,12 @@ namespace ItemCatalog.UI
             }
         }
 
-        /// <summary>
-        /// 解析物品栏窗口节点并把按钮挂上去。窗口还没生成 / 还没激活时直接返回，
-        /// 等 <see cref="PanelWatchPatch"/> 的下一次面板事件再试。
-        /// </summary>
         private static void Inject()
         {
             var manager = CustomUIManager.Instance;
             if (manager == null) { Warn("CustomUIManager is not ready"); return; }
 
-            // 只认真正的物品栏窗口节点，不接受画布兜底（那正是偏移的来源）
+            // 只认真正的物品栏窗口节点，不接受画布兜底（画布兜底会把按钮甩到屏幕角）
             var target = AnchorTarget.ResolveWindow();
             if (target == null)
             {
@@ -61,17 +63,20 @@ namespace ItemCatalog.UI
                 return;
             }
 
+            // 和图鉴面板同一个层：面板自己的 RectTransform 父节点就是画布根
+            var parent = AnchorTarget.RootCanvas(target);
+            if (parent == null) { Warn("dock target has no canvas root"); return; }
+
             _dockedPath = DockedLayout.HierarchyPath(target);
 
-            // 同一个窗口里已经有按钮就复用，避免重复创建
-            var existing = target.Find(ButtonName) as RectTransform;
+            var existing = parent.Find(ButtonName) as RectTransform;
             if (existing != null && existing != _buttonRoot)
             {
                 UnityEngine.Object.Destroy(existing.gameObject);
                 existing = null;
             }
 
-            // 换画布/换窗口时清掉残留在别处的旧按钮，否则会多出一份且永远可点
+            // 残留（换画布、上次贴错位置）一律清掉，否则会多出一份且永远可点
             try
             {
                 var allStale = UnityEngine.Object.FindObjectsOfType<GameObject>();
@@ -80,36 +85,38 @@ namespace ItemCatalog.UI
                     var stale = allStale[i];
                     if (stale == null) continue;
                     if (stale.name != ButtonName && stale.name != "ItemCatalog.LoadBar") continue;
-                    if (stale.transform.IsChildOf(target)) continue;
+                    if (stale.transform.IsChildOf(parent)) continue;
                     UnityEngine.Object.Destroy(stale);
                 }
             }
             catch (Exception e) { Warn("cleanup leftovers: " + e.Message); }
+
+            var bounds = DockedLayout.ToWorldRect(target);
+            if (bounds.width < 2f || bounds.height < 2f)
+            {
+                Warn("inventory window has no size yet, retry on next panel event");
+                return;
+            }
 
             var rect = existing;
             if (rect == null)
             {
                 var go = new GameObject(ButtonName, typeof(RectTransform));
                 rect = (RectTransform)go.transform;
-                // worldPositionStays=false：只用锚点定位，不继承窗口的缩放累积
-                rect.SetParent(target, false);
+                rect.SetParent(parent, false);
             }
 
-            // 贴窗口内部右下角：锚点与轴心都定在父节点右下角；
-            // 之后窗口怎么移动/缩放都由 Unity 自己带着走，不再计算世界坐标。
-            rect.anchorMin = new Vector2(1f, 0f);
-            rect.anchorMax = new Vector2(1f, 0f);
-            rect.pivot = new Vector2(1f, 0f);
-            rect.sizeDelta = new Vector2(ButtonWidth, ButtonHeight);
-            rect.anchoredPosition = new Vector2(-Gap, Gap);
-
-            // 图层与窗口保持一致：
-            //   1) 同一个 Unity layer —— 窗口若带独立 Canvas（overrideSorting）时不会被相机剔除；
-            //   2) 排在窗口子节点的最后 —— 否则会被窗口自己的内容盖住（子节点先画、后画的在上）。
-            rect.gameObject.layer = target.gameObject.layer;
-            rect.SetAsLastSibling();
-
             _buttonRoot = rect;
+            _dockParent = parent;
+            PlaceAt(rect, parent, bounds);
+
+            // 吞掉按下/拖拽：按钮和图鉴面板同层，不拦的话拖按钮会牵动下面的窗口
+            try
+            {
+                if (rect.GetComponent<DragBlocker>() == null)
+                    rect.gameObject.AddComponent<DragBlocker>();
+            }
+            catch (Exception e) { Warn("drag blocker: " + e.Message); }
 
             if (_buttonElement == null || _buttonElement.Rect == null || _buttonElement.Rect.parent != rect)
             {
@@ -135,66 +142,142 @@ namespace ItemCatalog.UI
                 }
             }
 
-            // 按钮内部是新建的 GameObject，layer 默认回到 0；统一刷成窗口那一层
+            // 新建的元素 layer 默认回到 0，统一刷成窗口那一层
             try
             {
                 var parts = rect.GetComponentsInChildren<Transform>(true);
-                int layer = rect.gameObject.layer;
+                int layer = target.gameObject.layer;
+                rect.gameObject.layer = layer;
                 for (int i = 0; i < parts.Length; i++) parts[i].gameObject.layer = layer;
             }
             catch { }
 
             if (ModEntry.Log != null)
             {
-                var size = target.rect.size;
                 ModEntry.Log.Log(string.Format(
-                    "[button] bound to '{0}' window={1:F0}x{2:F0} anchor=(1,0) pivot=(1,0) offset=(-{3:F0},{3:F0})",
-                    _dockedPath, size.x, size.y, Gap));
+                    "[button] place target='{0}' parent='{1}' bounds={2:F0}x{3:F0}@({4:F0},{5:F0})"
+                    + " anchor=({6:F3},{7:F3}) pivot={8} corner={9}",
+                    _dockedPath, DockedLayout.HierarchyPath(parent),
+                    bounds.width, bounds.height, bounds.x, bounds.y,
+                    _lastAnchor.x, _lastAnchor.y,
+                    _lastInside ? "(1,0)" : "(0,0)",
+                    _lastInside ? "inside" : "outside-right"));
             }
         }
 
         /// <summary>
-        /// 保持绑定有效。按钮是窗口的子物体，位置由布局自动跟随，
-        /// 所以这里只做两件事：窗口节点没了 → 重新挂；绑定对象换人了 → 重新挂。
+        /// 把按钮摆到 bounds（物品栏窗口的世界矩形）右下角：默认贴右边缘**外侧**，
+        /// 右边放不下时（窗口已顶到画布右缘）翻到内侧。
+        /// 锚点用 `DockedLayout.ToNormalized` 归一化到父层，和图鉴面板同一套算法。
+        /// </summary>
+        private static void PlaceAt(RectTransform rect, RectTransform parent, Rect bounds)
+        {
+            if (rect == null || parent == null) return;
+            if (bounds.width < 2f || bounds.height < 2f) return;
+
+            var anchor = DockedLayout.ToNormalized(parent, DockedLayout.BottomRight(bounds));
+            anchor.x = Mathf.Clamp01(anchor.x);
+            anchor.y = Mathf.Clamp01(anchor.y);
+
+            bool inside = anchor.x > 0.965f;
+
+            if (rect.parent != parent) rect.SetParent(parent, false);
+
+            rect.anchorMin = anchor;
+            rect.anchorMax = anchor;
+            rect.pivot = inside ? new Vector2(1f, 0f) : new Vector2(0f, 0f);
+            rect.sizeDelta = new Vector2(ButtonWidth, ButtonHeight);
+            rect.anchoredPosition = inside ? new Vector2(-Gap, Gap) : new Vector2(Gap, Gap);
+
+            _lastAnchor = anchor;
+            _lastInside = inside;
+        }
+
+        /// <summary>
+        /// 保持按钮贴着窗口：窗口被拖动/缩放后跟上，窗口节点重建就重挂。
         /// </summary>
         internal static void ApplyDock()
         {
             if (Time.unscaledTime < _nextDockCheckAt) return;
-            _nextDockCheckAt = Time.unscaledTime + 0.5f;
+            _nextDockCheckAt = Time.unscaledTime + 0.25f;
 
-            // Unity 的「已销毁」对象 == null 为真：窗口重建后这里会命中
-            if (_buttonRoot == null || _buttonRoot.parent == null)
+            var rect = _buttonRoot;
+            var parent = _dockParent;
+            if (rect == null || rect.parent == null || parent == null)
             {
                 Inject();
                 return;
             }
 
-            var target = AnchorTarget.ResolveWindow();
-            if (target != null && _buttonRoot.parent != target) Inject();
+            RectTransform target;
+            Rect bounds;
+            try
+            {
+                target = AnchorTarget.ResolveWindow();
+                if (target == null) return;               // 窗口还没出来，保持现状
+                bounds = DockedLayout.ToWorldRect(target);
+            }
+            catch (Exception e) { Warn("apply dock: " + e.Message); return; }
+
+            if (bounds.width < 2f || bounds.height < 2f) return;
+
+            // 解析退化到整块画布时不要跟着摆（那会把按钮甩到屏幕角）
+            var parentRect = parent.rect;
+            if (bounds.width >= parentRect.width - 1f && bounds.height >= parentRect.height - 1f)
+            {
+                if (ModEntry.Log != null && Time.unscaledTime > _nextCanvasSkipLogAt)
+                {
+                    _nextCanvasSkipLogAt = Time.unscaledTime + 60f;
+                    ModEntry.Log.Log("[button] 目标退化成整块画布，保持上次位置："
+                        + Mathf.RoundToInt(bounds.width) + "x" + Mathf.RoundToInt(bounds.height));
+                }
+                return;
+            }
+
+            try { PlaceAt(rect, parent, bounds); }
+            catch (Exception e) { Warn("place button: " + e.Message); }
+        }
+
+        /// <summary>面板布局时把量到的物品栏矩形喂过来（与图鉴面板共用同一次测量）。</summary>
+        internal static void SyncToInventory(Rect bounds)
+        {
+            var rect = _buttonRoot;
+            var parent = _dockParent;
+            if (rect == null || parent == null) return;
+            PlaceAt(rect, parent, bounds);
         }
 
         /// <summary>
-        /// 游戏窗口（PixelWindow）发生任何可能改变布局的事件后的回调
+        /// 游戏窗口（PixelWindow）发生任何可能改变矩形的动作后的回调
         /// （由 <see cref="PanelWatchPatch"/> 钩 Show/Hide/Validate/FixBounds/ResizePixels/
-        /// ReclampDockedWindows 触发）。按钮绑在窗口上，位置不用管，只补一次绑定检查。
+        /// ReclampDockedWindows 触发）：立刻重量一次，不排队。
         /// </summary>
         internal static void OnPanelGeometryChanged(PixelWindow window)
         {
-            ApplyDock();
-        }
-
-        /// <summary>
-        /// 面板布局时把物品栏矩形喂过来的旧通道。按钮改成窗口子物体后，
-        /// 位置已由布局自动跟随，这里只当成一次「绑定还活着吗」的检查机会。
-        /// </summary>
-        internal static void SyncToInventory(Rect bounds)
-        {
+            _nextDockCheckAt = 0f;
             ApplyDock();
         }
 
         private static void OpenCatalog()
         {
             CatalogWindow.Toggle();
+        }
+
+        /// <summary>
+        /// 吞掉指针按下与拖拽事件。
+        ///
+        /// uGUI 的事件沿层级向上冒泡：按钮悬在物品栏上方，不拦的话拖动按钮等于拖动下面的窗口。
+        /// </summary>
+        private sealed class DragBlocker : MonoBehaviour,
+            IPointerDownHandler, IPointerUpHandler,
+            IBeginDragHandler, IDragHandler, IEndDragHandler, IScrollHandler
+        {
+            public void OnPointerDown(PointerEventData e) { }
+            public void OnPointerUp(PointerEventData e) { }
+            public void OnBeginDrag(PointerEventData e) { e.Use(); }
+            public void OnDrag(PointerEventData e) { e.Use(); }
+            public void OnEndDrag(PointerEventData e) { e.Use(); }
+            public void OnScroll(PointerEventData e) { e.Use(); }
         }
 
         private static void Warn(string message)
