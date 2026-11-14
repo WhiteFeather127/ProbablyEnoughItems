@@ -13,12 +13,12 @@
 
     发布包里的东西就是「游戏运行必需」的那几样，不含 .git / bin / obj / 源码 / 文档。
 
-    默认输出：<文档>\ProbablyEnoughItems-publish\
+    默认输出：<仓库根>\publish\
                 ├── stage\          ← 上传内容（contentfolder）
                 └── workshop.vdf    ← 物品元数据，发布成功后会被写回物品 ID
 
-    仓库目录名含中文，steamcmd 对非 ASCII 的 contentfolder 支持不佳，
-    所以默认就落在「文档」下这个 ASCII 路径，不要改回仓库内。
+    仓库目录名含中文，steamcmd 对非 ASCII 的 contentfolder 支持不佳；
+    若上传阶段出问题，用 -StageDir 指到一个纯 ASCII 路径。
 
 .PARAMETER PublishedFileId
     0 = 新建物品；填已有 ID = 更新该物品。上传成功后 steamcmd 会把新 ID 写回 vdf，脚本也会打印出来。
@@ -79,12 +79,10 @@ if (-not $GameDir) {
 }
 if (-not $GameDir) { throw "找不到游戏目录：用 -GameDir <路径>，或设置环境变量 PROBABLY_STOLEN_DIR" }
 
-# 默认发布包放在「文档」下的 ProbablyEnoughItems-publish\：内容和 vdf 同处一处，便于随手查看。
-# 不能放仓库根：仓库目录名含中文，steamcmd 对非 ASCII 的 contentfolder 支持不佳，
-# 会卡在 "Timeout uploading manifest"。这里固定用纯 ASCII 路径。
+# 默认发布包放在仓库根的 publish\ 下：内容与 vdf 同处一处，便于随手查看。
+# 仓库目录名含中文，steamcmd 对非 ASCII 的 contentfolder 支持不佳，上传出错时用 -StageDir 换到纯 ASCII 路径。
 if ([string]::IsNullOrWhiteSpace($StageDir)) {
-    $docs = [Environment]::GetFolderPath('MyDocuments')
-    $StageDir = Join-Path (Join-Path $docs "ProbablyEnoughItems-publish") "stage"
+    $StageDir = Join-Path (Join-Path $repo "publish") "stage"
 }
 $StageDir = [System.IO.Path]::GetFullPath($StageDir)
 $publishDir = Split-Path -Parent $StageDir
