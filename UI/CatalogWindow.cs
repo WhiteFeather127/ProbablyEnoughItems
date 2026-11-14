@@ -5537,6 +5537,47 @@ namespace ItemCatalog.UI
             }
         }
 
+        private static float _nextPlacementCheckAt;
+
+        /// <summary>
+        /// 物品栏窗口几何变了（由 <see cref="PanelWatchPatch"/> 在 Show/Hide/ResizePixels/FixBounds/
+        /// ReclampDockedWindows 之后调用）：重新量物品栏矩形并重新贴靠。
+        /// 面板左右锚点是「物品栏右边缘 → 屏幕右边缘」，所以物品栏一变宽/一变高，
+        /// 面板宽度、每页格子数都会跟着重算。
+        /// </summary>
+        internal static void OnInventoryGeometryChanged()
+        {
+            if (_window == null || !_window.IsAlive || !_window.IsVisible) return;
+
+            float now = Time.unscaledTime;
+            if (now < _nextPlacementCheckAt) return;
+            _nextPlacementCheckAt = now + 0.2f;
+
+            int oldPerPage = _perPage;
+            int oldColumns = _columns;
+
+            try
+            {
+                // 只认真窗口：解析退化到整块画布时会让面板按「右侧 55%」兜底，反而跳一下
+                var resolved = AnchorTarget.ResolveWindow();
+                if (resolved != null) _inventoryRect = resolved;
+
+                ApplyPlacement(_window, _inventoryRect);
+            }
+            catch (Exception e)
+            {
+                Warn("re-place on inventory resize: " + e.Message);
+                return;
+            }
+
+            // 每页格数变了才需要重排网格；只是挪了位置的话布局自己会跟上
+            if (_perPage != oldPerPage || _columns != oldColumns)
+            {
+                _page = 0;
+                _pendingRender = true;   // 下一帧由 AutoRefreshTick 处理，避免在窗口布局中途重画
+            }
+        }
+
         private static void ComputePageSize(float panelWidth, float panelHeight)
         {
             float usableWidth = Mathf.Max(64f, panelWidth - PaddingX);

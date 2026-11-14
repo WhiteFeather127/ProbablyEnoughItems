@@ -90,12 +90,19 @@ namespace ItemCatalog.UI
         {
             try { LauncherButton.OnPanelGeometryChanged(__instance); }
             catch { }
+
+            // 图鉴面板跟着物品栏一起变尺寸（窗口被拖动缩放的场景都走这里）
+            try { CatalogWindow.OnInventoryGeometryChanged(); }
+            catch { }
         }
 
         /// <summary>静态方法钩子：全局重新贴靠（分辨率/黑边变化）。</summary>
         private static void OnWindowLayoutGlobal()
         {
             try { LauncherButton.OnPanelGeometryChanged(null); }
+            catch { }
+
+            try { CatalogWindow.OnInventoryGeometryChanged(); }
             catch { }
         }
     }
