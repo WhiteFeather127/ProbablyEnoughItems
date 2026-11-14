@@ -393,7 +393,12 @@ namespace ItemCatalog.UI
                 // 什么都收的客人：不展开物品（那是全注册表），只写一行「全部物品」
                 if (tag != null && tag.StartsWith("ALL_TYPE", StringComparison.OrdinalIgnoreCase))
                 {
-                    builder.AddLabel(ModEntry.T("all_items"), "tag_all" + (strip.Base + i));
+                    // 原版有 `type_all_type` / `type_all_type_except_contraband`，直接用它的文案
+                    string allName = BuyTagName(tag);
+                    if (string.IsNullOrEmpty(allName) || allName.StartsWith("ALL_TYPE", StringComparison.OrdinalIgnoreCase))
+                        allName = ModEntry.T("all_items");
+
+                    builder.AddLabel(allName, "tag_all" + (strip.Base + i));
                     continue;
                 }
 
@@ -1212,12 +1217,21 @@ namespace ItemCatalog.UI
             string key = (tag ?? string.Empty).Trim();
             if (key.Length == 0) return key;
 
+            // 一律先用原版：游戏的 `type_*` 表覆盖了全部 63 个类型，
+            // 收购标签里的 WATER / FOOD / HOUSEHOLD_GOOD / SUBSTANCE / ALL_TYPE 都在其中。
+            string vanilla = TagDisplayName(key);
+            if (!string.IsNullOrEmpty(vanilla) &&
+                !string.Equals(vanilla, key, StringComparison.OrdinalIgnoreCase))
+            {
+                return vanilla;
+            }
+
+            // 原版确实没有对应类型键的极少数标签，才用模组自己的文案
             switch (key)
             {
                 case "LIQUID_CONTAINER_TAG": return ModEntry.T("buy_tag_container");
                 case "GUN_CALIBER_TAG": return ModEntry.T("buy_tag_caliber");
-                case "SUBSTANCE": return ModEntry.T("buy_tag_substance");
-                default: return TagDisplayName(key);
+                default: return key;
             }
         }
 
@@ -1852,7 +1866,31 @@ namespace ItemCatalog.UI
         {
             if (string.IsNullOrEmpty(tag)) return tag;
 
-            string key = "type_" + tag.Trim().ToLowerInvariant();
+            string text = LookupTypeKey(tag.Trim());
+            if (text != null) return text;
+
+            // `LIQUID_CONTAINER_TAG` / `GUN_CALIBER_TAG` 这类客户端标签：
+            // 去掉 `_TAG` 再按类型表查一次（`type_liquid_container` …），
+            // 仍然查不到才由调用方用模组文案兜底。
+            string trimmed = tag.Trim();
+            if (trimmed.EndsWith("_TAG", StringComparison.OrdinalIgnoreCase))
+            {
+                text = LookupTypeKey(trimmed.Substring(0, trimmed.Length - 4));
+                if (text != null) return text;
+            }
+
+            return tag;
+        }
+
+        /// <summary>
+        /// 按游戏自己的物品类型表查名字：`type_` + 小写。
+        /// 依次试 mechanic / UI / 通用表；取不到（或接口把 key 原样回显）返回 null。
+        /// </summary>
+        private static string LookupTypeKey(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+
+            string key = "type_" + name.ToLowerInvariant();
 
             string text = null;
             try { text = LocHelper.GetLocalizedMechanicOrDefault(key, null); } catch { }
@@ -1865,11 +1903,10 @@ namespace ItemCatalog.UI
                 try { text = LocHelper.GetLocalized(key, null); } catch { }
             }
 
-            // 查不到时接口常把 key 本身回显，这种等于没翻
             if (string.IsNullOrEmpty(text) ||
                 string.Equals(text, key, StringComparison.OrdinalIgnoreCase))
             {
-                return tag;
+                return null;
             }
 
             return text;
