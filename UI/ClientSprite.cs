@@ -172,9 +172,28 @@ namespace ItemCatalog.UI
             if (string.IsNullOrEmpty(fallback)) return null;
 
             int hash = fallback.IndexOf('#');
-            return hash > 0
-                ? FromPrefixes(new[] { fallback.Substring(0, hash) })
-                : (FromEntries(new[] { fallback }) ?? Single(fallback));
+            if (hash > 0) return FromPrefixes(new[] { fallback.Substring(0, hash) });
+
+            var single = FromEntries(new[] { fallback });
+            if (single != null && single.Count > 0) return single;
+
+            // 字典里没有这个固定 key：游戏自己也找不到，`GetSprite` 会退到
+            // `GetRandomScavSpriteName()`（Player.log 里那句
+            // "Sprite Value not found for key in Dict: scavElder"）。
+            // 所以这里也按拾荒者池展开，图鉴显示的张数才和游戏里实际的一致。
+            var scav = FromPrefixes(new[] { "maleScav", "femaleScav" });
+            if (scav != null && scav.Count > 0)
+            {
+                if (ModEntry.Log != null)
+                {
+                    ModEntry.Log.Log("[portrait] key '" + fallback
+                        + "' 在 SpriteDict 里不存在，按游戏兜底展开拾荒者池 -> "
+                        + scav.Count + " sprites");
+                }
+                return scav;
+            }
+
+            return Single(fallback);
         }
 
         private static List<Sprite> FromPrefixes(IEnumerable<string> prefixes)
