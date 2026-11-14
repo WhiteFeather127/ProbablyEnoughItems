@@ -240,7 +240,9 @@ namespace ItemCatalog.UI
             Rect bestRect = new Rect();
 
             // 失败时把这些候选打出来：能直接看出「界面已经在，只是被哪条规则挡掉了」
-            var probes = new List<string>(6);
+            // 这里不设上限，最后按宽度取前 12 个 —— 只记前几个会把真正的大块漏掉。
+            var probes = new List<KeyValuePair<float, string>>(16);
+            int scanned = 0;
 
             try
             {
@@ -251,14 +253,17 @@ namespace ItemCatalog.UI
                     if (rt == null || !rt.gameObject.activeInHierarchy) continue;
                     if (rt.name == "WindowUICanvas") continue;
 
+                    scanned++;
+
                     Rect rect;
                     try { rect = DockedLayout.ToWorldRect(rt); }
                     catch { continue; }
 
-                    if (probes.Count < 6 && rect.width > 80f && rect.height > 40f)
+                    if (rect.width > 80f && rect.height > 30f)
                     {
-                        probes.Add(string.Format("{0}  {1:F0}x{2:F0} @({3:F0},{4:F0})",
-                            rt.name, rect.width, rect.height, rect.center.x, rect.center.y));
+                        probes.Add(new KeyValuePair<float, string>(rect.width, string.Format(
+                            "{0}  {1:F0}x{2:F0} @({3:F0},{4:F0})",
+                            rt.name, rect.width, rect.height, rect.center.x, rect.center.y)));
                     }
 
                     // 阈值只用来排除图标/文字这种小块，不要卡得太严：
@@ -289,10 +294,18 @@ namespace ItemCatalog.UI
                 if (ModEntry.Log != null && Time.unscaledTime > _nextSceneProbeLogAt)
                 {
                     _nextSceneProbeLogAt = Time.unscaledTime + 0.5f;
-                    ModEntry.Log.Log("[anchor] scene panel: none (candidates=" + probes.Count
-                                     + ") t=" + Time.unscaledTime.ToString("F2"));
-                    for (int i = 0; i < probes.Count; i++)
-                        ModEntry.Log.Log("[anchor]   " + probes[i]);
+
+                    probes.Sort(delegate (KeyValuePair<float, string> a, KeyValuePair<float, string> b)
+                    {
+                        return b.Key.CompareTo(a.Key);
+                    });
+
+                    int show = Math.Min(12, probes.Count);
+                    ModEntry.Log.Log("[anchor] scene panel: none (scanned=" + scanned
+                                     + " big=" + probes.Count + ") t=" + Time.unscaledTime.ToString("F2"));
+
+                    for (int i = 0; i < show; i++)
+                        ModEntry.Log.Log("[anchor]   " + probes[i].Value);
                 }
 
                 return null;
