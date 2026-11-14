@@ -178,6 +178,44 @@ namespace ItemCatalog.UI
             return list;
         }
 
+        private static FieldInfo _multiOffsets;
+
+        /// <summary>
+        /// 拖动时每只物品相对指针的偏移（`dragOffsets`，坐标空间 = `RenderHandler.overlayRoot`）。
+        /// 幽灵图就是用「指针 + 这个偏移」摆放的，红底照同一套算就自然贴着它们。
+        /// </summary>
+        internal static System.Collections.IDictionary DragOffsets()
+        {
+            try
+            {
+                var handler = ItemMultiSelectHandler.current;
+                if (handler == null) return null;
+
+                if (_multiOffsets == null)
+                {
+                    _multiOffsets = typeof(ItemMultiSelectHandler).GetField(
+                        "dragOffsets", BindingFlags.NonPublic | BindingFlags.Instance);
+                }
+
+                return _multiOffsets == null ? null : _multiOffsets.GetValue(handler) as System.Collections.IDictionary;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>幽灵图的父节点（`RenderHandler.overlayRoot`），红底要挂在这上面才对得上坐标。</summary>
+        internal static RectTransform OverlayRoot()
+        {
+            try
+            {
+                var handler = RenderHandler.current;
+                if (handler == null) return null;
+
+                var root = handler.overlayRoot;
+                return root == null ? null : root.rectTransform;
+            }
+            catch { return null; }
+        }
+
         internal static bool IsGroupDragging()
         {
             try
