@@ -38,9 +38,13 @@ namespace ItemCatalog.UI
         private const float TextWidth = 100f;
         private const float TextHeight = 30f;
 
-        /// <summary>实际用的按钮尺寸：有图标就是方图，没有才用文字按钮的宽高。</summary>
-        private static float _width = IconSize;
-        private static float _height = IconSize;
+        /// <summary>图标按钮保留游戏按钮框后的外框尺寸。</summary>
+        private const float IconButtonWidth = 40f;
+        private const float IconButtonHeight = 32f;
+
+        /// <summary>实际用的按钮尺寸：有图标就套在按钮框里，没有才用文字宽度。</summary>
+        private static float _width = IconButtonWidth;
+        private static float _height = IconButtonHeight;
 
         private const float Gap = 4f;
 
@@ -78,6 +82,47 @@ namespace ItemCatalog.UI
             catch (Exception e) { Warn("load button.png: " + e.Message); }
 
             return _icon;
+        }
+
+        /// <summary>
+        /// 把 `button.png` 塞进游戏自己的按钮框里：隐藏文字，图标作为子物体居中，
+        /// 不参与射线（点击仍由按钮本体处理）。
+        /// </summary>
+        private static void AttachIcon(CustomUIElement button, Sprite icon)
+        {
+            if (button == null || button.Rect == null || icon == null) return;
+
+            var host = button.Rect;
+
+            try
+            {
+                var texts = host.GetComponentsInChildren<TMPro.TMP_Text>(true);
+                for (int i = 0; i < texts.Length; i++) texts[i].enabled = false;
+            }
+            catch { }
+
+            try
+            {
+                var go = new GameObject("icon", typeof(RectTransform), typeof(UnityEngine.UI.Image));
+                var rect = (RectTransform)go.transform;
+                rect.SetParent(host, false);
+
+                // 拉伸铺满按钮框（四周留 3 像素内边距）：这样按钮多大图标就多大，
+                // 不用等布局算完再去量尺寸
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.pivot = new Vector2(0.5f, 0.5f);
+                rect.offsetMin = new Vector2(3f, 3f);
+                rect.offsetMax = new Vector2(-3f, -3f);
+
+                var image = go.GetComponent<UnityEngine.UI.Image>();
+                image.sprite = icon;
+                image.preserveAspect = true;
+                image.raycastTarget = false;
+
+                go.layer = host.gameObject.layer;
+            }
+            catch (Exception e) { Warn("attach icon: " + e.Message); }
         }
 
         /// <summary>一枚按钮 = 一个贴靠目标。</summary>
@@ -325,26 +370,28 @@ namespace ItemCatalog.UI
             {
                 var builder = manager.BuildInto(rect, false, ModEntry.MOD_ID + ".button." + key);
 
+                // 保留游戏自己的按钮框（AddButton 生成的那套边框/底色），
+                // 只把里面的文字换成 button.png。所以这里建的是按钮，不是裸图片。
                 var icon = LoadIcon();
+                string label = icon != null ? string.Empty : ModEntry.T("btn_open");
+
+                var button = builder.AddButton(label, delegate { OpenFor(dock); }, "open").Last;
+
                 if (icon != null)
                 {
-                    // 图标按钮：`button.png` 直接当按钮表面，不再显示文字
-                    var image = builder.AddImage(icon, IconSize, IconSize, "open").Last;
-                    if (image != null)
-                    {
-                        // 图片元素本身没有点击能力，要挂 Unity Button 才吃得到射线
-                        CatalogWindow.MakeClickable(image, delegate { OpenFor(dock); });
-                    }
+                    _width = IconButtonWidth;
+                    _height = IconButtonHeight;
                 }
                 else
                 {
-                    // 读不到图就退回文字按钮，至少能点
                     _width = TextWidth;
                     _height = TextHeight;
-                    builder.AddButton(ModEntry.T("btn_open"), delegate { OpenFor(dock); }, "open");
                 }
 
                 CustomUIBuilder.RebuildLayout(rect);
+
+                // 布局算完再塞图标：图标是拉伸铺满按钮框的，此时父节点尺寸才可靠
+                if (icon != null) AttachIcon(button, icon);
 
                 var element = builder.Last;
                 if (element != null && element.Rect != null &&
