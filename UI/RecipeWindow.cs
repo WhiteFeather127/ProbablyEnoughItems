@@ -63,6 +63,9 @@ namespace ItemCatalog.UI
         private static List<Sprite> _portraitSprites;
         private static int _portraitIndex;
         private static float _portraitNextAt;
+
+        /// <summary>下一次把窗口提到最前的时间点（0 = 不需要）。</summary>
+        private static float _raiseAt;
         private static UnityEngine.UI.Image _portraitImage;
         private static int _portraitSwitches;   // 诊断日志用，每页重置
 
@@ -219,6 +222,10 @@ namespace ItemCatalog.UI
                 try { _window.BringToFront(); } catch { }
             }
 
+            // 这一帧往后一点点再提一次：点击事件里图鉴自己也会 BringToFront，
+            // 谁后执行谁在上面，晚一帧补一次才稳。
+            _raiseAt = Time.unscaledTime + 0.05f;
+
             if (ModEntry.Log != null)
             {
                 try
@@ -253,6 +260,7 @@ namespace ItemCatalog.UI
 
             _window = null;
             _bodyHost = null;
+            _raiseAt = 0f;
             _categories = new List<Category>();
             _sourcePages.Clear();
             StopPortrait();
@@ -273,6 +281,14 @@ namespace ItemCatalog.UI
         internal static void TickPortrait()
         {
             if (!IsOpen) return;
+
+            // 打开后补提一次到最前（点击那一帧图鉴可能又把自己提到前面）
+            if (_raiseAt > 0f && Time.unscaledTime >= _raiseAt)
+            {
+                _raiseAt = 0f;
+                try { _window.BringToFront(); } catch { }
+            }
+
             if (Time.unscaledTime < _portraitNextAt) return;   // 立绘与货单图标共用同一个 1 秒节拍
 
             _portraitNextAt = Time.unscaledTime + PortraitSwitchSeconds;
@@ -904,13 +920,15 @@ namespace ItemCatalog.UI
                 // 物品名居中：默认是左对齐，和左边的「来源/用途」挤在一起看着像两段标题
                 try { title.alignment = TMPro.TextAlignmentOptions.Center; } catch { }
 
-                // 挂到窗口根上、锚在左上：标题栏本身是个横向布局组，
-                // 复制出来的文本塞进去会被排在关闭按钮后面（跑到右边去）。
-                var clone = UnityEngine.Object.Instantiate(title.gameObject, _window.Rect);
+                // 就放在标题栏里，但让它的布局组忽略这份克隆：
+                // 否则会被当成第三个子物体排在关闭按钮后面（跑到右边去）；
+                // 挂到窗口根上又会被竖排布局组排到最底下。
+                var bar = title.transform.parent as RectTransform;
+                if (bar == null) return;
+
+                var clone = UnityEngine.Object.Instantiate(title.gameObject, bar);
                 clone.name = "directionLabel";
 
-                // 窗口根上挂着竖排布局组，直接塞子物体会被当成第三行排到最底下。
-                // 先让布局组忽略它，再自己锚定位置。
                 try
                 {
                     var ignore = clone.GetComponent<UnityEngine.UI.LayoutElement>();
@@ -922,16 +940,13 @@ namespace ItemCatalog.UI
                 var rect = clone.transform as RectTransform;
                 if (rect != null)
                 {
-                    // 标题栏高度从标题文本的父节点量出来，纵向就对齐在它中间
-                    float barHeight = 30f;
-                    var bar = title.transform.parent as RectTransform;
-                    if (bar != null && bar.rect.height > 4f) barHeight = bar.rect.height;
+                    float side = bar.rect.height > 4f ? bar.rect.height : 30f;
 
-                    rect.anchorMin = new Vector2(0f, 1f);
-                    rect.anchorMax = new Vector2(0f, 1f);
+                    rect.anchorMin = new Vector2(0f, 0.5f);
+                    rect.anchorMax = new Vector2(0f, 0.5f);
                     rect.pivot = new Vector2(0f, 0.5f);
-                    rect.anchoredPosition = new Vector2(10f, -barHeight * 0.5f);
-                    rect.sizeDelta = new Vector2(140f, barHeight);
+                    rect.anchoredPosition = new Vector2(10f, 0f);
+                    rect.sizeDelta = new Vector2(140f, side);
                 }
 
                 // 画在最上层，否则会被窗口背景/内容盖住

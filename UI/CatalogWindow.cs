@@ -1688,20 +1688,29 @@ namespace ItemCatalog.UI
 
                 var mark = (RectTransform)_dropMark.transform;
 
-                // 大小取被拖那只物品本身的格子尺寸（拿不到就退回图鉴格子大小）
+                // 大小取被拖那只物品的**实际显示尺寸**：rect 是本地尺寸，
+                // 游戏在拖拽时会给节点缩放，所以要再乘 lossyScale 才是屏幕上看到的大小。
                 float width = CellWidth, height = CellHeight;
                 try
                 {
                     var src = dragged.rectTransform;
-                    if (src != null && src.rect.width > 4f && src.rect.height > 4f)
+                    if (src != null && src.rect.width > 2f && src.rect.height > 2f)
                     {
-                        width = src.rect.width;
-                        height = src.rect.height;
+                        var size = src.rect.size;
+                        var scale = src.lossyScale;
+
+                        width = size.x * Mathf.Abs(scale.x);
+                        height = size.y * Mathf.Abs(scale.y);
                     }
+
+                    // 红底画在画布上，尺寸要用画布单位：除以画布的 lossyScale 换算一次
+                    var canvasScale = canvasRoot.lossyScale;
+                    if (Mathf.Abs(canvasScale.x) > 0.001f) width /= Mathf.Abs(canvasScale.x);
+                    if (Mathf.Abs(canvasScale.y) > 0.001f) height /= Mathf.Abs(canvasScale.y);
                 }
                 catch { }
 
-                mark.sizeDelta = new Vector2(width + 4f, height + 4f);
+                mark.sizeDelta = new Vector2(width, height);
 
                 // 跟着鼠标走：被拖动的物品就在指针下面，红底于是贴在它身上，
                 // 而不是留在物品原来所在的格子里
