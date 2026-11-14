@@ -252,8 +252,8 @@ client,mercenaryBuyer,name_mercenary,,,,pool:GetRandomMercSpriteName,,,WEAPON|AR
 
 # --- 黑市 ---
 faction,faction_name_black_market,,,,,
-client,louDemandCollect,name_lou,,,黑市/求购,wanted5,,,WEAPON|FIREARM|MELEE_WEAPON|AMMUNITION|MEDICAL,bribeDonation,,,,
-client,wanted5,name_lou,,,,wanted5,,,MELEE_WEAPON|welder|screwdriver,,,,,,
+client,louDemandCollect,name_lou,,,黑市/求购,wanted5,,,WEAPON|FIREARM|MELEE_WEAPON|AMMUNITION|MEDICAL,,,,,,
+client,wanted5,name_lou,,,,wanted5,,,MELEE_WEAPON,welder|screwdriver,,,,,
 client,woundedMan,name_wounded_man,,,,pool:GetRandomBMMaleSpriteName,,,MEDICAL,,,,,,
 client,poisonBuyer,name_shady_buyer,,,,pool:GetRandomShadySpriteName,,,POISON|CHEMICAL_SUPPLIES,,,,,,
 client,shadyMerchant,name_shady_merchant,,,,pool:GetShadyMerchantSpriteName,,,CONTRABAND|ACCESS_CARD,,,,,,
@@ -266,7 +266,7 @@ client,patrolOfficer,name_security_officer,,,,pool:GetRandomSecSpriteName,,,TREA
 # --- 革命 ---
 faction,faction_name_revolution,,,,,
 client,wanted3,name_lower_levels_citizen,,,,pool:GetRandomRevSpriteName,,,FOOD|MATERIAL,,,,,,
-client,wanted4Normal,name_odin,,,,pool:GetRandomRevSpriteName,,,AMMUNITION|WEAPON|MELEE_WEAPON|ACCESS_CARD|MUNITION|SUPPLY_CRATE|ARMOR|POISON,,,,,,
+client,wanted4Normal,name_odin,,,,wanted4,,,AMMUNITION|WEAPON|MELEE_WEAPON|ACCESS_CARD|MUNITION|SUPPLY_CRATE|ARMOR|POISON,,,,,,
 
 # --- 无阵营 ---
 faction,faction_none,,,,,

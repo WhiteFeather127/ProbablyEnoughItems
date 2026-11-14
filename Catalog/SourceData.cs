@@ -297,6 +297,11 @@ namespace ItemCatalog.Catalog
             if (string.IsNullOrEmpty(name)) return false;
             if (name.IndexOf("name_", StringComparison.Ordinal) >= 0) return false;
             if (name.IndexOf("_title", StringComparison.Ordinal) >= 0) return false;
+
+            // 缺翻译时游戏返回 `Translation Error"xxx" in yyy` 这种提示串，
+            // 当成名字显示会在界面上直接露出内部错误文案。
+            if (name.IndexOf("Translation Error", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+
             return true;
         }
 

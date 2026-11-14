@@ -1477,7 +1477,8 @@ namespace ItemCatalog.UI
                 // 没翻译时游戏回显 key 或空串：先试模组自己的表（faction_name_church
                 // 这类游戏没有的阵营，只有我们才提供名字），最后才退回 key
                 if (string.IsNullOrEmpty(name) ||
-                    name.IndexOf("faction_name_", StringComparison.Ordinal) >= 0)
+                    name.IndexOf("faction_name_", StringComparison.Ordinal) >= 0 ||
+                    name.IndexOf("Translation Error", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     string own = ModEntry.T(faction);
                     return string.IsNullOrEmpty(own) || string.Equals(own, faction, StringComparison.Ordinal)
@@ -1908,8 +1909,11 @@ namespace ItemCatalog.UI
                 try { text = LocHelper.GetLocalized(key, null); } catch { }
             }
 
+            // 查不到时接口会回显 key，或者返回 `Translation Error"xxx" in yyy` ——
+            // 后者以前被当成有效翻译，界面上就出现「近战武器 / Translation Error" in type_welder」
             if (string.IsNullOrEmpty(text) ||
-                string.Equals(text, key, StringComparison.OrdinalIgnoreCase))
+                string.Equals(text, key, StringComparison.OrdinalIgnoreCase) ||
+                text.IndexOf("Translation Error", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 return null;
             }
