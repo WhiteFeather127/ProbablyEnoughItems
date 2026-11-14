@@ -104,8 +104,9 @@ dotnet build -c Release -p:GameDir="<游戏目录>"
 .\tools\publish\publish.ps1 -Upload -Username <账号> -PublishedFileId <id> -ChangeNote "fix sources"
 ```
 
-产物默认输出到 `<文档>\ProbablyEnoughItems-publish\`——`stage\`（上传内容）与 `workshop.vdf`。这个路径必须保持纯 ASCII：
-steamcmd 处理非 ASCII 的 `contentfolder` 容易出错，所以发布包不放在本仓库内。需要换位置用 `-StageDir`。
+产物默认输出到 `<仓库根>\publish\`——`stage\`（上传内容）与 `workshop.vdf`。这个路径必须保持纯 ASCII：
+steamcmd 处理非 ASCII 的 `contentfolder` 会失败（`Timeout uploading manifest`）。如果你的仓库目录本身含中文，
+每次发布时用 `-StageDir` 指到一个 ASCII 目录，例如 `-StageDir "$HOME\Documents\ProbablyEnoughItems-publish\stage"`。
 
 App ID 是 `4348910`；`visibility` 0 = 公开、1 = 仅好友、2 = 隐藏。首次上传还需要在 Steam 网页上接受一次创意工坊
 法律协议，且登录的账号必须拥有本游戏。本地 `Mods\ProbablyEnoughItems\` 与工坊物品同 `<ID>` 时本地优先，

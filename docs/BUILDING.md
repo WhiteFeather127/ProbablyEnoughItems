@@ -112,9 +112,10 @@ validates it, and writes `.publish\workshop.vdf`:
 .\tools\publish\publish.ps1 -Upload -Username <account> -PublishedFileId <id> -ChangeNote "fix sources"
 ```
 
-Output defaults to `<Documents>\ProbablyEnoughItems-publish\` — `stage\` (the upload content) plus `workshop.vdf`.
-Keep that path ASCII-only: steamcmd handles non-ASCII `contentfolder` values badly, which is why the package is not
-built inside this repository. Override with `-StageDir` if you must.
+Output defaults to `<repo>\publish\` — `stage\` (the upload content) plus `workshop.vdf`.
+Keep that path ASCII-only: steamcmd handles non-ASCII `contentfolder` values badly and fails with
+`Timeout uploading manifest`. If your checkout lives under a non-ASCII path, override per run, e.g.
+`-StageDir "$HOME\Documents\ProbablyEnoughItems-publish\stage"`.
 
 App id is `4348910`; `visibility` 0 = public, 1 = friends only, 2 = hidden. The very first upload also requires
 accepting the Workshop legal agreement on the Steam website. Your account must own the game. A local
