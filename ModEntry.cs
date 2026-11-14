@@ -53,6 +53,9 @@ namespace ItemCatalog
             // 监听游戏窗口显隐（PixelWindow.Show/Hide）：物品栏面板一激活就重锚按钮
             UI.PanelWatchPatch.Install(MOD_ID);
 
+            // 把物品拖到图鉴上 → 丢进店里的垃圾桶
+            UI.DragToDeletePatch.Install(MOD_ID);
+
             try
             {
                 ModHelper.AddDebugFunction(MOD_ID, ModHelper.DEBUG_CATEGORY_SPECIAL,

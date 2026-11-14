@@ -380,6 +380,21 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>场景切换后窗口会随场景销毁，句柄必须作废。</summary>
+        /// <summary>指针是否压在图鉴面板上（拖拽删除要用）。</summary>
+        internal static bool IsPointerOverPanel(Vector2 screenPoint)
+        {
+            if (_window == null || !_window.IsAlive || !_window.IsVisible) return false;
+
+            var rect = _window.Rect;
+            if (rect == null) return false;
+
+            try
+            {
+                return UnityEngine.RectTransformUtility.RectangleContainsScreenPoint(rect, screenPoint, null);
+            }
+            catch { return false; }
+        }
+
         /// <summary>
         /// 从某个界面上的图鉴按钮打开：面板贴到那枚按钮绑定的对象上
         /// （物品栏窗口 / 店铺底部那排 UI）。两枚按钮共用同一个窗口，只是锚点不同。

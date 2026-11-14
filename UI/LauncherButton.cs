@@ -336,6 +336,25 @@ namespace ItemCatalog.UI
             catch (Exception e) { Warn("sync button: " + e.Message); }
         }
 
+        /// <summary>指针是否压在任意一枚图鉴按钮上（拖拽删除要用）。</summary>
+        internal static bool IsPointerOver(Vector2 screenPoint)
+        {
+            for (int i = 0; i < _docks.Count; i++)
+            {
+                var dock = _docks[i];
+                if (dock == null || dock.Root == null) continue;
+
+                try
+                {
+                    if (UnityEngine.RectTransformUtility.RectangleContainsScreenPoint(dock.Root, screenPoint, null))
+                        return true;
+                }
+                catch { }
+            }
+
+            return false;
+        }
+
         /// <summary>按目标当前的矩形把这一枚按钮重新摆一次。</summary>
         private static void PlaceCurrent(Dock dock)
         {
