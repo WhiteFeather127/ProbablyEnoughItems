@@ -103,6 +103,12 @@ namespace ItemCatalog.UI
             rect.sizeDelta = new Vector2(ButtonWidth, ButtonHeight);
             rect.anchoredPosition = new Vector2(-Gap, Gap);
 
+            // 图层与窗口保持一致：
+            //   1) 同一个 Unity layer —— 窗口若带独立 Canvas（overrideSorting）时不会被相机剔除；
+            //   2) 排在窗口子节点的最后 —— 否则会被窗口自己的内容盖住（子节点先画、后画的在上）。
+            rect.gameObject.layer = target.gameObject.layer;
+            rect.SetAsLastSibling();
+
             _buttonRoot = rect;
 
             if (_buttonElement == null || _buttonElement.Rect == null || _buttonElement.Rect.parent != rect)
@@ -128,6 +134,15 @@ namespace ItemCatalog.UI
                     catch { _buttonLabel = null; }
                 }
             }
+
+            // 按钮内部是新建的 GameObject，layer 默认回到 0；统一刷成窗口那一层
+            try
+            {
+                var parts = rect.GetComponentsInChildren<Transform>(true);
+                int layer = rect.gameObject.layer;
+                for (int i = 0; i < parts.Length; i++) parts[i].gameObject.layer = layer;
+            }
+            catch { }
 
             if (ModEntry.Log != null)
             {
