@@ -158,20 +158,34 @@ namespace ItemCatalog.UI
         /// <summary>多选里第一个元素，用来给红底量尺寸（群组拖拽时没有单只的“当前物品”）。</summary>
         internal static GameItemElement FirstSelectedElement()
         {
+            var all = SelectedElements();
+            return all != null && all.Count > 0 ? all[0] : null;
+        }
+
+        /// <summary>当前框选拖拽中的全部元素（每只都要各自垫一块红底）。</summary>
+        internal static List<GameItemElement> SelectedElements()
+        {
+            var raw = RawSelected(ItemMultiSelectHandler.current);
+            if (raw == null) return null;
+
+            var list = new List<GameItemElement>();
+            foreach (var item in raw)
+            {
+                var element = item as GameItemElement;
+                if (element != null) list.Add(element);
+            }
+
+            return list;
+        }
+
+        internal static bool IsGroupDragging()
+        {
             try
             {
-                var raw = RawSelected(ItemMultiSelectHandler.current);
-                if (raw == null) return null;
-
-                foreach (var item in raw)
-                {
-                    var element = item as GameItemElement;
-                    if (element != null) return element;
-                }
+                var multi = ItemMultiSelectHandler.current;
+                return multi != null && multi.IsGroupDragging;
             }
-            catch { }
-
-            return null;
+            catch { return false; }
         }
 
         /// <summary>

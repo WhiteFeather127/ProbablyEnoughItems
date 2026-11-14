@@ -411,6 +411,8 @@ namespace ItemCatalog.UI
 
             AnchorOverride = null;   // 旧场景的对象已销毁，别拿它算锚点
             _dropMark = null;        // 红底随窗口一起没了
+            _groupMarks.Clear();     // 多选红底挂在物品节点上，同样随场景销毁
+            _groupMarkKeys.Clear();
 
             // 合成贴图与舞台随场景销毁（物品实例都没了，缓存全部失效）
             _compositeSprites.Clear();
@@ -1620,38 +1622,6 @@ namespace ItemCatalog.UI
         /// </summary>
         internal static void DragHighlightTick()
         {
-            GameItemElement dragged = null;
-            bool groupDragging = false;
-
-            try
-            {
-                var handler = ItemMouseDragHandler.current;
-                if (handler != null && handler.IsDraggingItem)
-                    dragged = handler.GetCurrentItem() as GameItemElement;
-            }
-            catch { dragged = null; }
-
-            if (dragged == null)
-            {
-                // 框选一次拖一堆：没有“当前物品”，拿选中的第一只来量尺寸
-                try
-                {
-                    var multi = ItemMultiSelectHandler.current;
-                    if (multi != null && multi.IsGroupDragging)
-                    {
-                        groupDragging = true;
-                        dragged = DragToDeletePatch.FirstSelectedElement();
-                    }
-                }
-                catch { groupDragging = false; }
-
-                if (!groupDragging)
-                {
-                    ClearDropMark();
-                    return;
-                }
-            }
-
             bool over = false;
             try
             {
@@ -1661,13 +1631,149 @@ namespace ItemCatalog.UI
             catch { }
 
             // 只有作弊模式下松手才会删，普通模式不该给这种暗示
-            if (!over || !_takeMode)
+            bool active = over && _takeMode;
+
+            // 单选拖拽：一只物品，红底跟着指针
+            GameItemElement dragged = null;
+            try
             {
-                ClearDropMark();
+                var handler = ItemMouseDragHandler.current;
+                if (handler != null && handler.IsDraggingItem)
+                    dragged = handler.GetCurrentItem() as GameItemElement;
+            }
+            catch { dragged = null; }
+
+            if (dragged != null)
+            {
+                ClearGroupMarks();
+
+                if (!active) { ClearDropMark(); return; }
+
+                ShowDropMark(dragged);
                 return;
             }
 
-            ShowDropMark(dragged);
+            // 框选拖拽：每只被拖的物品底下各垫一块，跟着它们一起走
+            ClearDropMark();
+
+            if (!active || !DragToDeletePatch.IsGroupDragging())
+            {
+                ClearGroupMarks();
+                return;
+            }
+
+            SyncGroupMarks();
+        }
+
+        // ---------------------------------------------------------------- 多选红底
+
+        private static readonly Dictionary<GameItemElement, GameObject> _groupMarks =
+            new Dictionary<GameItemElement, GameObject>();
+
+        private static readonly List<GameItemElement> _groupMarkKeys = new List<GameItemElement>();
+
+        /// <summary>
+        /// 每一只被框选拖动的物品，各挂一块红底。红底是那只物品节点下的第一个子物体，
+        /// 所以尺寸、位置全跟着它走，不用自己算坐标。
+        /// </summary>
+        private static void SyncGroupMarks()
+        {
+            List<GameItemElement> selected = null;
+            try { selected = DragToDeletePatch.SelectedElements(); }
+            catch { }
+
+            if (selected == null || selected.Count == 0)
+            {
+                ClearGroupMarks();
+                return;
+            }
+
+            // 已经不在选中列表里的，收掉
+            for (int i = _groupMarkKeys.Count - 1; i >= 0; i--)
+            {
+                var key = _groupMarkKeys[i];
+                bool keep = false;
+
+                if (key != null)
+                {
+                    for (int k = 0; k < selected.Count; k++)
+                    {
+                        if (selected[k] == key) { keep = true; break; }
+                    }
+                }
+
+                if (!keep) DropGroupMark(key);
+            }
+
+            for (int i = 0; i < selected.Count; i++) AttachGroupMark(selected[i]);
+        }
+
+        private static void AttachGroupMark(GameItemElement element)
+        {
+            if (element == null) return;
+
+            GameObject existing;
+            if (_groupMarks.TryGetValue(element, out existing) && existing != null) return;
+
+            try
+            {
+                var host = element.rectTransform;
+                if (host == null) return;
+
+                var go = new GameObject("catalogDropRed",
+                    typeof(RectTransform), typeof(UnityEngine.UI.Image));
+
+                var rect = (RectTransform)go.transform;
+                rect.SetParent(host, false);
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.offsetMin = Vector2.zero;
+                rect.offsetMax = Vector2.zero;
+
+                var image = go.GetComponent<UnityEngine.UI.Image>();
+                image.color = new Color(0.85f, 0.1f, 0.1f, 0.6f);
+                image.raycastTarget = false;
+
+                // 物品节点上可能挂着布局组，让它跳过这块红底
+                try
+                {
+                    var ignore = go.AddComponent<UnityEngine.UI.LayoutElement>();
+                    ignore.ignoreLayout = true;
+                }
+                catch { }
+
+                go.layer = host.gameObject.layer;
+                go.transform.SetAsFirstSibling();   // 排在图标前面 = 垫在底下
+
+                _groupMarks[element] = go;
+                _groupMarkKeys.Add(element);
+            }
+            catch (Exception e) { Warn("group mark: " + e.Message); }
+        }
+
+        private static void DropGroupMark(GameItemElement key)
+        {
+            GameObject mark;
+            if (key != null && _groupMarks.TryGetValue(key, out mark))
+            {
+                if (mark != null)
+                {
+                    try { UnityEngine.Object.Destroy(mark); } catch { }
+                }
+
+                _groupMarks.Remove(key);
+            }
+
+            _groupMarkKeys.Remove(key);
+        }
+
+        private static void ClearGroupMarks()
+        {
+            // 倒着走：DropGroupMark 会从列表里移除元素
+            for (int i = _groupMarkKeys.Count - 1; i >= 0; i--) DropGroupMark(_groupMarkKeys[i]);
+
+            _groupMarks.Clear();
+            _groupMarkKeys.Clear();
         }
 
         private static void ShowDropMark(GameItemElement dragged)
