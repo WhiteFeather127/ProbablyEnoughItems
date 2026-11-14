@@ -1621,6 +1621,7 @@ namespace ItemCatalog.UI
         internal static void DragHighlightTick()
         {
             GameItemElement dragged = null;
+            bool groupDragging = false;
 
             try
             {
@@ -1632,8 +1633,19 @@ namespace ItemCatalog.UI
 
             if (dragged == null)
             {
-                ClearDropMark();
-                return;
+                // 框选一次拖一堆：没有单只的 GameItemElement，给一块默认大小的红底
+                try
+                {
+                    var multi = ItemMultiSelectHandler.current;
+                    groupDragging = multi != null && multi.IsGroupDragging;
+                }
+                catch { groupDragging = false; }
+
+                if (!groupDragging)
+                {
+                    ClearDropMark();
+                    return;
+                }
             }
 
             bool over = false;

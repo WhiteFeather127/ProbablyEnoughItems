@@ -144,6 +144,20 @@ namespace ItemCatalog.UI
                     return typeof(SpriteDict).GetMethod("GetRetiredChemistSpriteName", F, null, none, null);
                 case "GetRetiredFarmerSpriteName":
                     return typeof(SpriteDict).GetMethod("GetRetiredFarmerSpriteName", F, null, none, null);
+                case "GetCaseEnjoyerSpriteName":
+                    return typeof(SpriteDict).GetMethod("GetCaseEnjoyerSpriteName", F, null, none, null);
+                case "GetFoodieSpriteName":
+                    return typeof(SpriteDict).GetMethod("GetFoodieSpriteName", F, null, none, null);
+                case "GetRandomBMMaleSpriteName":
+                    return typeof(SpriteDict).GetMethod("GetRandomBMMaleSpriteName", F, null, none, null);
+                case "GetRandomChefSpriteName":
+                    return typeof(SpriteDict).GetMethod("GetRandomChefSpriteName", F, null, none, null);
+                case "GetRandomEngSpriteName":
+                    return typeof(SpriteDict).GetMethod("GetRandomEngSpriteName", F, null, none, null);
+                case "GetRandomOffDutySecSpriteName":
+                    return typeof(SpriteDict).GetMethod("GetRandomOffDutySecSpriteName", F, null, none, null);
+                case "GetRandomSciFemaleSpriteName":
+                    return typeof(SpriteDict).GetMethod("GetRandomSciFemaleSpriteName", F, null, none, null);
                 default:
                     return null;
             }
@@ -198,9 +212,6 @@ namespace ItemCatalog.UI
 
             int hash = fallback.IndexOf('#');
             if (hash > 0) return FromPrefixes(new[] { fallback.Substring(0, hash) });
-
-            var single = FromEntries(new[] { fallback });
-            if (single != null && single.Count > 0) return single;
 
             // 字典里没有这个固定 key：游戏自己也找不到，`GetSprite` 会退到
             // `GetRandomScavSpriteName()`（Player.log 里那句

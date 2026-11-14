@@ -49,8 +49,19 @@ namespace ItemCatalog.UI
                     postfix: new HarmonyMethod(typeof(DragToDeletePatch)
                         .GetMethod(nameof(AfterRelease), BindingFlags.NonPublic | BindingFlags.Static)));
 
+                // 框选拖拽走另一个处理器：一次拖一整个列表，单独钩它的松手
+                var multiRelease = AccessTools.Method(typeof(ItemMultiSelectHandler), "OnEventRelease");
+                if (multiRelease != null)
+                {
+                    harmony.Patch(multiRelease, prefix: new HarmonyMethod(typeof(DragToDeletePatch)
+                        .GetMethod(nameof(BeforeMultiRelease), BindingFlags.NonPublic | BindingFlags.Static)));
+                }
+
                 if (ModEntry.Log != null)
-                    ModEntry.Log.Log("[dragdelete] patched ItemMouseDragHandler.OnEventRelease");
+                {
+                    ModEntry.Log.Log("[dragdelete] patched ItemMouseDragHandler.OnEventRelease"
+                        + (multiRelease != null ? " + ItemMultiSelectHandler.OnEventRelease" : ""));
+                }
             }
             catch (Exception e)
             {
@@ -100,6 +111,65 @@ namespace ItemCatalog.UI
             {
                 if (ModEntry.Log != null)
                     ModEntry.Log.Warning("[dragdelete] trash failed: " + e.Message);
+            }
+        }
+
+        private static FieldInfo _multiItems;
+
+        /// <summary>多选处理器当前拖着的那些物品（私有字段，只读一次句柄）。</summary>
+        private static List<GameItem> SelectedItems(ItemMultiSelectHandler handler)
+        {
+            if (handler == null) return null;
+
+            try
+            {
+                if (_multiItems == null)
+                {
+                    _multiItems = typeof(ItemMultiSelectHandler).GetField(
+                        "selectedItems", BindingFlags.NonPublic | BindingFlags.Instance);
+                }
+
+                if (_multiItems == null) return null;
+
+                return _multiItems.GetValue(handler) as List<GameItem>;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// 框选一批物品拖到图鉴上松手：整批删掉，并且不让原逻辑把它们摆进图鉴。
+        /// 返回 false 表示跳过游戏自己的落点处理。
+        /// </summary>
+        private static bool BeforeMultiRelease(ItemMultiSelectHandler __instance)
+        {
+            try
+            {
+                if (!CatalogWindow.TakeMode) return true;
+                if (__instance == null || !__instance.IsGroupDragging) return true;
+                if (!IsPointerOverCatalog(Input.mousePosition)) return true;
+
+                var items = SelectedItems(__instance);
+                if (items == null || items.Count == 0) return true;
+
+                var doomed = new List<GameItem>(items);
+
+                // 先收掉拖拽状态（幽灵图 / 选中框 / 副本位置），再销毁，
+                // 否则 Cancel 会把已经不存在的物品往回搬
+                try { __instance.Cancel(); } catch { }
+
+                GraphUtils.TryDestroyAll(doomed, -1);
+
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[dragdelete] destroyed " + doomed.Count + " (multi)");
+
+                return false;
+            }
+            catch (Exception e)
+            {
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Warning("[dragdelete] multi failed: " + e.Message);
+
+                return true;
             }
         }
 
