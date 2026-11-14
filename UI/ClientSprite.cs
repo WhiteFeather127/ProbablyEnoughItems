@@ -34,6 +34,9 @@ namespace ItemCatalog.UI
         private static FieldInfo _entryKey;
         private static FieldInfo _entrySprite;
 
+        /// <summary>SpriteDict.spriteDictionary：游戏 GetSprite 真正查的那张表。</summary>
+        private static FieldInfo _dictField;
+
         /// <summary>该来源的第一张立绘（没有则 null）。</summary>
         internal static Sprite For(string spec)
         {
@@ -73,6 +76,7 @@ namespace ItemCatalog.UI
         {
             _lists.Clear();
             _entryFields = null;
+            _dictField = null;
         }
 
         // ---------------------------------------------------------------- 解析
@@ -148,7 +152,13 @@ namespace ItemCatalog.UI
         private static List<Sprite> Collect(string spec)
         {
             if (!spec.StartsWith("pool:", StringComparison.Ordinal))
+            {
+                // 直接写死的 key：游戏就是精确查字典，只有一张
+                var one = Exact(spec);
+                if (one != null) return new List<Sprite> { one };
+
                 return FromEntries(new[] { spec }) ?? Single(spec);
+            }
 
             string rest = spec.Substring(5);
             if (rest.Length == 0) return null;
@@ -170,6 +180,21 @@ namespace ItemCatalog.UI
             // 含 '#' 的截出前缀再展开整池（至少能拿到这一边全部变体），否则就是固定 key。
             var fallback = mi.Invoke(null, null) as string;
             if (string.IsNullOrEmpty(fallback)) return null;
+
+            // 固定 key：游戏 GetSprite 是精确查字典的，查到就只有这一张。
+            // 以前这里按前缀展开整池，于是「开箱狂人」这种固定 key 的客人
+            // 会轮播出两张图（case_enjoyer + case_enjoyer2 这种编号变体被误当成同池）。
+            var exact = Exact(fallback);
+            if (exact != null)
+            {
+                if (ModEntry.Log != null)
+                {
+                    ModEntry.Log.Log("[portrait] key '" + fallback + "' 精确命中 1 张"
+                        + "（游戏里也只显示这一张）");
+                }
+
+                return new List<Sprite> { exact };
+            }
 
             int hash = fallback.IndexOf('#');
             if (hash > 0) return FromPrefixes(new[] { fallback.Substring(0, hash) });
@@ -287,6 +312,35 @@ namespace ItemCatalog.UI
             }
 
             return list.Count > 0 ? list : null;
+        }
+
+        /// <summary>
+        /// 精确查 `SpriteDict.spriteDictionary`（游戏 <c>GetSprite(key)</c> 用的就是这张表）。
+        /// 查不到返回 null —— 那种情况下游戏自己也找不到，会退回随机拾荒者立绘。
+        /// </summary>
+        private static Sprite Exact(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return null;
+
+            try
+            {
+                var inst = SpriteDict.Instance;
+                if (inst == null) return null;
+
+                if (_dictField == null)
+                {
+                    _dictField = typeof(SpriteDict).GetField("spriteDictionary",
+                        BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
+                }
+
+                if (_dictField == null) return null;
+
+                var dict = _dictField.GetValue(inst) as System.Collections.IDictionary;
+                if (dict == null || !dict.Contains(key)) return null;
+
+                return dict[key] as Sprite;
+            }
+            catch { return null; }
         }
 
         private static List<Sprite> Single(string key)
