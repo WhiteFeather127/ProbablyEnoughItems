@@ -289,7 +289,8 @@ namespace ItemCatalog.UI
                 if (ModEntry.Log != null && Time.unscaledTime > _nextSceneProbeLogAt)
                 {
                     _nextSceneProbeLogAt = Time.unscaledTime + 0.5f;
-                    ModEntry.Log.Log("[anchor] scene panel: none (candidates=" + probes.Count + ")");
+                    ModEntry.Log.Log("[anchor] scene panel: none (candidates=" + probes.Count
+                                     + ") t=" + Time.unscaledTime.ToString("F2"));
                     for (int i = 0; i < probes.Count; i++)
                         ModEntry.Log.Log("[anchor]   " + probes[i]);
                 }
@@ -302,8 +303,9 @@ namespace ItemCatalog.UI
             if (ModEntry.Log != null)
             {
                 ModEntry.Log.Log(string.Format(
-                    "[anchor] scene panel '{0}' ({1:F0},{2:F0},{3:F0}x{4:F0})",
-                    DockedLayout.HierarchyPath(best), bestRect.x, bestRect.y, bestRect.width, bestRect.height));
+                    "[anchor] scene panel '{0}' ({1:F0},{2:F0},{3:F0}x{4:F0}) t={5}",
+                    DockedLayout.HierarchyPath(best), bestRect.x, bestRect.y, bestRect.width, bestRect.height,
+                    Time.unscaledTime.ToString("F2")));
             }
 
             return best;

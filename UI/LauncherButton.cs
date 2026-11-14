@@ -100,6 +100,10 @@ namespace ItemCatalog.UI
         {
             try
             {
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[button] scene loaded t=" + Time.unscaledTime.ToString("F2")
+                                     + " scene=" + (scene.IsValid() ? scene.name : "?") + " frame=" + Time.frameCount);
+
                 CatalogWindow.ResetForScene();
                 Cleanup();
                 Refresh();
@@ -273,7 +277,8 @@ namespace ItemCatalog.UI
             catch { }
 
             if (ModEntry.Log != null)
-                ModEntry.Log.Log("[button] dock '" + key + "' -> " + DockedLayout.HierarchyPath(target));
+                ModEntry.Log.Log("[button] dock '" + key + "' -> " + DockedLayout.HierarchyPath(target)
+                                 + "  t=" + Time.unscaledTime.ToString("F2") + " frame=" + Time.frameCount);
 
             return dock;
         }

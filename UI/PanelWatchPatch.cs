@@ -46,7 +46,9 @@ namespace ItemCatalog.UI
                 var staticPostfix = new HarmonyMethod(typeof(PanelWatchPatch)
                     .GetMethod(nameof(OnWindowLayoutGlobal), BindingFlags.NonPublic | BindingFlags.Static));
 
-                foreach (var name in new[] { "Show", "Hide", "Validate", "FixBounds", "ResizePixels" })
+                // Awake / OnEnable 也钩：窗口是**先构造再 Show** 的，
+                // 只钩 Show 时，第一个可用的时机要等它显示完、内容排完版。
+                foreach (var name in new[] { "Awake", "OnEnable", "Show", "Hide", "Validate", "FixBounds", "ResizePixels" })
                 {
                     foreach (var method in pixelWindow.GetMethods(flags))
                     {
