@@ -411,7 +411,6 @@ namespace ItemCatalog.UI
 
             AnchorOverride = null;   // 旧场景的对象已销毁，别拿它算锚点
             _dropMark = null;        // 红底随窗口一起没了
-            _dropMarkHost = null;
 
             // 合成贴图与舞台随场景销毁（物品实例都没了，缓存全部失效）
             _compositeSprites.Clear();
@@ -1611,7 +1610,6 @@ namespace ItemCatalog.UI
         internal static bool TakeMode { get { return _takeMode; } }
 
         private static GameObject _dropMark;
-        private static GameObject _dropMarkHost;
 
         /// <summary>
         /// 拖动物品且指针压在图鉴上时，在**那只物品底下**垫一块红底，
@@ -1658,40 +1656,69 @@ namespace ItemCatalog.UI
 
         private static void ShowDropMark(GameItemElement dragged)
         {
+            if (_window == null || !_window.IsAlive || !_window.IsVisible) return;
+
+            var root = _window.Rect;
+            if (root == null) return;
+
+            var canvasRoot = root.parent as RectTransform;
+            if (canvasRoot == null) return;
+
             try
             {
-                // GameItemElement 不是 MonoBehaviour，节点要从 rectTransform 拿
-                var host = dragged.rectTransform;
-                if (host == null) return;
-
-                if (_dropMark != null && _dropMarkHost == host.gameObject)
+                if (_dropMark == null || _dropMark.transform.parent != canvasRoot)
                 {
-                    if (!_dropMark.activeSelf) _dropMark.SetActive(true);
-                    return;
+                    var go = new GameObject("catalogDropRed",
+                        typeof(RectTransform), typeof(UnityEngine.UI.Image));
+
+                    var rect = (RectTransform)go.transform;
+                    rect.SetParent(canvasRoot, false);
+                    rect.anchorMin = new Vector2(0.5f, 0.5f);
+                    rect.anchorMax = new Vector2(0.5f, 0.5f);
+                    rect.pivot = new Vector2(0.5f, 0.5f);
+
+                    var image = go.GetComponent<UnityEngine.UI.Image>();
+                    image.color = new Color(0.85f, 0.1f, 0.1f, 0.6f);
+                    image.raycastTarget = false;
+
+                    go.layer = canvasRoot.gameObject.layer;
+
+                    _dropMark = go;
                 }
 
-                ClearDropMark();
+                var mark = (RectTransform)_dropMark.transform;
 
-                var go = new GameObject("catalogDropRed",
-                    typeof(RectTransform), typeof(UnityEngine.UI.Image));
+                // 大小取被拖那只物品本身的格子尺寸（拿不到就退回图鉴格子大小）
+                float width = CellWidth, height = CellHeight;
+                try
+                {
+                    var src = dragged.rectTransform;
+                    if (src != null && src.rect.width > 4f && src.rect.height > 4f)
+                    {
+                        width = src.rect.width;
+                        height = src.rect.height;
+                    }
+                }
+                catch { }
 
-                var rect = (RectTransform)go.transform;
-                rect.SetParent(host, false);
-                rect.anchorMin = Vector2.zero;
-                rect.anchorMax = Vector2.one;
-                rect.offsetMin = new Vector2(-2f, -2f);
-                rect.offsetMax = new Vector2(2f, 2f);
+                mark.sizeDelta = new Vector2(width + 4f, height + 4f);
 
-                var image = go.GetComponent<UnityEngine.UI.Image>();
-                image.color = new Color(0.85f, 0.1f, 0.1f, 0.6f);
-                image.raycastTarget = false;
+                // 跟着鼠标走：被拖动的物品就在指针下面，红底于是贴在它身上，
+                // 而不是留在物品原来所在的格子里
+                Vector2 local;
+                if (UnityEngine.RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                        canvasRoot, Input.mousePosition, null, out local))
+                {
+                    var parentRect = canvasRoot.rect;
+                    local += new Vector2(
+                        (0.5f - canvasRoot.pivot.x) * parentRect.width,
+                        (0.5f - canvasRoot.pivot.y) * parentRect.height);
 
-                // 排到最前面 → 渲染在物品图标底下，就是「物品底下的红底」
-                go.transform.SetAsFirstSibling();
-                go.layer = host.gameObject.layer;
+                    mark.anchoredPosition = local;
+                }
 
-                _dropMark = go;
-                _dropMarkHost = host.gameObject;
+                if (!_dropMark.activeSelf) _dropMark.SetActive(true);
+                _dropMark.transform.SetAsLastSibling();
             }
             catch (Exception e) { Warn("drop mark: " + e.Message); }
         }
@@ -1704,7 +1731,6 @@ namespace ItemCatalog.UI
             }
 
             _dropMark = null;
-            _dropMarkHost = null;
         }
 
         /// <summary>外部窗口用 AddButton 建格子时，左键回调直接复用图鉴的选中动作。</summary>

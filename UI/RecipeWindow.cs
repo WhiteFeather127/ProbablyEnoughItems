@@ -918,17 +918,27 @@ namespace ItemCatalog.UI
 
                 if (title == null || title.transform.parent == null) return;
 
-                var clone = UnityEngine.Object.Instantiate(title.gameObject, title.transform.parent);
+                // 物品名居中：默认是左对齐，和左边的「来源/用途」挤在一起看着像两段标题
+                try { title.alignment = TMPro.TextAlignmentOptions.Center; } catch { }
+
+                // 挂到窗口根上、锚在左上：标题栏本身是个横向布局组，
+                // 复制出来的文本塞进去会被排在关闭按钮后面（跑到右边去）。
+                var clone = UnityEngine.Object.Instantiate(title.gameObject, _window.Rect);
                 clone.name = "directionLabel";
 
                 var rect = clone.transform as RectTransform;
                 if (rect != null)
                 {
-                    rect.anchorMin = new Vector2(0f, 0.5f);
-                    rect.anchorMax = new Vector2(0f, 0.5f);
+                    // 标题栏高度从标题文本的父节点量出来，纵向就对齐在它中间
+                    float barHeight = 30f;
+                    var bar = title.transform.parent as RectTransform;
+                    if (bar != null && bar.rect.height > 4f) barHeight = bar.rect.height;
+
+                    rect.anchorMin = new Vector2(0f, 1f);
+                    rect.anchorMax = new Vector2(0f, 1f);
                     rect.pivot = new Vector2(0f, 0.5f);
-                    rect.anchoredPosition = new Vector2(10f, 0f);
-                    rect.sizeDelta = new Vector2(120f, rect.sizeDelta.y);
+                    rect.anchoredPosition = new Vector2(10f, -barHeight * 0.5f);
+                    rect.sizeDelta = new Vector2(140f, barHeight);
                 }
 
                 _dirLabel = clone.GetComponent<TMPro.TMP_Text>();
@@ -1355,11 +1365,8 @@ namespace ItemCatalog.UI
 
             if (hasTags)
             {
-                var names = new List<string>(tags.Length);
-                for (int i = 0; i < tags.Length; i++)
-                    names.Add(BuyTagName(tags[i]));
-
-                builder.AddLabel(string.Join(" / ", names.ToArray()), "src_buys_tags");
+                // 不再单独写一行「食物 / 医疗品 / …」的纯文字：格子本身已经说明了种类，
+                // 多这一行只是重复。
 
                 // 标签格要排除已经单独列出的具体物品，否则同一个瓶子会画两遍：
                 // 囤水者既收任意 WATER、又专收 bottled_water_premium，
