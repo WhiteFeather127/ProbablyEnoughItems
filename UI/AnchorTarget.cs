@@ -209,6 +209,7 @@ namespace ItemCatalog.UI
         // 和主场景里「贴物品栏」完全同一套（见 CatalogWindow.ApplyPlacement）。
         private static RectTransform _scenePanel;
         private static float _nextScenePanelScanAt;
+        private static float _nextSceneProbeLogAt;
 
         internal static RectTransform ResolveScenePanel()
         {
@@ -237,6 +238,9 @@ namespace ItemCatalog.UI
             float bestWidth = 0f;
             Rect bestRect = new Rect();
 
+            // 失败时把这些候选打出来：能直接看出「界面已经在，只是被哪条规则挡掉了」
+            var probes = new List<string>(6);
+
             try
             {
                 var all = UnityEngine.Object.FindObjectsOfType<RectTransform>();
@@ -249,6 +253,12 @@ namespace ItemCatalog.UI
                     Rect rect;
                     try { rect = DockedLayout.ToWorldRect(rt); }
                     catch { continue; }
+
+                    if (probes.Count < 6 && rect.width > 80f && rect.height > 40f)
+                    {
+                        probes.Add(string.Format("{0}  {1:F0}x{2:F0} @({3:F0},{4:F0})",
+                            rt.name, rect.width, rect.height, rect.center.x, rect.center.y));
+                    }
 
                     if (rect.width < 260f || rect.height < 60f) continue;
                     if (rect.width < bestWidth) continue;
@@ -271,7 +281,19 @@ namespace ItemCatalog.UI
             }
             catch (Exception e) { Warn("resolve scene panel: " + e.Message); }
 
-            if (best == null) return null;
+            if (best == null)
+            {
+                if (ModEntry.Log != null && Time.unscaledTime > _nextSceneProbeLogAt)
+                {
+                    _nextSceneProbeLogAt = Time.unscaledTime + 0.5f;
+                    ModEntry.Log.Log("[anchor] scene panel: none (candidates=" + probes.Count + ")");
+                    for (int i = 0; i < probes.Count; i++)
+                        ModEntry.Log.Log("[anchor]   " + probes[i]);
+                }
+
+                return null;
+            }
+
             _scenePanel = best;
 
             if (ModEntry.Log != null)
