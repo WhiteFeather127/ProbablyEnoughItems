@@ -188,6 +188,7 @@ namespace ItemCatalog.UI
         {
             internal UnityEngine.RectTransform Host;   // 这一条的容器（重建时清它）
             internal string[] Tags;                 // 这一条里要画的标签
+            internal string[] Items;                // 紧跟在标签后面、画在同一行的具体物品
             internal int Base;                      // 格子 id 起点
             internal string CurrentId;              // 当前详情物品，用于「它自己就在标签里」判定
             internal HashSet<string> Exclude;       // 已经单独列出的具体物品，别在标签格里重复画
@@ -318,6 +319,19 @@ namespace ItemCatalog.UI
         /// 也不会每次重建都把滚动位置和立绘轮播重置掉。
         /// 返回 true 表示这一轮重建过（旧 `_cellAnims` 已随容器销毁）。
         /// </summary>
+        /// <summary>指针是否压在这个节点上（用于临时停掉轮播，别打断正在看的东西）。</summary>
+        private static bool IsPointerOver(RectTransform rect)
+        {
+            if (rect == null) return false;
+
+            try
+            {
+                return UnityEngine.RectTransformUtility.RectangleContainsScreenPoint(
+                    rect, UnityEngine.Input.mousePosition, null);
+            }
+            catch { return false; }
+        }
+
         private static bool TickTagRolls()
         {
             if (!IsOpen || _tagStrips.Count == 0) return false;
@@ -328,6 +342,10 @@ namespace ItemCatalog.UI
                 var strip = _tagStrips[i];
                 if (strip == null || strip.Tags == null) continue;
                 if (strip.Host == null) continue;   // 容器已被别的重建销毁
+
+                // 指针停在这一块上时先别轮播：重建会把这些格子连同提示框一起换掉，
+                // 正好在看的物品会闪一下
+                if (IsPointerOver(strip.Host)) continue;
 
                 bool stripMoved = false;
                 for (int k = 0; k < strip.Tags.Length; k++)
@@ -472,6 +490,20 @@ namespace ItemCatalog.UI
                 // 绿底表示「这一类里有当前这件」，与轮播到哪一件无关（MatchMatch 用 self 判定）
                 RenderGoods(builder, showId, self, strip.Base + i, false);
                 AddOverlayCaption(builder, builder.Last, CaptionFor(tag, strip.CurrentId), "tagcap" + (strip.Base + i));
+            }
+
+            // 具体物品紧接在标签格后面，同一张网格里往下排——列数够时就在同一行，
+            // 不会再被拆成上下两块。
+            if (strip.Items != null && strip.Items.Length > 0)
+            {
+                for (int i = 0; i < strip.Items.Length; i++)
+                {
+                    string id = strip.Items[i];
+                    if (string.IsNullOrEmpty(id)) continue;
+
+                    bool match = _entry != null && string.Equals(id, _entry.Id, StringComparison.Ordinal);
+                    RenderGoods(builder, id, match, strip.Base + 200 + i, false);
+                }
             }
 
             builder.End();
@@ -1341,8 +1373,11 @@ namespace ItemCatalog.UI
                 }
 
                 // 每个收购标签给一格「这一类」的物品：当前物品属于该类就固定显示它，
-                // 否则轮播该类全部物品。标签格圈进自己的容器，轮播时只重建这一条，
-                // 不会整页重画、也就不会打断客人立绘的每秒轮播。
+                // 否则轮播该类全部物品。
+                //
+                // 标签格和「具体物品」共用同一张网格：以前两者各建一个 grid，
+                // 结果被排成上下两行。现在物品跟着标签一起交给 RenderTagStrip，
+                // 由它在同一行里接着画。
                 builder.BeginColumn(2f);
                 var buyStripHost = builder.CurrentContainer;
                 builder.End();
@@ -1351,6 +1386,7 @@ namespace ItemCatalog.UI
                 {
                     Host = buyStripHost,
                     Tags = tags,
+                    Items = items,
                     Base = 800 + _tagStripSeq * 8,
                     CurrentId = _entry == null ? null : _entry.Id,
                     Exclude = exclude
@@ -1358,6 +1394,7 @@ namespace ItemCatalog.UI
                 _tagStripSeq++;
                 _tagStrips.Add(buyStrip);
                 RenderTagStrip(buyStrip);
+                return;
             }
 
             if (!hasItems) return;
