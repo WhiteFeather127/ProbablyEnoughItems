@@ -1,48 +1,35 @@
-# Probably Enough Items · 掉落池的使用场合
+# Probably Enough Items · 掉落池属于哪个地方 / 哪个人
 #
-# 掉落池本身只是数据表，玩家真正遇到它是在某个具体场合：垃圾堆、小偷身上的货、
-# 拾荒者的货单、某个箱子的内容物。这张表把这些场合写下来，
-# 来源页的「掉落池」就不必只甩一个 `medicalTable` 给玩家。
+# 掉落池本身不是给玩家的东西，玩家遇到的是「在哪儿」：垃圾倾倒场能翻出什么、
+# 小偷身上带什么、拾荒者的货摊上有什么。这张表把池归到那个「地方」上，
+# 图鉴就会以那个地方为一个大类，而不是列一堆 `junkTable` 之类的内部名字。
 #
-# 列：pool,uses
+# 列：pool,site
 #   pool  掉落池 id（可用值看日志 `[loot] tables=… ids=…`）
-#   uses  使用它的地方，多个用 `|` 分隔。记号四种：
-#           game:<游戏本地化键>  → 借游戏自己的翻译（推荐，地点/客人名/UI 文案都用这个）
-#           item:<物品 id>       → 取物品显示名
-#           key:<模组本地化键>   → 取 zh/en/ru.csv 里的文案
-#           其它                 → 原样当文字
+#   site  这个地方的**游戏本地化键**，页面上直接显示它的翻译：
+#           location_dumping_grounds  垃圾倾倒场（出门能去的地点）
+#           name_petty_thief          小偷
+#           name_scavenger            拾荒者
+#           name_eleanor              埃莉诺
+#         也可以写 `item:<物品 id>`（按物品名显示）或直接写文字。
 #
-# 只有「找不到对应箱子」（box_pools.csv 里没登记）的池才需要写在这里：
-# 有箱子的池，来源页会直接把那个箱子画出来。
+# 没在表里的池，如果能对上箱子（box_pools.csv），就以那个箱子为大类；
+# 两者都没有的池不显示（玩家遇不到）。
 #
 # 数据来源：Assembly-CSharp.dll 里按池 id 反查引用它的方法（2026-11-14）：
-#   junkTable            ← ExpeditionPoiList::JunkPile / SpawnDumpingGroundLoot / PullDumpingGround
-#   materialTable        ← Eleanor5 剧情分支
-#   householdTable       ← CreatePettyThief（小偷随身货）
-#   packedFoodTable      ← 拾荒者货单 / 食品过剩商 / 小偷 / FillService（服务箱内容）
-#   medicalTable         ← CreatePettyThief
-#   dumpingGroundTG      ← ExpeditionPoiList::ScrapPile / ScavHelper::SpawnDumpingGroundLoot
-#   dumpingGroundFreshTG ← ExpeditionPoiList::FreshScrapPile
-#   POI_dumpingGround    ← ExpeditionLocationList::DumpingGrounds
-#
-# 用到的游戏键（都能在 resources.assets 里查到）：
-#   dumping_ground_pile        垃圾堆（POI）
-#   location_dumping_grounds   垃圾场（地点）
-#   afterhour_scavenge_action  垃圾场的「翻找」按钮文案
-#   name_petty_thief           小偷
-#   name_scavenger             拾荒者
-#   name_eleanor               埃莉诺
-#
-# 剩下这 6 个池在代码里没有直接引用（只出现在 level1 / sharedassets1 的场景数据中），
-# 找不到玩家能遇到的场合，来源页直接不列：accessCardTable、allModuleTable、
-# makeshiftWeaponTable、t1moduleTable、t2moduleTable、toolTable。
+#   junkTable / dumpingGroundTG / dumpingGroundFreshTG / POI_dumpingGround
+#        ← ExpeditionLocationList::DumpingGrounds、ExpeditionPoiList::JunkPile /
+#          ScrapPile / FreshScrapPile、ScavHelper::SpawnDumpingGroundLoot
+#   householdTable / medicalTable ← CreatePettyThief（小偷随身货）
+#   packedFoodTable  ← 拾荒者货单 / FillService
+#   materialTable    ← Eleanor5 剧情分支
 
-pool,uses
-POI_dumpingGround,game:location_dumping_grounds
-junkTable,game:dumping_ground_pile|game:afterhour_scavenge_action
-materialTable,game:name_eleanor
-householdTable,game:name_petty_thief
-packedFoodTable,game:name_scavenger|item:service_box
-medicalTable,game:name_petty_thief
-dumpingGroundTG,game:dumping_ground_pile|game:afterhour_scavenge_action
-dumpingGroundFreshTG,game:dumping_ground_pile
+pool,site
+junkTable,location_dumping_grounds
+dumpingGroundTG,location_dumping_grounds
+dumpingGroundFreshTG,location_dumping_grounds
+POI_dumpingGround,location_dumping_grounds
+householdTable,name_petty_thief
+medicalTable,name_petty_thief
+packedFoodTable,name_scavenger
+materialTable,name_eleanor

@@ -174,45 +174,45 @@ namespace ItemCatalog.Catalog
         }
 
         /// <summary>
-        /// 池 id → 使用它的地方（`Data/loot_pools.csv`）。
+        /// 池 id → 它属于哪个「地方」（`Data/loot_pools.csv`）。
         ///
-        /// 掉落池本身只是个数据表，玩家真正遇到它是在某个具体场合：
-        /// 探险点的垃圾堆、小偷身上的货、拾荒者的货单、某个箱子的内容物。
-        /// 这张表把这些场合写下来，来源页就不必只甩一个 `medicalTable` 给玩家。
+        /// 掉落池不是给玩家看的名字：玩家遇到的是「垃圾倾倒场里翻出来的」「小偷身上带的」。
+        /// 这张表把池挂到那个地方上，来源页就以那个地方为一个大类。
+        ///
+        /// 值有两种写法：`item:&lt;箱子 id&gt;` 或游戏本地化键（`location_dumping_grounds`）。
         /// </summary>
-        private static readonly Dictionary<string, string[]> _poolUses =
-            new Dictionary<string, string[]>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> _poolSites =
+            new Dictionary<string, string>(StringComparer.Ordinal);
 
-        private static bool _poolUsesLoaded;
+        private static bool _poolSitesLoaded;
 
         /// <summary>
-        /// 这个池有没有「玩家能遇到」的去处：要么登记了箱子（`box_pools.csv`），
-        /// 要么写了使用场合（`loot_pools.csv`）。
-        ///
-        /// 都没有的池（只埋在场景数据里的那几个），玩家永远碰不到，
-        /// 来源页干脆不列——列出来只会让人以为「某个地方能开，但查不到是哪」。
+        /// 这个池属于哪个地方；返回 null 表示「玩家遇不到」——
+        /// 既没有箱子能开，也没写在 `loot_pools.csv` 里（只埋在场景数据里的那几个）。
         /// </summary>
+        internal static string SiteFor(string poolId)
+        {
+            if (string.IsNullOrEmpty(poolId)) return null;
+
+            // 能开出来的箱子本身就是最具体的地方，优先用它
+            string box = BoxForPool(poolId);
+            if (!string.IsNullOrEmpty(box)) return "item:" + box;
+
+            EnsurePoolSites();
+
+            string site;
+            return _poolSites.TryGetValue(poolId, out site) ? site : null;
+        }
+
         internal static bool IsUsed(LootTableInfo table)
         {
-            if (table == null || string.IsNullOrEmpty(table.TableId)) return false;
-            if (!string.IsNullOrEmpty(BoxForPool(table.TableId))) return true;
-            return UsesFor(table.TableId).Length > 0;
+            return table != null && !string.IsNullOrEmpty(SiteFor(table.TableId));
         }
 
-        internal static string[] UsesFor(string poolId)
+        private static void EnsurePoolSites()
         {
-            if (string.IsNullOrEmpty(poolId)) return new string[0];
-
-            EnsurePoolUses();
-
-            string[] uses;
-            return _poolUses.TryGetValue(poolId, out uses) && uses != null ? uses : new string[0];
-        }
-
-        private static void EnsurePoolUses()
-        {
-            if (_poolUsesLoaded) return;
-            _poolUsesLoaded = true;
+            if (_poolSitesLoaded) return;
+            _poolSitesLoaded = true;
 
             string text = null;
             try { text = ModHelper.ReadModFileText(ModEntry.MOD_ID, "Data/loot_pools.csv"); }
@@ -234,24 +234,16 @@ namespace ItemCatalog.Catalog
                 if (cols.Length < 2) continue;
 
                 string pool = cols[0].Trim();
-                string uses = cols[1].Trim();
+                string site = cols[1].Trim();
 
-                if (pool.Length == 0 || uses.Length == 0) continue;
+                if (pool.Length == 0 || site.Length == 0) continue;
                 if (string.Equals(pool, "pool", StringComparison.OrdinalIgnoreCase)) continue;   // 表头
 
-                string[] parts = uses.Split('|');
-                var list = new List<string>(parts.Length);
-                for (int k = 0; k < parts.Length; k++)
-                {
-                    string part = parts[k].Trim();
-                    if (part.Length > 0) list.Add(part);
-                }
-
-                if (list.Count > 0) _poolUses[pool] = list.ToArray();
+                _poolSites[pool] = site;
             }
 
             if (ModEntry.Log != null)
-                ModEntry.Log.Log("[loot] pool->uses rows=" + _poolUses.Count);
+                ModEntry.Log.Log("[loot] pool->site rows=" + _poolSites.Count);
         }
 
         /// <summary>反查：这个池是哪个箱子开出来的（取第一个登记的箱子）；没有返回 null。</summary>

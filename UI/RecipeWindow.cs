@@ -108,6 +108,13 @@ namespace ItemCatalog.UI
             /// 但正文不画他卖的货，改画他收什么。
             /// </summary>
             internal bool IsWanted;
+
+            /// <summary>
+            /// 来源侧掉落池对应的「地方」：`item:&lt;箱子 id&gt;`（能开到的箱子）
+            /// 或游戏本地化键（`location_dumping_grounds` 这种地点/人名）。
+            /// 有它就按它给分类起名，不再统一叫「掉落池」。
+            /// </summary>
+            internal string Site;
         }
 
         /// <summary>货单里的一个格子。有水也有空瓶的客人，容器会多出「空瓶」那一格。</summary>
@@ -203,6 +210,23 @@ namespace ItemCatalog.UI
 
             if (_window == null || !_window.IsAlive) Create();
             else Render();
+
+            // 窗口是复用的：不提到最前就会被图鉴盖住，看起来像「点了没反应」。
+            // 图鉴自己也是这么做的（CatalogWindow 打开时 BringToFront）。
+            if (_window != null && _window.IsAlive)
+            {
+                try { _window.BringToFront(); } catch { }
+            }
+
+            if (ModEntry.Log != null)
+            {
+                try
+                {
+                    ModEntry.Log.Log("[recipe] open id=" + entry.Id + " asUse=" + asUse
+                                     + " cats=" + _categories.Count);
+                }
+                catch { }
+            }
         }
 
         /// <summary>窗口是否还开着：图鉴的拖拽 / 提示框允许详情窗口单独存在。</summary>
@@ -573,16 +597,40 @@ namespace ItemCatalog.UI
                 var loot = LootSource.For(_entry.Id);
                 if (loot.Count > 0)
                 {
-                    // 只留「玩家真能遇到」的池：能对到箱子，或写明了使用场合。
-                    // 只埋在场景数据里的池直接不列。
-                    var used = new List<LootTableInfo>(loot.Count);
+                    // 掉落池本身不该是一个大类：玩家遇到的是「垃圾倾倒场能翻出什么」、
+                    // 「小偷身上有什么」。所以按池所属的地方分组，每个地方一个大类，
+                    // 池在里面展开。没有地方的池（只埋在场景数据里）直接不列。
+                    var order = new List<string>();
+                    var buckets = new Dictionary<string, List<LootTableInfo>>(StringComparer.Ordinal);
+
                     for (int i = 0; i < loot.Count; i++)
                     {
-                        if (LootSource.IsUsed(loot[i])) used.Add(loot[i]);
+                        var table = loot[i];
+                        if (table == null) continue;
+
+                        string site = LootSource.SiteFor(table.TableId);
+                        if (string.IsNullOrEmpty(site)) continue;
+
+                        List<LootTableInfo> bucket;
+                        if (!buckets.TryGetValue(site, out bucket))
+                        {
+                            bucket = new List<LootTableInfo>();
+                            buckets[site] = bucket;
+                            order.Add(site);
+                        }
+
+                        bucket.Add(table);
                     }
 
-                    if (used.Count > 0)
-                        _categories.Add(new Category { Kind = CatLoot, Loot = used });
+                    for (int i = 0; i < order.Count; i++)
+                    {
+                        _categories.Add(new Category
+                        {
+                            Kind = CatLoot,
+                            Loot = buckets[order[i]],
+                            Site = order[i]
+                        });
+                    }
                 }
             }
             else
@@ -667,6 +715,10 @@ namespace ItemCatalog.UI
         private static string CategoryTitle(Category category)
         {
             if (category == null) return "?";
+
+            // 掉落池按「地方」分大类：垃圾倾倒场 / 小偷 / 装着它的箱子
+            if (category.Kind == CatLoot && !string.IsNullOrEmpty(category.Site))
+                return SiteName(category.Site);
 
             switch (category.Kind)
             {
@@ -797,7 +849,7 @@ namespace ItemCatalog.UI
                 else if (category.Uses != null) RenderUsePage(builder, category.Uses);
                 else if (category.Kind == CatLock) RenderLockPage(builder);
                 else if (category.Loot != null && category.LootAsUse) RenderLootUsePage(builder, category.Loot);
-                else if (category.Loot != null) RenderLootPage(builder, category.Loot);
+                else if (category.Loot != null) RenderLootPage(builder, category.Loot, category.Site);
                 else RenderRecipePage(builder, category.Recipes);
 
                 builder.End();
@@ -1509,50 +1561,35 @@ namespace ItemCatalog.UI
         /// 一页一张表：上面是箱子本身，下面把这箱子**所有**可能的产出按图鉴格子铺开。
         /// 表 id 多数就是箱子物品 id（`med_box`…），不是的话那格退化成文字。
         /// </summary>
-        private static void RenderLootPage(CustomUIBuilder builder, List<LootTableInfo> loot)
+        private static void RenderLootPage(CustomUIBuilder builder, List<LootTableInfo> loot, string site)
         {
             var table = loot[_page];
             if (table == null) return;
 
-            builder.AddHeader(Loc("src_loot", "掉落池"), "src_loot");
+            // 标题就是「在哪儿」：垃圾倾倒场 / 小偷 / 装着它的那只箱子
+            string title = SiteName(site);
+            if (string.IsNullOrEmpty(title)) title = Loc("src_loot", "掉落池");
+            builder.AddHeader(title, "loot_site");
 
-            // 表 id 多数是掉落池（junkTable / medicalTable…），不是物品 id。
-            // 若 `box_pools.csv` 登记了「箱子 → 这个池」，就画那个箱子；
-            // 没登记才退回池名文字。
-            string boxId = LootSource.BoxForPool(table.TableId) ?? table.TableId;
-            var boxEntry = RecipeIndex.FindEntry(boxId);
+            // 只有「地方」是箱子时才画箱子 + 需要的卡；地点类没有箱子可画
+            string boxId = !string.IsNullOrEmpty(site) &&
+                           site.StartsWith("item:", StringComparison.OrdinalIgnoreCase)
+                ? site.Substring(5).Trim()
+                : null;
 
-            // 箱子旁边并排画那张卡（`box_pools.csv` 第 3 列，或锁标签推出来）
-            string keyId = LootKeyFor(boxId, boxEntry);
+            var boxEntry = string.IsNullOrEmpty(boxId) ? null : RecipeIndex.FindEntry(boxId);
 
-            if (boxEntry == null)
+            if (boxEntry != null)
             {
-                // 这个池没有对应的箱子：写清「哪个场合在用它」——
-                // 垃圾堆、小偷随身货、拾荒者货单之类，玩家真正遇到池的地方。
-                var uses = LootSource.UsesFor(table.TableId);
-                var names = new List<string>(uses.Length);
-                for (int i = 0; i < uses.Length; i++)
-                {
-                    string name = PoolUseName(uses[i]);
-                    if (!string.IsNullOrEmpty(name)) names.Add(name);
-                }
+                // 箱子旁边并排画那张卡（`box_pools.csv` 第 3 列，或锁标签推出来）
+                string keyId = LootKeyFor(boxId, boxEntry);
 
-                if (names.Count > 0)
-                {
-                    builder.AddLabel(Loc("loot_where", "用这个池的地方"), "loot_where");
-                    builder.AddLabel(string.Join(" · ", names.ToArray()), "loot_where_list");
-                }
-                else
-                {
-                    builder.AddLabel(PoolName(table.TableId), "loot_pool");
-                }
+                var pair = new List<string>(2);
+                pair.Add(boxId);
+                if (!string.IsNullOrEmpty(keyId)) pair.Add(keyId);
+
+                RenderItemGrid(builder, pair.ToArray(), 800);
             }
-
-            var pair = new List<string>(2);
-            if (boxEntry != null) pair.Add(boxId);
-            if (!string.IsNullOrEmpty(keyId)) pair.Add(keyId);
-
-            RenderItemGrid(builder, pair.ToArray(), 800);
 
             builder.AddLabel(Loc("loot_opens", "可能开出"), "loot_opens");
 
@@ -1711,47 +1748,23 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 解析 `loot_pools.csv` 里的一个「使用处」记号：
-        /// `game:dumping_ground_pile` 取**游戏自己的**本地化（地点、客人名、UI 文案都走这条），
-        /// `item:service_box` 取物品显示名，`key:<模组键>` 取模组本地化，
-        /// 其它记号原样当文字。
+        /// 一个「地方」的显示名：`item:&lt;箱子 id&gt;` 取物品名，
+        /// 其余当成游戏本地化键（`location_dumping_grounds` → 垃圾倾倒场）。
         /// </summary>
-        private static string PoolUseName(string token)
+        private static string SiteName(string site)
         {
-            if (string.IsNullOrEmpty(token)) return null;
+            if (string.IsNullOrEmpty(site)) return null;
 
-            string value = token.Trim();
-
-            // 官方键优先：垃圾堆、垃圾场、小偷这些场合本来就是游戏里的名词，
-            // 直接借游戏的翻译，不用我们再编一套。
-            if (value.StartsWith("game:", StringComparison.OrdinalIgnoreCase))
+            if (site.StartsWith("item:", StringComparison.OrdinalIgnoreCase))
             {
-                string key = value.Substring(5).Trim();
-                if (key.Length == 0) return null;
-                return GameLocText(key);
-            }
-
-            if (value.StartsWith("key:", StringComparison.OrdinalIgnoreCase))
-            {
-                string key = value.Substring(4).Trim();
-                if (key.Length == 0) return null;
-
-                string text = ModEntry.T(key);
-                return string.IsNullOrEmpty(text) || string.Equals(text, key, StringComparison.Ordinal)
-                    ? null
-                    : text;
-            }
-
-            if (value.StartsWith("item:", StringComparison.OrdinalIgnoreCase))
-            {
-                string id = value.Substring(5).Trim();
+                string id = site.Substring(5).Trim();
                 if (id.Length == 0) return null;
 
                 var entry = RecipeIndex.FindEntry(id);
                 return entry == null ? id : entry.DisplayName;
             }
 
-            return value;
+            return GameLocText(site) ?? site;
         }
 
         private static string PoolName(string tableId)
