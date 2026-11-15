@@ -709,12 +709,16 @@ namespace ItemCatalog.UI
                 // 谁收这件：用来源页那套结构（阵营 / 客人名 / 立绘 / 一页一个客人），
                 // 正文换成「他收什么」。放在用途侧第一类 —— 「卖给谁」是最常用的去处。
                 var wanted = SourceIndex.WantedBy(_entry.Id, _entry.Item);
-                if (wanted.Count > 0)
+                for (int i = 0; i < wanted.Count; i++)
                 {
+                    // 一个客人 = 一个大类：分类标题直接写客人名字（杰克逊博士），
+                    // 而不是把所有人塞进一个叫「客人」的大类里翻页
+                    if (wanted[i] == null) continue;
+
                     _categories.Add(new Category
                     {
                         Kind = CatWanted,
-                        Sources = wanted,
+                        Sources = new List<SourceInfo> { wanted[i] },
                         IsWanted = true
                     });
                 }
@@ -766,21 +770,29 @@ namespace ItemCatalog.UI
             if (_category >= _categories.Count) _category = Math.Max(0, _categories.Count - 1);
         }
 
+        /// <summary>
+        /// 一个来源 = 一个大类。
+        ///
+        /// 以前把同类来源（全部客人 / 全部地点）塞进同一个大类、靠页内翻页切换，
+        /// 于是分类标题永远是「客人」「地点商店」，看不出这一页是谁。
+        /// 现在每个来源各自成类，标题直接写来源名（杰克逊博士 / 配给站 …），
+        /// 左右箭头仍然是一页一个来源。
+        /// </summary>
         private static void AddSourceCategory(int kind, List<SourceInfo> sources)
         {
             SourceKind target = kind == CatClient ? SourceKind.Client : SourceKind.Location;
 
-            List<SourceInfo> picked = null;
             for (int i = 0; i < sources.Count; i++)
             {
                 var s = sources[i];
                 if (s == null || s.Kind != target) continue;
 
-                if (picked == null) picked = new List<SourceInfo>();
-                picked.Add(s);
+                _categories.Add(new Category
+                {
+                    Kind = kind,
+                    Sources = new List<SourceInfo> { s }
+                });
             }
-
-            if (picked != null) _categories.Add(new Category { Kind = kind, Sources = picked });
         }
 
         // ---------------------------------------------------------------- 窗口
@@ -1013,10 +1025,11 @@ namespace ItemCatalog.UI
 
             switch (category.Kind)
             {
-                // 「谁卖给我」和「谁收这件」都是客人，共用一个键
-                case CatClient: return ModEntry.T("src_clients");
-                case CatWanted: return ModEntry.T("src_clients");
-                case CatLocation: return ModEntry.T("src_locations");
+                // 来源类大类的标题就是那个来源自己的名字（杰克逊博士 / 配给站 …），
+                // 这样箭头中间写的是「2/5 杰克逊博士」，一眼看出这一页是谁
+                case CatClient:
+                case CatWanted:
+                case CatLocation: return SourceTitle(category);
                 case CatCraftOut: return ModEntry.T("rec_cat_craft_out");
                 case CatCraftIn: return ModEntry.T("rec_cat_craft_in");
                 case CatUseOut: return ModEntry.T("rec_cat_use_out");
@@ -1026,6 +1039,21 @@ namespace ItemCatalog.UI
                 case CatLock: return ModEntry.T("loot_use");
                 default: return "?";
             }
+        }
+
+        /// <summary>来源类大类（客人 / 地点 / 求购）的标题：用来源自己的名字。</summary>
+        private static string SourceTitle(Category category)
+        {
+            if (category == null || category.Sources == null || category.Sources.Count == 0) return "?";
+
+            try
+            {
+                string name = SourceIndex.DisplayName(category.Sources[0]);
+                if (!string.IsNullOrEmpty(name) && name != "?") return name;
+            }
+            catch { }
+
+            return ModEntry.T("src_clients");
         }
 
         private static string CategoryLabel()
@@ -1309,14 +1337,8 @@ namespace ItemCatalog.UI
             if (faction != null && faction.text != null)
                 faction.text.alignment = TextAlignmentOptions.Left;
 
-            // 小标题：客人 / 地点名，居中
-            builder.AddLabel(SourceIndex.DisplayName(source), "src_client");
-            var name = builder.Last;
-            if (name != null && name.text != null)
-            {
-                name.text.alignment = TextAlignmentOptions.Center;
-                name.text.fontSize = 20f;
-            }
+            // 客人名不再单独写一行：分类标题已经是「2/5 杰克逊博士」，
+            // 同一句话在正文里再写一遍就是重复。
 
             // 客人立绘：居中。同一客人有多种外观时按顺序每秒轮播（见 TickPortrait）
             _portraitSprites = ClientSprite.AllFor(source.Sprite);
