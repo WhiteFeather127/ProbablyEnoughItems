@@ -90,6 +90,6 @@ mach_recipes,Recipes
 mach_battery,Battery
 mach_module,Module
 mach_note,Note
-cat_use,Use
+cat_use,Products
 use_dir_source,How to obtain
 use_dir_target,What it makes

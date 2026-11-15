@@ -1151,7 +1151,7 @@ namespace ItemCatalog.UI
                 case CatLocation: return SourceTitle(category);
                 case CatCraftOut: return ModEntry.T("rec_cat_craft_out");
                 case CatCraftIn: return ModEntry.T("rec_cat_craft_in");
-                case CatUse: return Loc("cat_use", "使用");
+                case CatUse: return Loc("cat_use", "产物");
                 case CatLoot: return ModEntry.T("src_loot");
                 case CatLootUse: return ModEntry.T("loot_use");
                 case CatLock: return ModEntry.T("loot_use");
