@@ -1680,8 +1680,9 @@ namespace ItemCatalog.UI
         private static readonly List<GameItemElement> _groupMarkKeys = new List<GameItemElement>();
 
         /// <summary>
-        /// 每一只被框选拖动的物品，各挂一块红底。红底是那只物品节点下的第一个子物体，
-        /// 所以尺寸、位置全跟着它走，不用自己算坐标。
+        /// 每一只被框选拖动的物品，各挂一块红底。
+        /// 拖拽时元素的视觉节点是 <c>fakeMiddle</c>（见 <see cref="DragToDeletePatch.GhostNode"/>），
+        /// 红底挂到它下面垫底，尺寸、位置、平滑插值全跟着幽灵走，不需要自己算坐标。
         /// </summary>
         private static void SyncGroupMarks()
         {
@@ -1712,81 +1713,43 @@ namespace ItemCatalog.UI
                 if (!keep) DropGroupMark(key);
             }
 
-            // 幽灵图挂在 `RenderHandler.overlayRoot` 上，坐标是「指针 + dragOffsets」。
-            // 元素自己的 RectTransform 并不跟着移动（位置由渲染节点摆），
-            // 所以红底要照同一套算，不能挂在元素下面。
-            var overlay = DragToDeletePatch.OverlayRoot();
-            if (overlay == null)
-            {
-                ClearGroupMarks();
-                return;
-            }
-
-            Vector2 mouseLocal;
-            try { mouseLocal = (Vector2)overlay.InverseTransformPoint(Input.mousePosition); }
-            catch { ClearGroupMarks(); return; }
-
-            var offsets = DragToDeletePatch.DragOffsets();
-
             for (int i = 0; i < selected.Count; i++)
-                PlaceGroupMark(selected[i], overlay, mouseLocal, offsets);
+                PlaceGroupMark(selected[i]);
         }
 
-        private static void PlaceGroupMark(GameItemElement element, RectTransform overlay,
-                                           Vector2 mouseLocal, System.Collections.IDictionary offsets)
+        private static void PlaceGroupMark(GameItemElement element)
         {
             if (element == null) return;
 
-            try
+            var ghost = DragToDeletePatch.GhostNode(element);
+            if (ghost == null) { DropGroupMark(element); return; }
+
+            GameObject go;
+            if (!_groupMarks.TryGetValue(element, out go) || go == null)
             {
-                GameObject go;
-                if (!_groupMarks.TryGetValue(element, out go) || go == null)
-                {
-                    go = new GameObject("catalogDropRed",
-                        typeof(RectTransform), typeof(UnityEngine.UI.Image));
+                go = new GameObject("catalogDropRed",
+                    typeof(RectTransform), typeof(UnityEngine.UI.Image));
 
-                    var created = (RectTransform)go.transform;
-                    created.SetParent(overlay, false);
-                    created.anchorMin = new Vector2(0.5f, 0.5f);
-                    created.anchorMax = new Vector2(0.5f, 0.5f);
-                    created.pivot = new Vector2(0.5f, 0.5f);
+                var image = go.GetComponent<UnityEngine.UI.Image>();
+                image.color = new Color(0.85f, 0.1f, 0.1f, 0.6f);
+                image.raycastTarget = false;
 
-                    var image = go.GetComponent<UnityEngine.UI.Image>();
-                    image.color = new Color(0.85f, 0.1f, 0.1f, 0.6f);
-                    image.raycastTarget = false;
-
-                    go.layer = overlay.gameObject.layer;
-
-                    _groupMarks[element] = go;
-                    _groupMarkKeys.Add(element);
-                }
-
-                var rect = (RectTransform)go.transform;
-                if (rect.parent != overlay)
-                {
-                    rect.SetParent(overlay, false);
-                    rect.anchorMin = new Vector2(0.5f, 0.5f);
-                    rect.anchorMax = new Vector2(0.5f, 0.5f);
-                    rect.pivot = new Vector2(0.5f, 0.5f);
-                }
-
-                // 位置：指针本地坐标 + 这只物品的拖动偏移（和幽灵图完全一致）
-                Vector2 offset = Vector2.zero;
-                if (offsets != null && offsets.Contains(element))
-                {
-                    try { offset = (Vector2)offsets[element]; } catch { }
-                }
-
-                rect.anchoredPosition = mouseLocal + offset;
-
-                // 尺寸：物品占几格就是几格（overlay 里 1 格 = gridSize 单位）
-                float w = Mathf.Max(1, element.widthPixels);
-                float h = Mathf.Max(1, element.heightPixels);
-                rect.sizeDelta = new Vector2(w, h);
-
-                go.transform.SetAsLastSibling();   // 压在幽灵图上面，确保看得见
+                _groupMarks[element] = go;
+                _groupMarkKeys.Add(element);
             }
-            catch (Exception e) { Warn("group mark: " + e.Message); }
+
+            var rect = (RectTransform)go.transform;
+            if (rect.parent != ghost)
+            {
+                // 挂到幽灵节点下并垫底（SetAsFirstSibling）：永远在图标后面，
+                // 和单选红底同一套路；物品怎么平滑移动，红底就怎么跟着
+                rect.SetParent(ghost, false);
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.offsetMin = Vector2.zero;
+                rect.offsetMax = Vector2.zero;
+                go.transform.SetAsFirstSibling();
+            }
         }
 
         private static void DropGroupMark(GameItemElement key)

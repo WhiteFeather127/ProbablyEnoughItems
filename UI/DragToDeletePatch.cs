@@ -178,40 +178,29 @@ namespace ItemCatalog.UI
             return list;
         }
 
-        private static FieldInfo _multiOffsets;
+        private static PropertyInfo _fakeMiddle;
 
         /// <summary>
-        /// 拖动时每只物品相对指针的偏移（`dragOffsets`，坐标空间 = `RenderHandler.overlayRoot`）。
-        /// 幽灵图就是用「指针 + 这个偏移」摆放的，红底照同一套算就自然贴着它们。
+        /// 框选拖拽时每只物品的**幽灵视觉节点**：`GameItemElement.fakeMiddle`。
+        /// <c>ToggleFakeBackground(true, …)</c> 会把它挂到 <c>RenderHandler.overlayRoot</c> 下，
+        /// <c>MoveGhosts</c> 每帧带平滑插值移动它。红底挂到它下面就和物品完全同步。
         /// </summary>
-        internal static System.Collections.IDictionary DragOffsets()
+        internal static RectTransform GhostNode(GameItemElement element)
         {
+            if (element == null) return null;
+
             try
             {
-                var handler = ItemMultiSelectHandler.current;
-                if (handler == null) return null;
-
-                if (_multiOffsets == null)
+                if (_fakeMiddle == null)
                 {
-                    _multiOffsets = typeof(ItemMultiSelectHandler).GetField(
-                        "dragOffsets", BindingFlags.NonPublic | BindingFlags.Instance);
+                    _fakeMiddle = typeof(GameItemElement).GetProperty(
+                        "fakeMiddle", BindingFlags.Public | BindingFlags.Instance);
                 }
 
-                return _multiOffsets == null ? null : _multiOffsets.GetValue(handler) as System.Collections.IDictionary;
-            }
-            catch { return null; }
-        }
+                if (_fakeMiddle == null) return null;
 
-        /// <summary>幽灵图的父节点（`RenderHandler.overlayRoot`），红底要挂在这上面才对得上坐标。</summary>
-        internal static RectTransform OverlayRoot()
-        {
-            try
-            {
-                var handler = RenderHandler.current;
-                if (handler == null) return null;
-
-                var root = handler.overlayRoot;
-                return root == null ? null : root.rectTransform;
+                var node = _fakeMiddle.GetValue(element, null) as TreeNodeRender;
+                return node == null ? null : node.rectTransform;
             }
             catch { return null; }
         }
