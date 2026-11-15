@@ -790,6 +790,15 @@ namespace ItemCatalog.UI
             }
             else
             {
+                // 他自己是机器 → 机器界面 + 产出配方在**两个窗口都要给**：
+                // 机器是双向内容（来源侧看它产出什么，用途侧看它消耗什么），
+                // 用途窗口只有一条琐碎的使用记录会很莫名其妙（如蒸发器）。
+                var ownRecipes = RecipeIndex.ByMachine(_entry.Id);
+                if (ownRecipes.Count > 0)
+                {
+                    _categories.Add(new Category { Kind = CatMachine, Recipes = ownRecipes });
+                }
+
                 // 谁收这件：用来源页那套结构（阵营 / 客人名 / 立绘 / 一页一个客人），
                 // 正文换成「他收什么」。放在用途侧第一类 —— 「卖给谁」是最常用的去处。
                 var wanted = SourceIndex.WantedBy(_entry.Id, _entry.Item);
