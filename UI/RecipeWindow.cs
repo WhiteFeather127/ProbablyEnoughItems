@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 
@@ -188,7 +188,6 @@ namespace ItemCatalog.UI
         private static int _tagStripSeq;
 
         /// <summary>查不到出处的掉落池：别的来源都没有时才兜底列成「掉落池」大类。</summary>
-        private static List<LootTableInfo> _orphanLoot;
 
         private sealed class TagStrip
         {
@@ -647,7 +646,6 @@ namespace ItemCatalog.UI
         private static void BuildCategories()
         {
             _categories = new List<Category>();
-            _orphanLoot = null;
             if (_entry == null) return;
 
             if (!_asUse)
@@ -678,7 +676,6 @@ namespace ItemCatalog.UI
                     // 池在里面展开。
                     var order = new List<string>();
                     var buckets = new Dictionary<string, List<LootTableInfo>>(StringComparer.Ordinal);
-                    List<LootTableInfo> orphan = null;
 
                     for (int i = 0; i < loot.Count; i++)
                     {
@@ -688,10 +685,8 @@ namespace ItemCatalog.UI
                         string site = LootSource.SiteFor(table.TableId);
                         if (string.IsNullOrEmpty(site))
                         {
-                            // 暂时查不到出处的池先留着：整件物品一个来源都没有时再兜底列出，
-                            // 免得「什么都没有」比「有个池名」更没信息量
-                            if (orphan == null) orphan = new List<LootTableInfo>();
-                            orphan.Add(table);
+                            // 查不到出处的池只是内部数据，不单独成篇：
+                            // 等有箱子 / 地点引用它时再在那边展开。
                             continue;
                         }
 
@@ -716,8 +711,6 @@ namespace ItemCatalog.UI
                         });
                     }
 
-                    // 一件东西别的来源都没有：至少把「它出现在哪些池里」列出来
-                    if (_categories.Count == 0 && orphan != null) _orphanLoot = orphan;
                 }
             }
             else
@@ -780,19 +773,6 @@ namespace ItemCatalog.UI
 
                 // 锁信息不再单独开一页：开启页已经把「箱子 + 卡」并排画出来了，
                 // 两个大类都叫「开启」会变成 1/2、2/2 两页，看着像重复。
-            }
-
-            // 兜底：别的来源一个都没有，但物品确实出现在某些池里 → 至少列出这些池
-            if (!_asUse && _categories.Count == 0 && _orphanLoot != null)
-            {
-                if (ModEntry.Log != null)
-                {
-                    ModEntry.Log.Log("[recipe] " + _entry.Id + " 没有其它来源，兜底列出 "
-                                     + _orphanLoot.Count + " 个掉落池");
-                }
-
-                _categories.Add(new Category { Kind = CatLoot, Loot = _orphanLoot });
-                _orphanLoot = null;
             }
 
             if (_category < 0) _category = 0;
