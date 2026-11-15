@@ -36,29 +36,18 @@ namespace ItemCatalog.UI
         private const int MaxGridRows = 6;
 
         /// <summary>
-        /// 网格可用宽：渲染时量真实容器宽（窗口已定尺寸），扣一点安全边防止
-        /// GridLayoutGroup 最后一列顶出边界；量不到时退回「窗口宽 - 假定留白」。
+        /// 网格可用宽：用布局完成后量到的容器真宽（缓存于 <see cref="_gridContentWidth"/>）；
+        /// 首帧还没量到时先按「窗口宽 - 留白」假定，渲染完会校正并最多重排一轮。
         /// </summary>
-        private static float GridContentWidth(CustomUIBuilder builder)
+        private static float GridContentWidth()
         {
-            try
-            {
-                var container = builder != null ? builder.CurrentContainer : null;
-                if (container != null)
-                {
-                    float w = container.rect.width;
-                    if (w > 60f) return w - 12f;
-                }
-            }
-            catch { }
-
-            return WinWidth - 52f;
+            return _gridContentWidth > 60f ? _gridContentWidth : WinWidth - 36f;
         }
 
-        /// <summary>每行格数随窗口内容宽自适应：可用宽除以「格宽 + 间距」。</summary>
-        private static int GridColumns(CustomUIBuilder builder)
+        /// <summary>每行格数随容器宽自适应：可用宽除以「格宽 + 间距」。</summary>
+        private static int GridColumns()
         {
-            int cols = Mathf.FloorToInt((GridContentWidth(builder) + CellSpacing) / (CellWidth + CellSpacing));
+            int cols = Mathf.FloorToInt((GridContentWidth() + CellSpacing) / (CellWidth + CellSpacing));
             return Mathf.Clamp(cols, 4, 12);
         }
 
@@ -66,10 +55,10 @@ namespace ItemCatalog.UI
         /// 格宽拉到把可用宽占满（GridLayoutGroup 的格子不会自己拉伸，
         /// 余量会全堆在右边缘）。
         /// </summary>
-        private static float GridCellWidth(CustomUIBuilder builder)
+        private static float GridCellWidth()
         {
-            int cols = GridColumns(builder);
-            float cell = (GridContentWidth(builder) - (cols - 1) * CellSpacing) / cols;
+            int cols = GridColumns();
+            float cell = (GridContentWidth() - (cols - 1) * CellSpacing) / cols;
             return Mathf.Clamp(cell, 44f, 80f);
         }
 
@@ -86,7 +75,7 @@ namespace ItemCatalog.UI
             }
         }
 
-        private static int ItemsPerPage { get { return GridColumns(null) * RowsPerPage; } }
+        private static int ItemsPerPage { get { return GridColumns() * RowsPerPage; } }
 
         /// <summary>客人立绘最长边。客人精灵本身一般是 256 见方，再放大会开始发虚。</summary>
         private const float PortraitMaxSide = 300f;
@@ -95,6 +84,10 @@ namespace ItemCatalog.UI
         private const float PortraitSwitchSeconds = 1f;
 
         private static float _lastHeight = -1f;
+
+        // 网格可用宽：布局完成后量到的 _bodyHost 真宽（-1 = 还没量到，用假定值）
+        private static float _gridContentWidth = -1f;
+        private static int _lastColumnsUsed = -1;
 
         // ---- 客人立绘轮播：同一来源的多张精灵按顺序每秒换一张 ----
         private static List<Sprite> _portraitSprites;
@@ -516,7 +509,7 @@ namespace ItemCatalog.UI
             var builder = new CustomUIBuilder(manager, _window, strip.Host);
 
             // 所有标签格共用一张网格：以前每格各自 BeginGrid 一次，结果竖着排成一列
-            builder.BeginGrid(GridColumns(builder), GridCellWidth(builder), CellHeight, CellSpacing);
+            builder.BeginGrid(GridColumns(), GridCellWidth(), CellHeight, CellSpacing);
 
             for (int i = 0; i < strip.Tags.Length; i++)
             {
@@ -1223,6 +1216,20 @@ namespace ItemCatalog.UI
                     // 窗口变了尺寸，让内容根再排一次，避免内容按旧尺寸算
                     CustomUIBuilder.RebuildLayout(_window.ContentRoot);
                 }
+
+                // 布局完成后量一次容器真宽：比首帧的假定值准。
+                // 列数受它影响时只多渲染一轮（这里不会再置位，不会循环）。
+                float w = _bodyHost.rect.width;
+                if (w > 320f && w < 900f && Math.Abs(w - 12f - _gridContentWidth) > 8f)
+                {
+                    _gridContentWidth = w - 12f;
+                    if (GridColumns() != _lastColumnsUsed)
+                    {
+                        _lastColumnsUsed = GridColumns();
+                        Render();
+                        return;
+                    }
+                }
             }
             catch (Exception e)
             {
@@ -1253,7 +1260,7 @@ namespace ItemCatalog.UI
                 if (page.Source != null && !string.IsNullOrEmpty(page.Source.Sprite))
                     h += PortraitMaxSide + 8f;
 
-                int rows = Math.Max(1, (page.Count + GridColumns(null) - 1) / GridColumns(null));
+                int rows = Math.Max(1, (page.Count + GridColumns() - 1) / GridColumns());
                 h += rows * (CellHeight + CellSpacing);
             }
             else
@@ -1487,7 +1494,7 @@ namespace ItemCatalog.UI
             {
                 builder.BeginColumn(4f);
                 var gridHost = builder.CurrentContainer;
-                builder.BeginGrid(GridColumns(builder), GridCellWidth(builder), CellHeight, CellSpacing);
+                builder.BeginGrid(GridColumns(), GridCellWidth(), CellHeight, CellSpacing);
 
                 for (int i = 0; i < cells.Count; i++)
                 {
@@ -1592,7 +1599,7 @@ namespace ItemCatalog.UI
             if (ids == null || ids.Length == 0) return;
 
             var host = builder.CurrentContainer;
-            builder.BeginGrid(GridColumns(builder), GridCellWidth(builder), CellHeight, CellSpacing);
+            builder.BeginGrid(GridColumns(), GridCellWidth(), CellHeight, CellSpacing);
 
             for (int i = 0; i < ids.Length; i++)
             {
@@ -2114,7 +2121,7 @@ namespace ItemCatalog.UI
             if (items == null || items.Count == 0) return;
 
             var gridHost = builder.CurrentContainer;
-            builder.BeginGrid(GridColumns(builder), GridCellWidth(builder), CellHeight, CellSpacing);
+            builder.BeginGrid(GridColumns(), GridCellWidth(), CellHeight, CellSpacing);
 
             for (int i = 0; i < items.Count; i++)
             {
