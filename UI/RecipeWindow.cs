@@ -718,18 +718,25 @@ namespace ItemCatalog.UI
                 // 谁收这件：用来源页那套结构（阵营 / 客人名 / 立绘 / 一页一个客人），
                 // 正文换成「他收什么」。放在用途侧第一类 —— 「卖给谁」是最常用的去处。
                 var wanted = SourceIndex.WantedBy(_entry.Id, _entry.Item);
-                for (int i = 0; i < wanted.Count; i++)
+                if (wanted.Count > 0)
                 {
-                    // 一个客人 = 一个大类：分类标题直接写客人名字（杰克逊博士），
-                    // 而不是把所有人塞进一个叫「客人」的大类里翻页
-                    if (wanted[i] == null) continue;
-
-                    _categories.Add(new Category
+                    // 所有买家合成一个大类「客人」，页内翻页切换，一页一个客人
+                    var picked = new List<SourceInfo>();
+                    for (int i = 0; i < wanted.Count; i++)
                     {
-                        Kind = CatWanted,
-                        Sources = new List<SourceInfo> { wanted[i] },
-                        IsWanted = true
-                    });
+                        if (wanted[i] == null) continue;
+                        picked.Add(wanted[i]);
+                    }
+
+                    if (picked.Count > 0)
+                    {
+                        _categories.Add(new Category
+                        {
+                            Kind = CatWanted,
+                            Sources = picked,
+                            IsWanted = true
+                        });
+                    }
                 }
 
                 var consumed = RecipeIndex.Consuming(_entry.Id, _entry.Item);
@@ -780,28 +787,44 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 一个来源 = 一个大类。
+        /// 客人合并、地点拆开。
         ///
-        /// 以前把同类来源（全部客人 / 全部地点）塞进同一个大类、靠页内翻页切换，
-        /// 于是分类标题永远是「客人」「地点商店」，看不出这一页是谁。
-        /// 现在每个来源各自成类，标题直接写来源名（杰克逊博士 / 配给站 …），
-        /// 左右箭头仍然是一页一个来源。
+        /// 客人动辄几十个，逐个成类会把分类条撑爆，所以全部收进一个「客人」大类，
+        /// 页内翻页切换，一页一个客人（名字写在页内那行）。
+        /// 地点只有几个，各自成类更直观：标题直接是地点名（杰克逊博士的店）。
         /// </summary>
         private static void AddSourceCategory(int kind, List<SourceInfo> sources)
         {
             SourceKind target = kind == CatClient ? SourceKind.Client : SourceKind.Location;
 
+            if (kind == CatLocation)
+            {
+                for (int i = 0; i < sources.Count; i++)
+                {
+                    var one = sources[i];
+                    if (one == null || one.Kind != target) continue;
+
+                    _categories.Add(new Category
+                    {
+                        Kind = kind,
+                        Sources = new List<SourceInfo> { one }
+                    });
+                }
+
+                return;
+            }
+
+            List<SourceInfo> picked = null;
             for (int i = 0; i < sources.Count; i++)
             {
                 var s = sources[i];
                 if (s == null || s.Kind != target) continue;
 
-                _categories.Add(new Category
-                {
-                    Kind = kind,
-                    Sources = new List<SourceInfo> { s }
-                });
+                if (picked == null) picked = new List<SourceInfo>();
+                picked.Add(s);
             }
+
+            if (picked != null) _categories.Add(new Category { Kind = kind, Sources = picked });
         }
 
         // ---------------------------------------------------------------- 窗口
@@ -1034,10 +1057,10 @@ namespace ItemCatalog.UI
 
             switch (category.Kind)
             {
-                // 来源类大类的标题就是那个来源自己的名字（杰克逊博士 / 配给站 …），
-                // 这样箭头中间写的是「2/5 杰克逊博士」，一眼看出这一页是谁
-                case CatClient:
-                case CatWanted:
+                // 客人合并在一个类里，标题写「客人」，是谁看页内那行；
+                // 地点拆开成多个类，标题直接写地点名
+                case CatClient: return ModEntry.T("src_clients");
+                case CatWanted: return ModEntry.T("src_clients");
                 case CatLocation: return SourceTitle(category);
                 case CatCraftOut: return ModEntry.T("rec_cat_craft_out");
                 case CatCraftIn: return ModEntry.T("rec_cat_craft_in");
@@ -1361,8 +1384,24 @@ namespace ItemCatalog.UI
             if (faction != null && faction.text != null)
                 faction.text.alignment = TextAlignmentOptions.Left;
 
-            // 客人名不再单独写一行：分类标题已经是「2/5 杰克逊博士」，
-            // 同一句话在正文里再写一遍就是重复。
+            // 小标题：客人名，居中。
+            // 只在「合并成一个大类」时才有必要——地点那种一个大类一个来源，
+            // 名字已经写在分类标题上了，正文再写一遍是重复。
+            bool mergedCategory = _categories != null
+                                  && _category >= 0 && _category < _categories.Count
+                                  && _categories[_category].Sources != null
+                                  && _categories[_category].Sources.Count > 1;
+
+            if (mergedCategory)
+            {
+                builder.AddLabel(SourceIndex.DisplayName(source), "src_client");
+                var name = builder.Last;
+                if (name != null && name.text != null)
+                {
+                    name.text.alignment = TextAlignmentOptions.Center;
+                    name.text.fontSize = 20f;
+                }
+            }
 
             // 客人立绘：居中。同一客人有多种外观时按顺序每秒轮播（见 TickPortrait）
             _portraitSprites = ClientSprite.AllFor(source.Sprite);
