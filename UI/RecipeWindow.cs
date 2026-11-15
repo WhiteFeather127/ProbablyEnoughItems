@@ -776,16 +776,43 @@ namespace ItemCatalog.UI
                         order.Add(boxSite);
                     }
 
-                    // 同一地方的几张池子合成**一页**：垃圾倾倒场的垃圾堆 /
-                    // 残骸 / 拾荒（scav_afterhour）/ POI 组都是同一条获取途径，
-                    // 分页只会让人以为它们是不同的来源。并集去重铺开。
+                    // 地点页 = 这个地方**全部池子**的并集（不是只含当前物品的那几张）：
+                    // 玩家问的是「垃圾倾倒场能给什么」，垃圾堆 / 残骸 / 拾荒 /
+                    // 背包发现合在一页里；当前物品命中了其中至少一张才进这个站点。
                     for (int i = 0; i < order.Count; i++)
                     {
+                        string site = order[i];
+
+                        if (site.StartsWith("item:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // 箱子站点：内容物本来就是一张表，原样合并
+                            _categories.Add(new Category
+                            {
+                                Kind = CatLoot,
+                                Loot = new List<LootTableInfo> { MergeLootTables(buckets[site]) },
+                                Site = site
+                            });
+                            continue;
+                        }
+
+                        var siteTables = new List<LootTableInfo>();
+                        var allTables = LootSource.Tables;
+                        for (int t = 0; t < allTables.Length; t++)
+                        {
+                            var tt = allTables[t];
+                            if (tt == null) continue;
+
+                            if (string.Equals(LootSource.SiteFor(tt.TableId), site, StringComparison.Ordinal))
+                                siteTables.Add(tt);
+                        }
+
+                        if (siteTables.Count == 0) continue;
+
                         _categories.Add(new Category
                         {
                             Kind = CatLoot,
-                            Loot = new List<LootTableInfo> { MergeLootTables(buckets[order[i]]) },
-                            Site = order[i]
+                            Loot = new List<LootTableInfo> { MergeLootTables(siteTables) },
+                            Site = site
                         });
                     }
 
