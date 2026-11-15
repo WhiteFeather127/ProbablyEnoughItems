@@ -69,5 +69,48 @@ namespace ItemCatalog.UI
             string range;
             return StaticRanges.TryGetValue(id, out range) ? range : null;
         }
+
+        // 合成条目的 Id 用的是本体 id（portable_water_purifier），
+        // 但生成必须走游戏工厂登记的别名（portable_water_purifier_used）——
+        // 这里登记 baseId → 生成别名，拿取时换回去。
+        private static readonly Dictionary<string, string> SpawnIdByBase =
+            new Dictionary<string, string>(StringComparer.Ordinal);
+
+        /// <summary>登记一个生成别名；会解析出本体 id 存映射。</summary>
+        internal static void RegisterSpawnId(string aliasId)
+        {
+            string baseId = RecipeWindow.BaseItemId(aliasId);
+            if (!string.IsNullOrEmpty(baseId) && baseId != aliasId)
+                SpawnIdByBase[baseId] = aliasId;
+        }
+
+        /// <summary>
+        /// 拿取时真正要 Spawn 的 id：本体条目返回登记过的生成别名（耐久随机在工厂里），
+        /// 普通物品返回原 id。
+        /// </summary>
+        internal static string SpawnId(string itemId)
+        {
+            if (string.IsNullOrEmpty(itemId)) return itemId;
+
+            string alias;
+            return SpawnIdByBase.TryGetValue(itemId, out alias) ? alias : itemId;
+        }
+
+        /// <summary>
+        /// 按条目 id（可能是本体，也可能是生成别名）查耐久范围。
+        /// 范围表按生成别名键控，本体 id 走一次反查。
+        /// </summary>
+        internal static string DurabilityRangeForEntry(string id)
+        {
+            string range = DurabilityRange(id);
+            if (range != null) return range;
+
+            foreach (var pair in StaticRanges)
+            {
+                if (RecipeWindow.BaseItemId(pair.Key) == id) return pair.Value;
+            }
+
+            return null;
+        }
     }
 }

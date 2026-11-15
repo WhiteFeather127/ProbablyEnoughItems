@@ -1976,25 +1976,29 @@ namespace ItemCatalog.UI
                 if (durabilityFeature != null) item.RemoveItemFeatureByID(durabilityFeature.identifier);
             }
 
+            // 特殊物品按普通 id 对待：条目 Id 直接用本体（剥掉 _used 等后缀），
+            // 来源反查 / 求购 / 用途 / 合成全部按本体 id 走，不再有特殊 id。
+            // 拿取时按登记的生成别名调 ItemSpawner.Spawn（见 PreBuiltItems.SpawnId）。
+            string baseId = RecipeWindow.BaseItemId(id) ?? id;
+
             var entry = new ItemEntry
             {
-                Id = id,
-                // 特殊物品按普通 id 对待：名字直接取本体（剥掉 _used 等后缀查目录），
-                // 之后所有界面走 entry.DisplayName，不再有按 id 的特殊回退
-                Name = BaseEntryName(id),
+                Id = baseId,
+                Name = BaseEntryName(baseId),
                 Item = item
             };
+
+            PreBuiltItems.RegisterSpawnId(id);
 
             _preBuiltEntries[id] = entry;
             return entry;
         }
 
-        /// <summary>特殊物品 id 的显示名：剥掉状态后缀 / 展开 random_*，取本体条目的名字。</summary>
-        private static string BaseEntryName(string id)
+        /// <summary>本体 id 的显示名：直接取本体条目的名字。</summary>
+        private static string BaseEntryName(string baseId)
         {
-            string baseId = RecipeWindow.BaseItemId(id);
-            var baseEntry = baseId != null ? RecipeIndex.FindEntry(baseId) : null;
-            return baseEntry != null ? baseEntry.DisplayName : id;
+            var baseEntry = RecipeIndex.FindEntry(baseId);
+            return baseEntry != null ? baseEntry.DisplayName : baseId;
         }
 
         /// <summary>取格子里真正接收射线的那个子物体（Image 通常挂在子节点上）。</summary>
@@ -2089,7 +2093,9 @@ namespace ItemCatalog.UI
 
             if (item == null || shared)
             {
-                try { item = ItemSpawner.Spawn(entry.Id); }
+                // 本体条目（合成条目）按登记的生成别名 Spawn——耐久随机在工厂里，
+                // 直接 Spawn 本体 id 会拿到满耐久的新货
+                try { item = ItemSpawner.Spawn(PreBuiltItems.SpawnId(entry.Id)); }
                 catch (Exception e) { Warn("take spawn '" + entry.Id + "': " + e.Message); }
             }
 
@@ -5740,7 +5746,7 @@ namespace ItemCatalog.UI
         {
             if (rich == null || entry == null) return rich;
 
-            string range = PreBuiltItems.DurabilityRange(entry.Id);
+            string range = PreBuiltItems.DurabilityRangeForEntry(entry.Id);
             if (range == null) return rich;
 
             string naked = rich.nakedText;

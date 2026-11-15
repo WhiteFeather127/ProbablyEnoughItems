@@ -21,6 +21,7 @@ namespace ItemCatalog.UI
     internal static class RecipeWindow
     {
         private const string WinId = "recipe:win";
+        private const float WinWidth = 600f;
         private const float WinMinHeight = 240f;
         private const float WinMaxHeight = 900f;
         private const float WindowChrome = 64f;   // 标题栏 + 内容区上下留白
@@ -35,18 +36,12 @@ namespace ItemCatalog.UI
         private const int MaxGridRows = 6;
 
         /// <summary>
-        /// 窗口宽度随屏幕自适应：低分辨率不至于挤出屏幕，高分辨率一页多摆几列。
-        /// 窗口只在 Create 时定宽，之后只调高度。
+        /// 每行格数随窗口内容宽自适应：内容宽（去掉左右留白）除以「格宽 + 间距」。
+        /// 窗口宽是固定的，物品多了靠网格自动换行 + 翻页，窗口大小不动。
         /// </summary>
-        private static float WindowWidth()
-        {
-            return Mathf.Clamp(Screen.width * 0.42f, 460f, 780f);
-        }
-
-        /// <summary>每行格数随窗口宽自适应：内容宽（去掉左右留白）除以「格宽 + 间距」。</summary>
         private static int GridColumns()
         {
-            int cols = Mathf.FloorToInt((WindowWidth() - 52f + CellSpacing) / (CellWidth + CellSpacing));
+            int cols = Mathf.FloorToInt((WinWidth - 52f + CellSpacing) / (CellWidth + CellSpacing));
             return Mathf.Clamp(cols, 4, 12);
         }
 
@@ -852,7 +847,7 @@ namespace ItemCatalog.UI
                 builder = CustomUIManager.Window(WinId,
                     _entry == null ? ModEntry.T("rec_title") : _entry.DisplayName, "paper")
                     .SetDraggable(true)
-                    .SetSize(WindowWidth(), WinMinHeight)
+                    .SetSize(WinWidth, WinMinHeight)
                     .Center()
                     .UseMachineryStyle(true)
                     .OnClose(OnWindowClosed);
@@ -1194,7 +1189,7 @@ namespace ItemCatalog.UI
                 float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
                 if (Mathf.Abs(height - _lastHeight) > 2f)
                 {
-                    _window.SetSize(WindowWidth(), height);
+                    _window.SetSize(WinWidth, height);
                     _lastHeight = height;
 
                     // 窗口变了尺寸，让内容根再排一次，避免内容按旧尺寸算
