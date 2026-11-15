@@ -1979,12 +1979,22 @@ namespace ItemCatalog.UI
             var entry = new ItemEntry
             {
                 Id = id,
-                Name = RecipeWindow.ItemNameFor(id),
+                // 特殊物品按普通 id 对待：名字直接取本体（剥掉 _used 等后缀查目录），
+                // 之后所有界面走 entry.DisplayName，不再有按 id 的特殊回退
+                Name = BaseEntryName(id),
                 Item = item
             };
 
             _preBuiltEntries[id] = entry;
             return entry;
+        }
+
+        /// <summary>特殊物品 id 的显示名：剥掉状态后缀 / 展开 random_*，取本体条目的名字。</summary>
+        private static string BaseEntryName(string id)
+        {
+            string baseId = RecipeWindow.BaseItemId(id);
+            var baseEntry = baseId != null ? RecipeIndex.FindEntry(baseId) : null;
+            return baseEntry != null ? baseEntry.DisplayName : id;
         }
 
         /// <summary>取格子里真正接收射线的那个子物体（Image 通常挂在子节点上）。</summary>
