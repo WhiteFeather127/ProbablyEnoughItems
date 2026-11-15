@@ -2666,7 +2666,10 @@ namespace ItemCatalog.UI
                 var ing = ingredients[i];
                 if (ing == null) continue;
 
-                string id = FirstId(ing);
+                // 液体需求（水 / 酒精 / 酸碱…）：游戏里是容器的内容物不是物品，
+                // 由液体管理器统一换成一只具体容器（bottled_water）展示，
+                // 格子可点、可查、不再是没有图标的文字。
+                string id = LiquidManager.Represent(ing) ?? FirstId(ing);
                 var sprite = id == null ? null : CatalogWindow.IconFor(id);
 
                 if (sprite != null)
