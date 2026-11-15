@@ -2031,10 +2031,9 @@ namespace ItemCatalog.UI
                 // 刚拖拽过：这次松手不再当成点击
                 if (Time.unscaledTime < _suppressClickUntil) return;
 
-                // 点击只用来查看：打开这件物品的详情页（只读）。
-                // 来源与去处已合并成一页，左右键打开的是同一个窗口。
+                // 点击只用来查看：打开这件物品的合成表（只读）。
                 // 作弊模式不再管点击——它只管「能不能从图鉴里拖出物品」。
-                RecipeWindow.OpenFor(entry, false);
+                RecipeWindow.OpenFor(entry);
             };
         }
 

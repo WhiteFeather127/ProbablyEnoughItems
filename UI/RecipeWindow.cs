@@ -172,6 +172,9 @@ namespace ItemCatalog.UI
 
         private static ItemEntry _entry;
 
+        /// <summary>false = 来源（左键）；true = 去处（右键）。</summary>
+        private static bool _asUse;
+
         private static int _category;
         private static int _page;
 
@@ -228,15 +231,18 @@ namespace ItemCatalog.UI
             internal HashSet<string> Exclude;       // 已经单独列出的具体物品，别在标签格里重复画
         }
 
-        /// <summary>
-        /// 打开（或复用）窗口。来源与去处已合并成同一页（左右键都能打开）。
-        /// 保留 asUse 参数仅为兼容旧调用点，内容不再区分方向。
-        /// </summary>
+        internal static void OpenFor(ItemEntry entry)
+        {
+            OpenFor(entry, false);
+        }
+
+        /// <summary>打开（或复用）窗口。asUse=false 看来源，true 看去处。</summary>
         internal static void OpenFor(ItemEntry entry, bool asUse)
         {
             if (entry == null) return;
 
             _entry = entry;
+            _asUse = asUse;
             _category = 0;
             _page = 0;
 
@@ -258,7 +264,7 @@ namespace ItemCatalog.UI
             {
                 try
                 {
-                    ModEntry.Log.Log("[recipe] open id=" + entry.Id
+                    ModEntry.Log.Log("[recipe] open id=" + entry.Id + " asUse=" + asUse
                                      + " cats=" + _categories.Count + " " + CategoryDigest()
                                      + " " + State());
                 }
@@ -674,8 +680,9 @@ namespace ItemCatalog.UI
             _categories = new List<Category>();
             if (_entry == null) return;
 
+            if (!_asUse)
             {
-                // 来源只算「谁卖给我」；收购清单属于去处侧（见 CatWanted）
+                // 来源只算「谁卖给我」；收购清单属于用途侧（见 CatWantedBy）
                 var sources = SourceIndex.For(_entry.Id);
 
                 AddSourceCategory(CatClient, sources);
@@ -781,11 +788,10 @@ namespace ItemCatalog.UI
 
                 }
             }
-
-            // ==== 去处方向（原用途窗口的内容，并入同一页）====
+            else
             {
                 // 谁收这件：用来源页那套结构（阵营 / 客人名 / 立绘 / 一页一个客人），
-                // 正文换成「他收什么」。放在来源类之后 —— 「卖给谁」是最常用的去处。
+                // 正文换成「他收什么」。放在用途侧第一类 —— 「卖给谁」是最常用的去处。
                 var wanted = SourceIndex.WantedBy(_entry.Id, _entry.Item);
                 if (wanted.Count > 0)
                 {
@@ -814,8 +820,13 @@ namespace ItemCatalog.UI
                     _categories.Add(new Category { Kind = CatCraftIn, Recipes = consumed });
                 }
 
-                // 「使用」类不在这里加：上面来源块里的 AddUseCategory 已经把
-                // 来源 / 去处两个方向合并成一个「使用」大类了。
+                // 传 Item 是为了让 `tag:XXX` 那类「整类目标」也能命中
+                // （拆解只对带 ADV_GUN_TAG 的枪、屠宰只对带 BLADE_ITEM_TAG 的刀）。
+                var used = UseIndex.Using(_entry.Id, _entry.Item);
+                if (used.Count > 0)
+                {
+                    AddUseCategory(used);
+                }
 
                 // 他自己就是箱子 → 开启后能开出什么
                 var asBox = LootSource.AsBox(_entry.Id);
@@ -962,10 +973,12 @@ namespace ItemCatalog.UI
                 CatalogWindow.ResetExternalCells();   // 旧格子的提示框 / 拖拽登记一起失效
                 var builder = new CustomUIBuilder(manager, _window, _bodyHost);
 
-                // 标题栏直接用物品名（不再在正文里重复一个 header）。
-                // 来源与去处已合并成一页，标题栏不再写方向。
+                // 标题栏直接用物品名（不再在正文里重复一个 header）
                 try { _window.SetTitle(_entry == null ? "?" : _entry.DisplayName); }
                 catch (Exception e) { Warn("set title: " + e.Message); }
+
+                // 物品名仍居中；来源/用途靠左贴在标题栏内侧
+                ApplyDirectionLabel();
 
                 // 大类翻页：按钮贴两端，名称居中；到头就禁用，不做循环
                 builder.BeginRow(6f);
@@ -987,7 +1000,7 @@ namespace ItemCatalog.UI
 
                 if (category == null)
                 {
-                    builder.AddWarning(Loc("cat_none", "暂未收录"), "cat_empty");
+                    builder.AddWarning(_asUse ? ModEntry.T("use_none") : ModEntry.T("src_none"), "cat_empty");
                     builder.End();
                     CustomUIBuilder.RebuildLayout(_bodyHost);
                     ApplyContentHeight();
@@ -1022,6 +1035,92 @@ namespace ItemCatalog.UI
             {
                 Warn("render: " + e.Message);
             }
+        }
+
+        private static TMPro.TMP_Text _dirLabel;
+
+        /// <summary>
+        /// 在标题栏左侧写「来源 / 用途」。
+        ///
+        /// 窗口标题由 `CustomUIWindow.SetTitle` 居中绘制，没有「左侧留白」这种接口，
+        /// 所以这里复制标题那个文字对象（字体、颜色、描边全都跟着），改成靠左摆放。
+        /// 找不到标题节点就什么都不做——宁可没有这个标签，也不去猜坐标。
+        /// </summary>
+        private static void ApplyDirectionLabel()
+        {
+            if (_window == null || _entry == null) return;
+
+            string dir = ModEntry.T(_asUse ? "dir_use" : "dir_source");
+            if (string.IsNullOrEmpty(dir)) return;
+
+            try
+            {
+                if (_dirLabel != null)
+                {
+                    _dirLabel.text = dir;
+                    return;
+                }
+
+                var root = _window.Rect;
+                if (root == null) return;
+
+                TMPro.TMP_Text title = null;
+                var texts = root.GetComponentsInChildren<TMPro.TMP_Text>(true);
+                for (int i = 0; i < texts.Length; i++)
+                {
+                    if (texts[i] != null && texts[i].text == _entry.DisplayName)
+                    {
+                        title = texts[i];
+                        break;
+                    }
+                }
+
+                if (title == null || title.transform.parent == null) return;
+
+                // 物品名居中：默认是左对齐，和左边的「来源/用途」挤在一起看着像两段标题
+                try { title.alignment = TMPro.TextAlignmentOptions.Center; } catch { }
+
+                // 就放在标题栏里，但让它的布局组忽略这份克隆：
+                // 否则会被当成第三个子物体排在关闭按钮后面（跑到右边去）；
+                // 挂到窗口根上又会被竖排布局组排到最底下。
+                var bar = title.transform.parent as RectTransform;
+                if (bar == null) return;
+
+                var clone = UnityEngine.Object.Instantiate(title.gameObject, bar);
+                clone.name = "directionLabel";
+
+                try
+                {
+                    var ignore = clone.GetComponent<UnityEngine.UI.LayoutElement>();
+                    if (ignore == null) ignore = clone.AddComponent<UnityEngine.UI.LayoutElement>();
+                    ignore.ignoreLayout = true;
+                }
+                catch { }
+
+                var rect = clone.transform as RectTransform;
+                if (rect != null)
+                {
+                    float side = bar.rect.height > 4f ? bar.rect.height : 30f;
+
+                    rect.anchorMin = new Vector2(0f, 0.5f);
+                    rect.anchorMax = new Vector2(0f, 0.5f);
+                    rect.pivot = new Vector2(0f, 0.5f);
+                    rect.anchoredPosition = new Vector2(10f, 0f);
+                    rect.sizeDelta = new Vector2(140f, side);
+                }
+
+                // 画在最上层，否则会被窗口背景/内容盖住
+                try { clone.transform.SetAsLastSibling(); } catch { }
+
+                _dirLabel = clone.GetComponent<TMPro.TMP_Text>();
+                if (_dirLabel != null)
+                {
+                    _dirLabel.text = dir;
+                    _dirLabel.raycastTarget = false;
+                    try { _dirLabel.alignment = TMPro.TextAlignmentOptions.Left; } catch { }
+                }
+            }
+            catch (Exception e) { Warn("direction label: " + e.Message); }
         }
 
         private static string CategoryTitle(Category category)
