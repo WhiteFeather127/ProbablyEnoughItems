@@ -127,7 +127,8 @@ client,BrokenMachineIntroduction,name_scrapper,,,其他,pool:GetRandomScavSprite
 client,ClinicVolunteerClient,name_clinic_volunteer,,,其他,pool:GetRandomMedSpriteName,,,,,pure_white_injector,,,,
 client,ConspiracyClient,name_conspiracy_theorist,,,其他,pool:GetRandomScavMaleSpriteName,,,,,glass_shard_shiv|pipe_weapon,,,,
 client,Georgio2,name_georgio,,,其他,george,,,,,packet_red_cigarette|birth_control_pill|box_tampon|shampoo|toilet_paper|toothpaste|scrap_metal|large_bottled_water|liquid_luck|nuclear_waste,,,,
-# 博士上门 + 仓储客 + 剧情引导客合成一条 Client 来源，继承下面「博士店里」的货单（base=dr_jackson）。
+# 博士柜台货单来自游戏 StoreClientList.PlaceInventorInventory / PlaceInventorSpecialStock
+# （88 件：背包、家电、工作台、模块、blank_keycard 等）；上门那行继承这份货单（base=dr_jackson）。
 # exclude 的 7 件 = 上门时 PlaceInventorInventory(true) 跳过的四件背包
 #   + 只在店里 PlaceInventorSpecialStock 里摆的三件（energy_credit_dis/advanced_flux_agent/turbo_booster_adv）。
 # 仓储客的 machine_bay_ext / storage_bay_large、剧情引导客的 furnace / ingot_book / 三个随机模块
