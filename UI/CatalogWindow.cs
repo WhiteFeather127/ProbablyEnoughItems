@@ -5713,8 +5713,9 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 预构建键的原生提示框后追加一行「生成时的耐久范围」。
-        /// RichText 的属性只读，所以拷一份新的出来。
+        /// 预构建键的原生提示框：把实例上掷出来的那一次耐久（27/300 这种，每次悬停
+        /// 都不一样、也没有信息量）整行删掉，换成「生成时的耐久范围」。
+        /// 那行的原文可以直接用游戏自己的 GetRealDisplayString 算出来，删得准。
         /// </summary>
         private static RichText AppendPrebuiltRange(ItemEntry entry, RichText rich)
         {
@@ -5723,17 +5724,47 @@ namespace ItemCatalog.UI
             string range = PreBuiltItems.DurabilityRange(entry.Id);
             if (range == null) return rich;
 
+            string naked = rich.nakedText;
+            string foreground = rich.richTextForeground;
+
+            if (entry.Item != null)
+            {
+                string durLine = DurabilityHelper.GetRealDisplayString(entry.Item);
+                if (!string.IsNullOrEmpty(durLine))
+                {
+                    naked = RemoveLine(naked, durLine);
+                    foreground = RemoveLine(foreground, durLine);
+                }
+            }
+
             string line = "\n" + string.Format(ModEntry.T("prebuilt_durability"), range);
 
             return new RichText(
-                rich.nakedText + line,
+                naked + line,
                 rich.richTextStrikethrough,
                 rich.richTextUnderline,
-                rich.richTextForeground + line,
+                foreground + line,
                 rich.richTextBackground,
                 rich.recommendedWidth,
                 rich.recommendedHeight,
                 rich.isTruncated);
+        }
+
+        /// <summary>删掉文本里的某一行（连同行首 / 行尾的换行）。</summary>
+        private static string RemoveLine(string text, string line)
+        {
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(line)) return text;
+
+            int i = text.IndexOf(line, StringComparison.Ordinal);
+            if (i < 0) return text;
+
+            int start = i;
+            while (start > 0 && text[start - 1] == '\n') start--;
+
+            int end = i + line.Length;
+            if (end < text.Length && text[end] == '\n') end++;
+
+            return text.Remove(start, end - start);
         }
 
         /// <summary>
