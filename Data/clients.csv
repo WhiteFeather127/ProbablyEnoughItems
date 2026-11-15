@@ -1,4 +1,4 @@
-# Probably Enough Items — 客人表（改完重启游戏生效，不需要重新编译）
+﻿# Probably Enough Items — 客人表（改完重启游戏生效，不需要重新编译）
 #
 # 一个阵营一节：# ===== 阵营 ===== 标题 + 一行 faction，下面逐行写该阵营的客人。
 # 客人行不带 faction 列，阵营由上方最近的 faction 行决定。
@@ -190,7 +190,7 @@ client,LandlordClient,name_the_landlord,,,商贩/买家,landlord,,,,,deed,,,,
 faction,faction_location,,,,,
 # ---- 地点 ----
 location,commissary,,commissary,src_commissary,地点,
-location,dr_jackson,,dr_jackson,src_doctor_shop,地点,,,,,,flux_agent|satchel|backpack_large|backpack_medium|backpack_small|energy_credit_dis|advanced_flux_agent|turbo_booster_adv,,,,
+location,dr_jackson,,dr_jackson,src_doctor_shop,地点,,,,,,alarm_module_transmitter|aquascan|aug_scanner|auto_butcher|backpack_large|backpack_medium|backpack_small|black_lamp|blank_keycard|bottle_printer|chem_module|cigarette_color|cigarette_guide|crypto_module_cmd|crypto_module_eng|crypto_module_med|crypto_module_sec|crypto_module_ser|current_converter|desequencer|dna_manipulator_module_negative_filter|dna_manipulator_module_positive_filter|dna_manipulator_module_precision|dna_manipulator_module_stabilizer|energy_credit_breeder|energy_credit_dis|farm_module_dream_cap|farm_module_fillerweed_production|farm_module_hydroreed_filter|farm_module_kotton_loom|farm_module_nightmare_cap|farm_module_nutrifruit|farm_module_smuggler|flashlight|fridge|furnace|furnace_module_blast|furnace_module_junk|gene_scanner|hydroponic|hydroponic_guide|ingot_book|injector_guide|intake_hopper|labeler|labeler_blue|livestock_feed_dispenser|logo_checker|machine_bay|machine_bay_ext|magnifier|metal_scanner|mirage_projector|module_bay_expansion_kit|module_extractor_advanced|moisture_farm|mouse_trap|outlet_hopper|plant_analyser|plant_dna_disk|portable_water_purifier_used|powerblock|ras|recharger|satchel|security_alarm|sign_firearm|sign_firearm_heavy|sign_food|sign_household|sign_material|sign_medical|sign_water|smuggler_bay|stamp_guide|storage_bay|storage_bay_expansion_kit|storage_bay_large|storage_coordinator|toolbox|uv_filter|water_filter_adv|water_guide|water_purifier|water_tank|wine_yeast_infinite|advanced_flux_agent|turbo_booster_adv,,,,
 
 # ===== 从 IL 自动补录（2026-11-12）=====
 
