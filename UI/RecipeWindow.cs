@@ -2716,7 +2716,8 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 特殊物品 id → 本体物品 id：random_* 展开占位，状态后缀（_used 等）剥掉。
+        /// 特殊物品 id → 本体物品 id：random_* 展开占位，状态后缀（_used 等）剥掉，
+        /// 满装前缀（full_beer / full_water_test_strip_box 这类）也剥掉。
         /// 只在剥出来的 id 真的是目录物品时才返回。名字 / 图标 / 合成条目共用这一份。
         /// </summary>
         internal static string BaseItemId(string id)
@@ -2729,6 +2730,24 @@ namespace ItemCatalog.UI
                 string expanded = LootSource.ExpandPlaceholder(text);
                 if (expanded != text && RecipeIndex.FindEntry(expanded) != null) return expanded;
             }
+
+            // 满装容器：full_beer → beer；full_water_test_strip_box 先剥 full_
+            // 再剥包装后缀（_box / _packet）→ water_test_strip。逐层试，命中目录条目为止。
+            if (text.StartsWith("full_", StringComparison.Ordinal))
+            {
+                string baseId = StripVariantSuffix(text.Substring(5));
+                if (baseId != null) return baseId;
+            }
+
+            return StripVariantSuffix(text);
+        }
+
+        /// <summary>剥一层状态/包装后缀（_used / _box / _packet…），剥出的 id 是目录条目才返回。</summary>
+        private static string StripVariantSuffix(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+
+            if (RecipeIndex.FindEntry(text) != null) return text;
 
             for (int i = 0; i < VariantSuffixes.Length; i++)
             {

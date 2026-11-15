@@ -1,4 +1,4 @@
-# Probably Enough Items · 使用来源表
+﻿# Probably Enough Items · 使用来源表
 #
 # 记录「对物品本身动手」的转化，和机器配方（RecipeIndex）分开：
 #   开箱子 / 撕包装 → 内容物
@@ -82,3 +82,16 @@ uses,tag:BLADE_ITEM_TAG+rat,apply,raw_meat|small_raw_meat|morsel,
 #              产出 dossier 发生在 UI 里，目标是任意文件，找不到能判定的标签。
 # 泡面         FoodItemHelper::<CanCookCupNoodle>b__10_2
 #              cup_noodle 只是被 EnableTag("cooked") + TransformEdible，同 id 不变。
+
+# ===== 2026-11-15 化学品补给拆包（激活即拆包，MaterialDirectory.UnpackOrWarn）=====
+
+# 普通化学品补给激活：销毁箱子，固定给 5 瓶装好液体的试剂
+uses,common_chemical,open,mini_alcohol_bottle|mini_alcohol_bottle|med_bottle_small_pink|med_bottle_red|med_bottle_blue,
+#   MaterialDirectory/<>c__DisplayClass7_1::<CommonChemicalSupplies>b__3
+#   （迷你酒精瓶×2 = mini_bottle 改名装 alcohol+water；小粉瓶装 lipobond_agent；
+#     红瓶装 acid；蓝瓶装 base —— 试剂瓶本身都是目录物品，可继续反查）
+
+# 管制化学品补给激活：销毁箱子，固定给 3 瓶
+uses,restricted_chemical,open,med_bottle_violet|med_bottle_violet|med_bottle_orange,
+#   MaterialDirectory/<>c__DisplayClass9_1::<RestrictedChemicalSupplies>b__3
+#   （紫瓶 ×2 = 芬达前体 methylol+stabilizing_agent；橙瓶 = 还原剂 reducing_agent）
