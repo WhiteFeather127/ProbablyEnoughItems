@@ -995,6 +995,8 @@ namespace ItemCatalog.UI
                 if (builder.Last != null) builder.Last.SetInteractable(_category > 0);
                 builder.AddFlexibleSpace();
                 builder.AddLabel(CategoryLabel(), "cat_title");
+                if (builder.Last != null && builder.Last.text != null)
+                    builder.Last.text.fontSize = 18f;   // 大类名放大：这是页面唯一的导航信息
                 builder.AddFlexibleSpace();
                 builder.AddButton(">", delegate { TurnCategory(1); }, "cat_next");
                 if (builder.Last != null)
@@ -2186,30 +2188,13 @@ namespace ItemCatalog.UI
         /// <summary>
         /// 使用页：一件事一行 —— 哪件东西被怎么用掉、换回了什么。
         /// 例：开箱子 → 内容物；喝掉液体好运 → 空瓶；绷带缠玻璃片 → 玻璃刀。
+        /// 布局：来源格子在上，「产物」一行当分界线，产物格子在下——
+        /// 方向 / 方式标签都不写（大类标题已经说了这是「使用」）。
         /// </summary>
         private static void RenderUsePage(CustomUIBuilder builder, List<UseInfo> uses)
         {
             var use = uses[_page];
             if (use == null) return;
-
-            // 方向标注：这条记录的产物里有当前物品 = 来源方向；否则 = 去处方向。
-            // 合并后的「使用」类两个方向都有，靠这行区分。
-            bool isIn = false;
-            if (use.Produces != null)
-            {
-                for (int i = 0; i < use.Produces.Length; i++)
-                {
-                    if (string.Equals(use.Produces[i], _entry.Id, StringComparison.Ordinal))
-                    {
-                        isIn = true;
-                        break;
-                    }
-                }
-            }
-
-            builder.AddLabel(Loc(isIn ? "use_dir_source" : "use_dir_target",
-                    isIn ? "怎么得到它" : "能拿它做什么"), "use_dir");
-            builder.AddLabel(ModEntry.T(UseKindKey(use.Kind)), "use_kind");
 
             var sources = new List<string>(use.Sources ?? new string[0]);
 
@@ -2226,8 +2211,6 @@ namespace ItemCatalog.UI
 
             if (sources.Count > 0 || hasTagCells)
             {
-                builder.AddLabel(ModEntry.T("use_source"), "use_source");
-
                 if (sources.Count > 0)
                     RenderItemGrid(builder, sources.ToArray(), 600);
 
@@ -2453,19 +2436,6 @@ namespace ItemCatalog.UI
             }
 
             BindGoods(builder, id, sprite == null);
-        }
-
-        /// <summary>使用方式的标题文案。</summary>
-        private static string UseKindKey(string kind)
-        {
-            switch ((kind ?? string.Empty).Trim().ToLowerInvariant())
-            {
-                case "open": return "use_kind_open";
-                case "drink": return "use_kind_drink";
-                case "apply": return "use_kind_apply";
-                case "combine": return "use_kind_combine";
-                default: return "use_kind_use";
-            }
         }
 
         // ---------------------------------------------------------------- 配方页
