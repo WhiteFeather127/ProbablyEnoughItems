@@ -21,13 +21,11 @@ namespace ItemCatalog.UI
     internal static class RecipeWindow
     {
         private const string WinId = "recipe:win";
-        private const float WinWidth = 600f;
         private const float WinMinHeight = 240f;
         private const float WinMaxHeight = 900f;
         private const float WindowChrome = 64f;   // 标题栏 + 内容区上下留白
         private const float IconSide = 40f;
 
-        private const int GridColumns = 8;
         private const float CellWidth = 56f;
         private const float CellHeight = 56f;
         private const float CellSpacing = 6f;
@@ -35,6 +33,22 @@ namespace ItemCatalog.UI
         // 一页最多几行货，放满就翻页；最后一页不足时窗口会自己缩到内容高度。
         // 窗口加高后一页最多 6 行（48 件），屏幕矮时自动少放几行、靠翻页补。
         private const int MaxGridRows = 6;
+
+        /// <summary>
+        /// 窗口宽度随屏幕自适应：低分辨率不至于挤出屏幕，高分辨率一页多摆几列。
+        /// 窗口只在 Create 时定宽，之后只调高度。
+        /// </summary>
+        private static float WindowWidth()
+        {
+            return Mathf.Clamp(Screen.width * 0.42f, 460f, 780f);
+        }
+
+        /// <summary>每行格数随窗口宽自适应：内容宽（去掉左右留白）除以「格宽 + 间距」。</summary>
+        private static int GridColumns()
+        {
+            int cols = Mathf.FloorToInt((WindowWidth() - 52f + CellSpacing) / (CellWidth + CellSpacing));
+            return Mathf.Clamp(cols, 4, 12);
+        }
 
         private static int RowsPerPage
         {
@@ -49,7 +63,7 @@ namespace ItemCatalog.UI
             }
         }
 
-        private static int ItemsPerPage { get { return GridColumns * RowsPerPage; } }
+        private static int ItemsPerPage { get { return GridColumns() * RowsPerPage; } }
 
         /// <summary>客人立绘最长边。客人精灵本身一般是 256 见方，再放大会开始发虚。</summary>
         private const float PortraitMaxSide = 300f;
@@ -479,7 +493,7 @@ namespace ItemCatalog.UI
             var builder = new CustomUIBuilder(manager, _window, strip.Host);
 
             // 所有标签格共用一张网格：以前每格各自 BeginGrid 一次，结果竖着排成一列
-            builder.BeginGrid(GridColumns, CellWidth, CellHeight, CellSpacing);
+            builder.BeginGrid(GridColumns(), CellWidth, CellHeight, CellSpacing);
 
             for (int i = 0; i < strip.Tags.Length; i++)
             {
@@ -838,7 +852,7 @@ namespace ItemCatalog.UI
                 builder = CustomUIManager.Window(WinId,
                     _entry == null ? ModEntry.T("rec_title") : _entry.DisplayName, "paper")
                     .SetDraggable(true)
-                    .SetSize(WinWidth, WinMinHeight)
+                    .SetSize(WindowWidth(), WinMinHeight)
                     .Center()
                     .UseMachineryStyle(true)
                     .OnClose(OnWindowClosed);
@@ -1180,7 +1194,7 @@ namespace ItemCatalog.UI
                 float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
                 if (Mathf.Abs(height - _lastHeight) > 2f)
                 {
-                    _window.SetSize(WinWidth, height);
+                    _window.SetSize(WindowWidth(), height);
                     _lastHeight = height;
 
                     // 窗口变了尺寸，让内容根再排一次，避免内容按旧尺寸算
@@ -1216,7 +1230,7 @@ namespace ItemCatalog.UI
                 if (page.Source != null && !string.IsNullOrEmpty(page.Source.Sprite))
                     h += PortraitMaxSide + 8f;
 
-                int rows = Math.Max(1, (page.Count + GridColumns - 1) / GridColumns);
+                int rows = Math.Max(1, (page.Count + GridColumns() - 1) / GridColumns());
                 h += rows * (CellHeight + CellSpacing);
             }
             else
@@ -1450,7 +1464,7 @@ namespace ItemCatalog.UI
             {
                 builder.BeginColumn(4f);
                 var gridHost = builder.CurrentContainer;
-                builder.BeginGrid(GridColumns, CellWidth, CellHeight, CellSpacing);
+                builder.BeginGrid(GridColumns(), CellWidth, CellHeight, CellSpacing);
 
                 for (int i = 0; i < cells.Count; i++)
                 {
@@ -1555,7 +1569,7 @@ namespace ItemCatalog.UI
             if (ids == null || ids.Length == 0) return;
 
             var host = builder.CurrentContainer;
-            builder.BeginGrid(GridColumns, CellWidth, CellHeight, CellSpacing);
+            builder.BeginGrid(GridColumns(), CellWidth, CellHeight, CellSpacing);
 
             for (int i = 0; i < ids.Length; i++)
             {
@@ -2077,7 +2091,7 @@ namespace ItemCatalog.UI
             if (items == null || items.Count == 0) return;
 
             var gridHost = builder.CurrentContainer;
-            builder.BeginGrid(GridColumns, CellWidth, CellHeight, CellSpacing);
+            builder.BeginGrid(GridColumns(), CellWidth, CellHeight, CellSpacing);
 
             for (int i = 0; i < items.Count; i++)
             {
