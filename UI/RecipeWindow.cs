@@ -1385,14 +1385,14 @@ namespace ItemCatalog.UI
                 faction.text.alignment = TextAlignmentOptions.Left;
 
             // 小标题：客人名，居中。
-            // 只在「合并成一个大类」时才有必要——地点那种一个大类一个来源，
-            // 名字已经写在分类标题上了，正文再写一遍是重复。
-            bool mergedCategory = _categories != null
+            // 客人 / 求购是「多个来源合并成一个类」，必须靠这行区分是谁；
+            // 地点那种一个类一个来源，名字已经在分类标题上了，正文再写一遍是重复。
+            bool showClientName = _categories != null
                                   && _category >= 0 && _category < _categories.Count
-                                  && _categories[_category].Sources != null
-                                  && _categories[_category].Sources.Count > 1;
+                                  && (_categories[_category].Kind == CatClient
+                                      || _categories[_category].Kind == CatWanted);
 
-            if (mergedCategory)
+            if (showClientName)
             {
                 builder.AddLabel(SourceIndex.DisplayName(source), "src_client");
                 var name = builder.Last;
@@ -1650,6 +1650,17 @@ namespace ItemCatalog.UI
                 string alias = AliasIconId(id);
                 if (alias != null) sprite = CatalogWindow.CompositeIconFor(alias);
                 if (sprite == null && alias != null) sprite = CatalogWindow.IconFor(alias);
+            }
+
+            // 变体状态物品（portable_water_purifier_used 之类）借本体图标
+            if (sprite == null)
+            {
+                string baseId = IconFallbackId(id);
+                if (baseId != null)
+                {
+                    sprite = CatalogWindow.CompositeIconFor(baseId);
+                    if (sprite == null) sprite = CatalogWindow.IconFor(baseId);
+                }
             }
 
             // 标签源（`tag:XXX`）要轮播一整类物品，图标序列由调用方给
@@ -2477,6 +2488,32 @@ namespace ItemCatalog.UI
                 case "random_node": return "common_electronic";
                 default: return null;
             }
+        }
+
+        /// <summary>
+        /// 变体物品（`portable_water_purifier_used`、`xxx_broken` 这类）在游戏里常常
+        /// 只是同一件东西的状态位，没有独立图标。把状态后缀去掉再找一次图，
+        /// 免得格子上变成一串被裁掉的字母。
+        /// </summary>
+        private static readonly string[] VariantSuffixes =
+        {
+            "_used", "_broken", "_ruined", "_dirty", "_empty", "_full", "_wet", "_dry", "_charged", "_dead"
+        };
+
+        private static string IconFallbackId(string id)
+        {
+            string text = (id ?? string.Empty).Trim();
+            if (text.Length == 0) return null;
+
+            for (int i = 0; i < VariantSuffixes.Length; i++)
+            {
+                if (!text.EndsWith(VariantSuffixes[i], StringComparison.Ordinal)) continue;
+
+                string baseId = text.Substring(0, text.Length - VariantSuffixes[i].Length);
+                if (baseId.Length > 0 && CatalogWindow.IconFor(baseId) != null) return baseId;
+            }
+
+            return null;
         }
 
         /// <summary>占位 id 的可读名；不认识的返回 null。</summary>
