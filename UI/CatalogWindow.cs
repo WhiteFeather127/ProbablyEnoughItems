@@ -1967,6 +1967,15 @@ namespace ItemCatalog.UI
             var item = CreatePreviewItem(id);
             if (item == null) return null;
 
+            // 实例上掷出来的那一次耐久不进提示框（每次悬停都不同、也没有信息量）：
+            // 摘掉耐久特性，原版提示框链就不再画「耐久度: x/max」那行——
+            // 那行走特性管线渲染，删文本删不掉。范围由 AppendPrebuiltRange 单独补。
+            if (PreBuiltItems.DurabilityRange(id) != null)
+            {
+                var durabilityFeature = DurabilityHelper.FeatureDurability();
+                if (durabilityFeature != null) item.RemoveItemFeatureByID(durabilityFeature.identifier);
+            }
+
             var entry = new ItemEntry
             {
                 Id = id,

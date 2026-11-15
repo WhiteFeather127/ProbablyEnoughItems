@@ -193,11 +193,16 @@ namespace ItemCatalog.Catalog
                 if (def.Kind == SourceKind.Client) ClientTypeCount++;
                 else LocationCount++;
 
-                for (int k = 0; k < def.Items.Length; k++) Add(def.Items[k], source);
+                for (int k = 0; k < def.Items.Length; k++)
+                {
+                    Add(def.Items[k], source);
+                    AddAliasSource(def.Items[k], source);
+                }
 
                 for (int k = 0; k < def.RandomItems.Length; k++)
                 {
                     Add(def.RandomItems[k], source);
+                    AddAliasSource(def.RandomItems[k], source);
                     RandomItemCount++;
                 }
 
@@ -376,6 +381,41 @@ namespace ItemCatalog.Catalog
             }
 
             if (!list.Contains(source)) list.Add(source);
+        }
+
+        /// <summary>变体状态后缀：去掉之后通常就是本体的目录 id。</summary>
+        private static readonly string[] AliasSuffixes =
+        {
+            "_used", "_broken", "_ruined", "_dirty", "_empty", "_full", "_wet", "_dry", "_charged", "_dead"
+        };
+
+        /// <summary>
+        /// 预构建键（portable_water_purifier_used 这类）不是目录物品，货单只能记别名 id；
+        /// 玩家反查的是本体（净水器）。把别名去掉状态后缀（或展开 random_* 占位）
+        /// 再登记一份，本体的来源里就能看到这家店。
+        /// 多余的登记无害：没有目录条目的 id 永远不会被查询。
+        /// </summary>
+        private static void AddAliasSource(string itemId, SourceInfo source)
+        {
+            if (string.IsNullOrEmpty(itemId)) return;
+
+            string alias;
+            if (itemId.StartsWith("random_", StringComparison.Ordinal))
+            {
+                alias = LootSource.ExpandPlaceholder(itemId);
+            }
+            else
+            {
+                alias = null;
+                for (int i = 0; i < AliasSuffixes.Length; i++)
+                {
+                    if (!itemId.EndsWith(AliasSuffixes[i], StringComparison.Ordinal)) continue;
+                    alias = itemId.Substring(0, itemId.Length - AliasSuffixes[i].Length);
+                    break;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(alias) && alias != itemId) Add(alias, source);
         }
 
         internal static List<SourceInfo> For(string itemId)
