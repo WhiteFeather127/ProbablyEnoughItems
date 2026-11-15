@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 
 namespace ItemCatalog.Catalog
 {
@@ -14,8 +15,10 @@ namespace ItemCatalog.Catalog
     ///                        else GetLock(box) == key
     /// </code>
     ///
-    /// 所以卡物品自己带着一个 `LOCK_ID` 标签值，和箱子的锁 id 相等就能开。
-    /// 这里把「锁 id → 卡物品 id」做成一张表，供来源页显示「开这个箱子要哪张卡」。
+    /// 注意：**卡物品不带 `LOCK_ID` 标签**——游戏里「锁 id → 卡」的配对是
+    /// `StoreClientList.lockToKeycard` / `lockToCryptoModule` 两张静态字典
+    /// （cctor 里 Add(LOCK_ID_SEC, sec_keycard) 这一批）。这里把字典读过来，
+    /// 读不到就用 IL 里抄的表兜底，供来源页显示「开这个箱子要哪张卡」。
     /// </summary>
     internal static class LockKeys
     {
@@ -86,12 +89,18 @@ namespace ItemCatalog.Catalog
             return string.Equals(keyId, CommandLockId, StringComparison.Ordinal);
         }
 
-        /// <summary>扫一遍目录，把「带 LOCK_ID 标签的物品」按锁 id 建表。</summary>
+        /// <summary>
+        /// 建表：先拿游戏的「锁 id → 卡」静态字典（卡不带 LOCK_ID 标签，
+        /// 只扫目录一张卡都扫不到），拿不到退回 IL 抄的表；然后目录扫描
+        /// 只用来**补充**游戏字典之外的条目（例如带 LOCK_ID 的非卡钥匙）。
+        /// </summary>
         private static void EnsureBuilt()
         {
             if (_byLockId != null) return;
 
             var map = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            SeedGameLockMap(map);
 
             try
             {
@@ -136,6 +145,48 @@ namespace ItemCatalog.Catalog
 
             if (ModEntry.Log != null)
                 ModEntry.Log.Log("[lock] keycards=" + map.Count);
+        }
+
+        /// <summary>
+        /// 把游戏的「锁 id → 卡」配对放进表：优先反射读
+        /// <c>StoreClientList.lockToKeycard</c> 静态字典（跟着游戏版本走），
+        /// 反射失败用 2026-11-15 从 <c>StoreClientList..cctor</c> IL 抄的表兜底。
+        /// </summary>
+        private static void SeedGameLockMap(Dictionary<string, string> map)
+        {
+            try
+            {
+                var field = typeof(StoreClientList).GetField(
+                    "lockToKeycard", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static);
+
+                if (field != null && field.GetValue(null) is System.Collections.IDictionary dict)
+                {
+                    foreach (System.Collections.DictionaryEntry e in dict)
+                    {
+                        var k = e.Key as string;
+                        var v = e.Value as string;
+                        if (!string.IsNullOrEmpty(k) && !string.IsNullOrEmpty(v))
+                            map[k] = v;
+                    }
+
+                    return;
+                }
+            }
+            catch { /* 反射失败走兜底表 */ }
+
+            // 兜底：StoreClientList..cctor 的原始配对（LOCK_ID_COMMAND 万能，也配了命令卡）
+            var seed = new[]
+            {
+                new[] { "LOCK_ID_SEC", "sec_keycard" },
+                new[] { "LOCK_ID_COMMAND", "cmd_keycard" },
+                new[] { "LOCK_ID_MED", "med_keycard" },
+                new[] { "LOCK_ID_ENG", "eng_keycard" },
+                new[] { "LOCK_ID_SUP", "sup_keycard" },
+                new[] { "LOCK_ID_SER", "ser_keycard" }
+            };
+
+            for (int i = 0; i < seed.Length; i++)
+                if (!map.ContainsKey(seed[i][0])) map[seed[i][0]] = seed[i][1];
         }
     }
 }
