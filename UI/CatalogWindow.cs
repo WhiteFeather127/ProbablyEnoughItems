@@ -1962,6 +1962,11 @@ namespace ItemCatalog.UI
             {
                 _preBuiltCells[element.id] = id;
 
+                // 借到了本体图标的变体（portable_water_purifier_used 这类）走的是 AddImage
+                // 路径，BindCell 对 null entry 直接返回，MakeClickable 没执行过——
+                // 格子上没有任何 raycast 目标，悬停事件根本不触发。这里补上。
+                if (element.button == null) MakeClickable(element, delegate { });
+
                 var host = HitGraphic(element);
 
                 var trigger = host != null ? host.GetComponent<UnityEngine.EventSystems.EventTrigger>() : null;
@@ -2030,7 +2035,7 @@ namespace ItemCatalog.UI
                     false);
 
                 // 走原版叠层（Item Details 徽章挂在这条通道上）；失败再退到 TooltipManager
-                if (ShowViaOverlay(rich, null)) return;
+                if (ShowRichViaOverlay(rich)) return;
 
                 var manager = GetTooltipManager();
                 if (manager == null) return;
@@ -4090,6 +4095,31 @@ namespace ItemCatalog.UI
         /// 用 OverlayHandler（原生提示框叠层）显示富文本。
         /// 这是游戏自己的悬停提示通道，Item Details 的类型徽章、其它美化 mod 的补丁都打在这上面。
         /// </summary>
+        /// <summary>
+        /// 预构建键的提示框走这条：内容是静态的（名字 + 耐久范围），
+        /// 不能复用 ShowViaOverlay——它的刷新回调是 RebuildTooltip(entry)，
+        /// entry 为 null 时每 0.25 秒返回 null，提示框会被立刻清掉。
+        /// </summary>
+        private static bool ShowRichViaOverlay(RichText rich)
+        {
+            if (rich == null) return false;
+
+            var overlay = OverlayHandler.current;
+            if (overlay == null) return false;
+
+            try
+            {
+                TooltipFollower.Begin(rich, TooltipWidthFor(null), delegate { return rich; });
+                _overlayShown = true;
+                return true;
+            }
+            catch (Exception e)
+            {
+                Warn("prebuilt overlay show failed: " + e.Message);
+                return false;
+            }
+        }
+
         private static bool ShowViaOverlay(RichText rich, ItemEntry entry)
         {
             if (rich == null) return false;
