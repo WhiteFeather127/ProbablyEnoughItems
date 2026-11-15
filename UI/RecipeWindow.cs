@@ -2570,11 +2570,42 @@ namespace ItemCatalog.UI
             }
             catch { }
 
+            // 特殊物品（portable_water_purifier_used 这类）目录里没有：
+            // 按约定去掉状态后缀、只查本体物品 id 的名字，绝不显示裸 id
+            string baseId = BaseItemId(id);
+            if (name == null && baseId != null) name = ItemName(baseId);
+
             if (string.IsNullOrEmpty(name) || string.Equals(name, id, StringComparison.Ordinal))
                 name = id.Replace('_', ' ');
 
             _nameCache[id] = name;
             return name;
+        }
+
+        /// <summary>
+        /// 特殊物品 id → 本体物品 id：random_* 展开占位，状态后缀（_used 等）剥掉。
+        /// 只在剥出来的 id 真的是目录物品时才返回，避免递归到又一个裸 id。
+        /// </summary>
+        private static string BaseItemId(string id)
+        {
+            string text = (id ?? string.Empty).Trim();
+            if (text.Length == 0) return null;
+
+            if (text.StartsWith("random_", StringComparison.Ordinal))
+            {
+                string expanded = LootSource.ExpandPlaceholder(text);
+                if (expanded != text && RecipeIndex.FindEntry(expanded) != null) return expanded;
+            }
+
+            for (int i = 0; i < VariantSuffixes.Length; i++)
+            {
+                if (!text.EndsWith(VariantSuffixes[i], StringComparison.Ordinal)) continue;
+
+                string baseId = text.Substring(0, text.Length - VariantSuffixes[i].Length);
+                if (baseId.Length > 0 && RecipeIndex.FindEntry(baseId) != null) return baseId;
+            }
+
+            return null;
         }
 
         /// <summary>给提示框用：预构建键（没有目录条目）的可读名，带缓存。</summary>
