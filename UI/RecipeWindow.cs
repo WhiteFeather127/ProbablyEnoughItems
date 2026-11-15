@@ -36,13 +36,41 @@ namespace ItemCatalog.UI
         private const int MaxGridRows = 6;
 
         /// <summary>
-        /// 每行格数随窗口内容宽自适应：内容宽（去掉左右留白）除以「格宽 + 间距」。
-        /// 窗口宽是固定的，物品多了靠网格自动换行 + 翻页，窗口大小不动。
+        /// 网格可用宽：渲染时量真实容器宽（窗口已定尺寸），扣一点安全边防止
+        /// GridLayoutGroup 最后一列顶出边界；量不到时退回「窗口宽 - 假定留白」。
         /// </summary>
-        private static int GridColumns()
+        private static float GridContentWidth(CustomUIBuilder builder)
         {
-            int cols = Mathf.FloorToInt((WinWidth - 52f + CellSpacing) / (CellWidth + CellSpacing));
+            try
+            {
+                var container = builder != null ? builder.CurrentContainer : null;
+                if (container != null)
+                {
+                    float w = container.rect.width;
+                    if (w > 60f) return w - 12f;
+                }
+            }
+            catch { }
+
+            return WinWidth - 52f;
+        }
+
+        /// <summary>每行格数随窗口内容宽自适应：可用宽除以「格宽 + 间距」。</summary>
+        private static int GridColumns(CustomUIBuilder builder)
+        {
+            int cols = Mathf.FloorToInt((GridContentWidth(builder) + CellSpacing) / (CellWidth + CellSpacing));
             return Mathf.Clamp(cols, 4, 12);
+        }
+
+        /// <summary>
+        /// 格宽拉到把可用宽占满（GridLayoutGroup 的格子不会自己拉伸，
+        /// 余量会全堆在右边缘）。
+        /// </summary>
+        private static float GridCellWidth(CustomUIBuilder builder)
+        {
+            int cols = GridColumns(builder);
+            float cell = (GridContentWidth(builder) - (cols - 1) * CellSpacing) / cols;
+            return Mathf.Clamp(cell, 44f, 80f);
         }
 
         private static int RowsPerPage
@@ -58,7 +86,7 @@ namespace ItemCatalog.UI
             }
         }
 
-        private static int ItemsPerPage { get { return GridColumns() * RowsPerPage; } }
+        private static int ItemsPerPage { get { return GridColumns(null) * RowsPerPage; } }
 
         /// <summary>客人立绘最长边。客人精灵本身一般是 256 见方，再放大会开始发虚。</summary>
         private const float PortraitMaxSide = 300f;
@@ -488,7 +516,7 @@ namespace ItemCatalog.UI
             var builder = new CustomUIBuilder(manager, _window, strip.Host);
 
             // 所有标签格共用一张网格：以前每格各自 BeginGrid 一次，结果竖着排成一列
-            builder.BeginGrid(GridColumns(), CellWidth, CellHeight, CellSpacing);
+            builder.BeginGrid(GridColumns(builder), GridCellWidth(builder), CellHeight, CellSpacing);
 
             for (int i = 0; i < strip.Tags.Length; i++)
             {
@@ -1225,7 +1253,7 @@ namespace ItemCatalog.UI
                 if (page.Source != null && !string.IsNullOrEmpty(page.Source.Sprite))
                     h += PortraitMaxSide + 8f;
 
-                int rows = Math.Max(1, (page.Count + GridColumns() - 1) / GridColumns());
+                int rows = Math.Max(1, (page.Count + GridColumns(null) - 1) / GridColumns(null));
                 h += rows * (CellHeight + CellSpacing);
             }
             else
@@ -1459,7 +1487,7 @@ namespace ItemCatalog.UI
             {
                 builder.BeginColumn(4f);
                 var gridHost = builder.CurrentContainer;
-                builder.BeginGrid(GridColumns(), CellWidth, CellHeight, CellSpacing);
+                builder.BeginGrid(GridColumns(builder), GridCellWidth(builder), CellHeight, CellSpacing);
 
                 for (int i = 0; i < cells.Count; i++)
                 {
@@ -1564,7 +1592,7 @@ namespace ItemCatalog.UI
             if (ids == null || ids.Length == 0) return;
 
             var host = builder.CurrentContainer;
-            builder.BeginGrid(GridColumns(), CellWidth, CellHeight, CellSpacing);
+            builder.BeginGrid(GridColumns(builder), GridCellWidth(builder), CellHeight, CellSpacing);
 
             for (int i = 0; i < ids.Length; i++)
             {
@@ -2086,7 +2114,7 @@ namespace ItemCatalog.UI
             if (items == null || items.Count == 0) return;
 
             var gridHost = builder.CurrentContainer;
-            builder.BeginGrid(GridColumns(), CellWidth, CellHeight, CellSpacing);
+            builder.BeginGrid(GridColumns(builder), GridCellWidth(builder), CellHeight, CellSpacing);
 
             for (int i = 0; i < items.Count; i++)
             {
