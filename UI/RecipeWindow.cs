@@ -2779,6 +2779,13 @@ namespace ItemCatalog.UI
                 if (expanded != text && RecipeIndex.FindEntry(expanded) != null) return expanded;
             }
 
+            // 运行时改名的瓶：目录里没有这个 id（游戏把 mini_bottle 改名灌酒，
+            // PreBuildChemHelper.CreateMiniAlcoholBottle），借本体 mini_bottle 的图标和名字
+            if (string.Equals(text, "mini_alcohol_bottle", StringComparison.Ordinal))
+            {
+                if (RecipeIndex.FindEntry("mini_bottle") != null) return "mini_bottle";
+            }
+
             // 满装容器：full_beer → beer；full_water_test_strip_box 先剥 full_
             // 再剥包装后缀（_box / _packet）→ water_test_strip。逐层试，命中目录条目为止。
             if (text.StartsWith("full_", StringComparison.Ordinal))
