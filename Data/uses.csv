@@ -95,3 +95,34 @@ uses,common_chemical,open,mini_alcohol_bottle|mini_alcohol_bottle|med_bottle_sma
 uses,restricted_chemical,open,med_bottle_violet|med_bottle_violet|med_bottle_orange,
 #   MaterialDirectory/<>c__DisplayClass9_1::<RestrictedChemicalSupplies>b__3
 #   （紫瓶 ×2 = 芬达前体 methylol+stabilizing_agent；橙瓶 = 还原剂 reducing_agent）
+
+# ===== 2026-11-15 全量激活动作核查（tools/audit/91 号探针，扫全部 set_onActivateSlotItemFunc）=====
+
+# 谷果箱激活：按箱内重量随机分成最多 4 颗谷果（继承新鲜度）
+uses,nutrifruit_crate,open,nutrifruit|nutrifruit|nutrifruit|nutrifruit,
+#   UnusedDirectory/<>c__DisplayClass75_0::<NutrifruitCrate>b__3
+#   （RNG.DivideWithDeviation(重量, 4) + FoodItemHelper.CloneFreshness）
+
+# 真空包装谷果激活：拆出 1 颗
+uses,nutrifruit_packaged,open,nutrifruit,
+#   UnusedDirectory/<>c__DisplayClass76_0::<NutrifruitPackaged>b__2
+
+# 消耗品激活 = 直接消耗（GameItem.Destroy，无产出）。
+#   ConsumableHelper.Init* 挂过激活动作的物品全集（MedsItemDirectory /
+#   FoodItemDirectory / AmenitiesItemDirectory 的工厂 IL）：
+uses,fanta_pill,apply,,
+uses,dream_dust,apply,,
+uses,nudka,drink,,
+uses,cig_red,apply,,
+uses,injector_white,apply,,
+uses,injector_pure_white,apply,,
+uses,injector_black,apply,,
+uses,injector_red,apply,,
+uses,injector_green,apply,,
+uses,injector_turquoise,apply,,
+uses,injector_purple,apply,,
+uses,injector_purple_large,apply,,
+uses,injector_blue,apply,,
+uses,injector_blood_red,apply,,
+uses,injector_pink,apply,,
+uses,injector_pink_alt,apply,,
