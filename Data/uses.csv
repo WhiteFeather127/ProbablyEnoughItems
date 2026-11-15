@@ -140,3 +140,11 @@ uses,debris_pile2+welder,apply,scrap_metal,
 
 # 休整残骸堆过夜推进 → 废金属（DebrisHelper.OnNight）
 uses,debris_pile1,apply,scrap_metal,
+
+# ===== 2026-11-16 夜巡拾荒的道具（ScavHelper：探测器升级 / 手电减伤）=====
+
+# 金属探测器拿来升级基地探测器（消耗一件，每级提高拾荒双倍掉落几率）
+uses,metal_scanner,apply,,note_scav_scanner
+
+# 手电筒夜巡时随身带着降低受伤几率（不消耗）
+uses,flashlight,apply,,note_scav_flashlight

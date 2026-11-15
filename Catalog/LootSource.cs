@@ -665,6 +665,33 @@ namespace ItemCatalog.Catalog
 
             if (tables.Count == 0) return;   // 表还没加载，下次再说
 
+            // 夜巡拾荒（垃圾倾倒场 afterhour）的固定产出池：
+            // ScavHelper.GetRandomScavengedItem 的 IL 清单，不是运行时掉落表，
+            // 手动补一张——「拾荒能捡到什么」和这九件物品的来源都要可查。
+            // 权重按 IL 量级（螺丝刀 / 剪线钳 ×10，其余等权；金属探测器带来的
+            // 双倍掉落是概率修正，不进池子）。
+            var scavTable = new LootTableInfo { TableId = "scav_afterhour" };
+            string[] scavIds =
+            {
+                "mouse_trap", "screwdriver", "nuts_metal", "wire_cutter", "wire",
+                "welder", "scrap_metal", "satchel", "kids_backpack"
+            };
+            for (int s = 0; s < scavIds.Length; s++)
+            {
+                float w = (scavIds[s] == "screwdriver" || scavIds[s] == "wire_cutter") ? 10f : 1f;
+                scavTable.Items.Add(new LootItemRef { Id = scavIds[s], Weight = w });
+
+                List<LootTableInfo> hit;
+                if (!map.TryGetValue(scavIds[s], out hit))
+                {
+                    hit = new List<LootTableInfo>();
+                    map[scavIds[s]] = hit;
+                }
+                if (!hit.Contains(scavTable)) hit.Add(scavTable);
+                entries++;
+            }
+            tables.Add(scavTable);
+
             _tables = tables.ToArray();
 
             _byItem.Clear();

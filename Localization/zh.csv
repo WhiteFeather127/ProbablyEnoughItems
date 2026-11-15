@@ -93,3 +93,5 @@ mach_note,纸条
 cat_use,使用
 use_dir_source,怎么得到它
 use_dir_target,能拿它做什么
+note_scav_scanner,拾荒道具：拿来升级基地的金属探测器（消耗一件），每级提高夜巡拾荒的双倍掉落几率
+note_scav_flashlight,拾荒道具：夜巡拾荒时随身携带，降低受伤几率（不消耗）
