@@ -231,7 +231,8 @@ namespace ItemCatalog.UI
                 try
                 {
                     ModEntry.Log.Log("[recipe] open id=" + entry.Id + " asUse=" + asUse
-                                     + " cats=" + _categories.Count + " " + State());
+                                     + " cats=" + _categories.Count + " " + CategoryDigest()
+                                     + " " + State());
                 }
                 catch { }
             }
@@ -1039,6 +1040,21 @@ namespace ItemCatalog.UI
                 case CatLock: return ModEntry.T("loot_use");
                 default: return "?";
             }
+        }
+
+        /// <summary>把所有大类标题拼成一行，日志里能直接看出每页是什么。</summary>
+        private static string CategoryDigest()
+        {
+            if (_categories.Count == 0) return "none";
+
+            var text = new System.Text.StringBuilder();
+            for (int i = 0; i < _categories.Count; i++)
+            {
+                if (i > 0) text.Append(" | ");
+                text.Append(i + 1).Append(':').Append(CategoryTitle(_categories[i]));
+            }
+
+            return text.ToString();
         }
 
         /// <summary>来源类大类（客人 / 地点 / 求购）的标题：用来源自己的名字。</summary>
