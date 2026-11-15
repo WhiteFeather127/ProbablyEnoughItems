@@ -40,6 +40,9 @@ namespace ItemCatalog.Catalog
         /// </summary>
         private static HardcodedSource[] _cachedDefinitions;
 
+        /// <summary>上一次解析时跳过的 <c>kind=unused</c> 行数（只用于日志）。</summary>
+        internal static int UnusedRowCount { get; private set; }
+
         /// <summary>
         /// 读两张表并按 id 拼成定义列表。单行出错只跳过该行并记日志，
         /// 任一文件缺失 / 读取失败时返回空表（图鉴其他功能不受影响）。
@@ -106,8 +109,8 @@ namespace ItemCatalog.Catalog
 
             if (ModEntry.Log != null)
             {
-                ModEntry.Log.Log(string.Format("[sources] loaded {0} definitions from {1} + {2}",
-                    result.Length, ClientsCsvPath, GoodsCsvPath));
+                ModEntry.Log.Log(string.Format("[sources] loaded {0} definitions from {1} + {2} (unused rows skipped: {3})",
+                    result.Length, ClientsCsvPath, GoodsCsvPath, UnusedRowCount));
             }
 
             return result;
@@ -142,6 +145,7 @@ namespace ItemCatalog.Catalog
             var defs = new List<HardcodedSource>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
             string faction = null;
+            UnusedRowCount = 0;
 
             string[] lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             for (int i = 0; i < lines.Length; i++)
@@ -177,6 +181,14 @@ namespace ItemCatalog.Catalog
                         continue;
                     }
                     faction = id;
+                    continue;
+                }
+
+                // kind=unused：游戏里确实有这条客人 / 地点，但当前流程遇不到（或已被同名合并）。
+                // 数据留在表里备查，运行时整行忽略，不参与来源与求购。
+                if (string.Equals(kindText, "unused", StringComparison.OrdinalIgnoreCase))
+                {
+                    UnusedRowCount++;
                     continue;
                 }
 
