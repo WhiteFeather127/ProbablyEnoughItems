@@ -1,4 +1,4 @@
-# Probably Enough Items · 掉落池属于哪个地方 / 哪个人
+﻿# Probably Enough Items · 掉落池属于哪个地方 / 哪个人
 #
 # 掉落池本身不是给玩家的东西，玩家遇到的是「在哪儿」：垃圾倾倒场能翻出什么、
 # 小偷身上带什么、拾荒者的货摊上有什么。这张表把池归到那个「地方」上，
@@ -8,7 +8,6 @@
 #   pool  掉落池 id（可用值看日志 `[loot] tables=… ids=…`）
 #   site  这个地方的**游戏本地化键**，页面上直接显示它的翻译：
 #           location_dumping_grounds  垃圾倾倒场（出门能去的地点）
-#           name_petty_thief          小偷
 #           name_scavenger            拾荒者
 #           name_eleanor              埃莉诺
 #         也可以写 `item:<物品 id>`（按物品名显示）或直接写文字。
@@ -21,16 +20,21 @@
 #   junkTable / dumpingGroundTG / dumpingGroundFreshTG / POI_dumpingGround
 #        ← ExpeditionLocationList::DumpingGrounds、ExpeditionPoiList::JunkPile /
 #          ScrapPile / FreshScrapPile、ScavHelper::SpawnDumpingGroundLoot
-#   householdTable / medicalTable ← CreatePettyThief（小偷随身货）
 #   packedFoodTable  ← 拾荒者货单 / FillService
 #   materialTable    ← Eleanor5 剧情分支
+#
+# householdTable / medicalTable 刻意不映射（2026-11-15）：
+# 它们只在扒手来访的对话结束回调里出现（CreatePettyThief::b__57_0，
+# SpawnFromTable + AddDirectSellingItemToTable 把货摆上直销桌）。
+# 这条途径已由「客人」类的扒手行覆盖，掉落池页与之重复，
+# 且「可能开出」的开箱措辞对"来访摆货"机制是误导。
 
 pool,site
 junkTable,location_dumping_grounds
 dumpingGroundTG,location_dumping_grounds
 dumpingGroundFreshTG,location_dumping_grounds
 POI_dumpingGround,location_dumping_grounds
-householdTable,name_petty_thief
-medicalTable,name_petty_thief
+# householdTable / medicalTable 不再映射到扒手：扒手来访摆货（AddDirectSellingItemToTable）
+# 已由「客人」类覆盖，掉落池页与它重复且措辞误导（2026-11-15）
 packedFoodTable,name_scavenger
 materialTable,name_eleanor
