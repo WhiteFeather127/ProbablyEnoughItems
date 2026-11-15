@@ -13,8 +13,10 @@
 #   第 16 列 dynamic     动态货单标记（如 commissary，原 goods.csv 的 dynamic）
 #   goods.csv 仍会被读取并与上面 12~16 列叠加，但新数据只需要写这一张表。
 # kind          faction=阵营分节 / client=上门客人 / location=地点商店
-#               unused=游戏里有定义、但当前流程遇不到（或在表里被同名合并）的客人：
-#                      只作为资料留档，运行时整行忽略，不参与来源与求购。
+#               alias =同一个角色在游戏代码里的另一个 id（如 abby2..5、inventor、
+#                      officerLunShot）。数据已并入同名的正式行，第 17 列写着并入哪一行。
+#               unused=游戏里有定义、但当前流程遇不到 / 没有独立身份（预告片专用、伪装客）。
+#               alias 与 unused 都只作资料留档，运行时整行忽略，不参与来源与求购。
 # id            faction 行填官方本地化 key；客人行填唯一标识（goods.csv 靠它关联）
 # name_key      游戏 ClientName 表的本地化 key（name_xxx），留空则用注册名兜底
 # location_id   地点 id：留空 / dr_jackson / commissary（走地点自己的 GetTitle）
@@ -279,46 +281,59 @@ client,criminalBuyerMerc,name_shopping_mercenary,,,,pool:GetRandomMercSpriteName
 # 什么都收的客人放最后
 client,businessPermitOfficial,name_trade_board_official,,,,pool:GetClerkSpriteName,,,ALL_TYPE,,,,,,
 
-# ===== 未使用（游戏里有定义，但当前流程遇不到 / 已被同名合并）=====
-# kind=unused：只在表里备查，运行时整行忽略（日志里记 unused rows skipped）。
-# 要启用某条，把开头的 unused 改成 client 或 location，并补上阵营分节。
+# ===== 补充：游戏里有、之前漏掉的正式客人 =====
+faction,faction_name_church,,,,,
+client,abby,name_abby,,,教堂,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+client,church_engineer,name_church_engineer,,,教堂,pool:GetRandomLowerLevelSpriteName,,,MODULE|NODE|MATERIAL,,,,,,
+faction,faction_name_lower_level,,,,,
+client,food_shortage_client,name_lower_level_citizen,,,其他,pool:GetRandomLowerLevelSpriteName,,,FOOD,,,,,,
+
+# ===== 别名（同一角色在游戏代码里的另一个 id，数据已并入同名正式行）=====
+# kind=alias：只作资料留档，运行时整行忽略。第 17 列写着并入了哪一行。
 faction,faction_none,,,,,
-unused,abby1,,,,,,,,MODULE|NODE|MATERIAL,,,,,,
-unused,abby2,,,,,,,,MODULE|NODE|MATERIAL,,,,,,
-unused,abby3,,,,,,,,MODULE|NODE|MATERIAL,,,,,,
-unused,abby4,,,,,,,,MODULE|NODE|MATERIAL,,,,,,
-unused,abby5,,,,,,,,MODULE|NODE|MATERIAL,,,,,,
+alias,farmer_standard,name_hydroponic_farmer,,,,,,,SEED,,,,,,,FarmerClientStandard
+alias,foodieTouristReturning,name_foodie_tourist,,,,,,,FOOD|BREVAGE,,,,,,,foodieTourist
+alias,inventor,name_dr._jackson,,,,,,,MATERIAL,system_module_corrupt|system_module_ruined,,,,,,InventorVisit
+alias,junker2,name_junker,,,,,,,SUBSTANCE,,,,,,,Junker
+alias,lowerLevelCitizenMaintenanceBuying,name_lower_level_citizen,,,,,,,ENERGY_CELL,,,,,,,lowerLevelCitizenPowerBuying
+alias,mercenaryBuyer,name_mercenary,,,,,,,WEAPON|ARMOR|AMMUNITION,,,,,,,MercGunSeller
+alias,minorMerc,name_mercenary,,,,,,,WEAPON|ARMOR|AMMUNITION,,,,,,,MercGunSeller
+alias,minerMinor,name_miner,,,,,,,NARCOTIC,,,,,,,Miner
+alias,officerLunBackOnDuty,name_lun,,,,,,,NARCOTIC,black_injector,,,,,,officerLunVisit
+alias,officerLunShot,name_lun,,,,,,,MEDICAL|NARCOTIC,,,,,,,officerLunVisit
+alias,scrap_byer,name_scrap_buyer,,,,,,,MATERIAL|TOOL|ENERGY_CELL,,,,,,,Scrapper
+alias,spacerAmenityVariety,name_spacer,,,,,,,HOUSEHOLD_GOOD,,,,,,,PanicBuyerClient
+alias,spacerFood,name_spacer,,,,,,,FOOD,,,,,,,PanicBuyerClient
+alias,spacerFoodI,name_spacer,,,,,,,FOOD,,,,,,,PanicBuyerClient
+alias,spacerFoodStory,name_spacer,,,,,,,FOOD,,,,,,,PanicBuyerClient
+alias,spacerFoodStory2,name_spacer,,,,,,,FOOD|BREVAGE,,,,,,,PanicBuyerClient
+alias,spacerFoodVariety,name_spacer,,,,,,,FOOD,,,,,,,PanicBuyerClient
+alias,spacerHouseholdItem,name_spacer,,,,,,,HOUSEHOLD_GOOD,,,,,,,PanicBuyerClient
+alias,stationEngineerMinor,name_station_engineer,,,,,,,MATERIAL|MODULE|NODE|TOOL,,,,,,,stationEngineer
+alias,touristJunkSouvenirBuyer,name_station_tourist,,,,,,,MATERIAL|MAKESHIFT|JUNK,,,,,,,touristWeaponSouvenirBuyer
+alias,upperLevelVisitorMinor,name_upper_level_citizen,,,,,,,MAKESHIFT|LOWTECH|PROCESSED_FOOD|NARCOTIC|SUBSTANCE,,,,,,,ULGunSeller
+alias,upperLowerVisitor,name_upper_level_visitor,,,,,,,SUBSTANCE,,,,,,,upperLowerVisitorLuxury
+alias,wanted5,name_lou,,,,,,,MELEE_WEAPON,welder|screwdriver,,,,,,louDemandCollect
+alias,wanted8_return,name_john_smith,,,,,,,FOOD,,,,,,,wanted8
+alias,wanted8_weekly,name_john_smith,,,,,,,FOOD,,,,,,,wanted8
+alias,wantedBait,name_lower_levels_citizen,,,,,,,FOOD,,,,,,,wanted3
+alias,abby1,name_abby,,,,,,,MODULE|NODE|MATERIAL,,,,,,,abby
+alias,abby2,name_abby,,,,,,,MODULE|NODE|MATERIAL,,,,,,,abby
+alias,abby3,name_abby,,,,,,,MODULE|NODE|MATERIAL,,,,,,,abby
+alias,abby4,name_abby,,,,,,,MODULE|NODE|MATERIAL,,,,,,,abby
+alias,abby5,name_abby,,,,,,,MODULE|NODE|MATERIAL,,,,,,,abby
+alias,church_engineer_unique,name_church_engineer,,,,,,,MODULE|NODE|MATERIAL,,,,,,,church_engineer
+alias,church_engineer_unique2,name_church_engineer,,,,,,,MODULE|NODE|MATERIAL,,,,,,,church_engineer
+
+# ===== 未使用（游戏里有定义，但当前流程遇不到 / 无独立身份）=====
+# kind=unused：billy1 在 StoreClientListUnused 里且无调用点；shadyBuyerStory 是预告片专用；
+# aug_material / aug_med / chemical_returning_client 是伪装客，名字取自借用的事件客人，不单独成页。
+faction,faction_none,,,,,
+unused,billy1,billy,,,,,,,FOOD,,,,,,
+unused,shadyBuyerStory,sha3,,,,,,,ORGAN,,,,,,
 unused,aug_material,,,,,,,,MATERIAL|ENERGY_CELL,,,,,,
 unused,aug_med,,,,,,,,MEDICAL,,,,,,
-unused,billy1,,,,,billy,,,FOOD,,,,,,
 unused,chemical_returning_client,,,,,,,,WATER,,,,,,
-unused,church_engineer_unique,,,,,,,,MODULE|NODE|MATERIAL,,,,,,
-unused,church_engineer_unique2,,,,,,,,MODULE|NODE|MATERIAL,,,,,,
-unused,farmer_standard,name_hydroponic_farmer,,,,,,,SEED,,,,,,
-unused,food_shortage_client,name_lower_level_citizen,,,,,,,FOOD,,,,,,
-unused,foodieTouristReturning,name_foodie_tourist,,,,,,,FOOD|BREVAGE,,,,,,
-unused,inventor,name_dr._jackson,,,,,,,MATERIAL,system_module_corrupt|system_module_ruined,,,,,
-unused,junker2,name_junker,,,,,,,SUBSTANCE,,,,,,
-unused,lowerLevelCitizenMaintenanceBuying,name_lower_level_citizen,,,,,,,ENERGY_CELL,,,,,,
-unused,mercenaryBuyer,name_mercenary,,,,,,,WEAPON|ARMOR|AMMUNITION,,,,,,
-unused,minerMinor,name_miner,,,,,,,NARCOTIC,,,,,,
-unused,minorMerc,name_mercenary,,,,,,,WEAPON|ARMOR|AMMUNITION,,,,,,
-unused,officerLunBackOnDuty,name_lun,,,,officer_lun,,,NARCOTIC,black_injector,,,,,
-unused,officerLunShot,name_lun,,,,officer_lun,,,MEDICAL|NARCOTIC,,,,,,
-unused,scrap_byer,name_scrap_buyer,,,,,,,MATERIAL|TOOL|ENERGY_CELL,,,,,,
-unused,shadyBuyerStory,,,,,sha3,,,ORGAN,,,,,,
-unused,spacerAmenityVariety,name_spacer,,,,,,,HOUSEHOLD_GOOD,,,,,,
-unused,spacerFood,name_spacer,,,,,,,FOOD,,,,,,
-unused,spacerFoodI,name_spacer,,,,,,,FOOD,,,,,,
-unused,spacerFoodStory,name_spacer,,,,,,,FOOD,,,,,,
-unused,spacerFoodStory2,name_spacer,,,,,,,FOOD|BREVAGE,,,,,,
-unused,spacerFoodVariety,name_spacer,,,,,,,FOOD,,,,,,
-unused,spacerHouseholdItem,name_spacer,,,,,,,HOUSEHOLD_GOOD,,,,,,
-unused,stationEngineerMinor,name_station_engineer,,,,,,,MATERIAL|MODULE|NODE|TOOL,,,,,,
-unused,touristJunkSouvenirBuyer,name_station_tourist,,,,,,,MATERIAL|MAKESHIFT|JUNK,,,,,,
-unused,upperLevelVisitorMinor,name_upper_level_citizen,,,,,,,MAKESHIFT|LOWTECH|PROCESSED_FOOD|NARCOTIC|SUBSTANCE,,,,,,
-unused,upperLowerVisitor,name_upper_level_visitor,,,,,,,SUBSTANCE,,,,,,
-unused,wanted5,name_lou,,,,wanted5,,,MELEE_WEAPON,welder|screwdriver,,,,,
-unused,wanted8_return,name_john_smith,,,,wanted8,,,FOOD,,,,,,
-unused,wanted8_weekly,name_john_smith,,,,wanted8,,,FOOD,,,,,,
-unused,wantedBait,name_lower_levels_citizen,,,,wanted_bait1,,,FOOD,,,,,,
+unused,addictGeneralTrailer,Addict,,,,,,,SUBSTANCE,,,,,,
+unused,debug_client,Debug Client,,,,,,,SUBSTANCE|ALL_TYPE,,,,,,
+unused,revSupplyBuyerTrailer,Revolution Quartermaster,,,,,,,WEAPON|AMMUNITION|MEDICAL,,,,,,
