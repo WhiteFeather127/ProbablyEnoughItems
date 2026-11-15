@@ -1959,17 +1959,33 @@ namespace ItemCatalog.UI
         /// 一页一张表：上面是箱子本身，下面把这箱子**所有**可能的产出按图鉴格子铺开。
         /// 表 id 多数就是箱子物品 id（`med_box`…），不是的话那格退化成文字。
         /// </summary>
+        /// <summary>
+        /// 来源侧：一件物品的来源 = 「使用某个箱子，可能开出它」。
+        /// 渲染与去处侧共用 <see cref="RenderLootBody"/> —— 同一条
+        /// 「箱子 ↔ 内容物」关系从两个方向打开看到的是同一页。
+        /// </summary>
         private static void RenderLootPage(CustomUIBuilder builder, List<LootTableInfo> loot, string site)
+        {
+            RenderLootBody(builder, loot, site);
+        }
+
+        /// <summary>
+        /// 掉落关系**共用渲染器**（来源侧反查到的箱子 / 地点池，与去处侧箱子 / 卡自己展开，
+        /// 走的是这同一段代码）：是箱子就画「箱子 + 需要的卡 →『可能开出』→ 内容物格子」；
+        /// 是地点池就只有内容物格子（地点名在分类标题上，不重复）。
+        /// </summary>
+        private static void RenderLootBody(CustomUIBuilder builder, List<LootTableInfo> loot, string site)
         {
             var table = loot[_page];
             if (table == null) return;
 
-            // 地点名 / 「可能开出」都不写：地点在分类标题上，内容就是那一格池子。
-            // 只有「地方」是箱子时才画箱子 + 需要的卡；地点类没有箱子可画
+            // 这张表对应的箱子：站点给了 item:<箱子> 就用它（来源反查）；
+            // 没给就从池反查（箱子经 box_pools 映射 / 卡开箱）；再不行退回表 id
+            // （箱子自己的内容物表 TableId 就是箱子 id）。地点池没有箱子条目，跳过箱子区。
             string boxId = !string.IsNullOrEmpty(site) &&
                            site.StartsWith("item:", StringComparison.OrdinalIgnoreCase)
                 ? site.Substring(5).Trim()
-                : null;
+                : (LootSource.BoxForPool(table.TableId) ?? table.TableId);
 
             var boxEntry = string.IsNullOrEmpty(boxId) ? null : RecipeIndex.FindEntry(boxId);
 
@@ -1983,6 +1999,8 @@ namespace ItemCatalog.UI
                 if (!string.IsNullOrEmpty(keyId)) pair.Add(keyId);
 
                 RenderItemGrid(builder, pair.ToArray(), 800);
+
+                builder.AddLabel(Loc("loot_opens", "可能开出"), "loot_opens");
             }
 
             RenderLootItems(builder, table);
@@ -2017,45 +2035,12 @@ namespace ItemCatalog.UI
 
         /// <summary>
         /// 去处侧：这箱子 / 这张卡能开出什么。
-        /// 结构和来源侧一样，只是不显示「需要卡」—— 因为当前物品自己就是箱或卡。
+        /// 与来源侧调**同一个渲染器** <see cref="RenderLootBody"/>（site 传 null，
+        /// 由它从池反查箱子 / 直接用表 id），两个方向页面完全一致。
         /// </summary>
         private static void RenderLootUsePage(CustomUIBuilder builder, List<LootTableInfo> loot)
         {
-            var table = loot[_page];
-            if (table == null) return;
-
-            builder.AddHeader(Loc("loot_use", "开启"), "loot_use");
-
-            // 当前物品自己就是箱子（经 `box_pools.csv` 映射到这张表）时，
-            // 箱子格画它自己，而不是池名。
-            string boxId = LootSource.BoxForPool(table.TableId) ?? table.TableId;
-
-            // 当前物品自己是箱子（映射到这张表）时，箱子格画它自己
-            if (_entry != null && LootSource.AsBox(_entry.Id).Count > 0) boxId = _entry.Id;
-
-            var boxEntry = RecipeIndex.FindEntry(boxId);
-
-            // 箱子旁边并排一张卡：这是「箱子 + 卡」这一对
-            string keyId = LootKeyFor(boxId, boxEntry);
-
-            if (boxEntry == null) builder.AddLabel(PoolName(table.TableId), "loot_pool");
-
-            var pair = new List<string>(2);
-            if (boxEntry != null) pair.Add(boxId);
-            if (!string.IsNullOrEmpty(keyId)) pair.Add(keyId);
-
-            RenderItemGrid(builder, pair.ToArray(), 900);
-
-            if (ModEntry.Log != null)
-                ModEntry.Log.Log("[loot] use-page entry=" + (_entry == null ? "?" : _entry.Id)
-                                 + " table=" + table.TableId
-                                 + " box=" + boxId + "(found=" + (boxEntry != null) + ")"
-                                 + " key=" + (keyId ?? "-")
-                                 + " items=" + (table.Items == null ? 0 : table.Items.Count));
-
-            builder.AddLabel(Loc("loot_opens", "可能开出"), "loot_opens");
-
-            RenderLootItems(builder, table);
+            RenderLootBody(builder, loot, null);
         }
 
         /// <summary>
@@ -2157,26 +2142,6 @@ namespace ItemCatalog.UI
             }
 
             return GameLocText(site) ?? site;
-        }
-
-        private static string PoolName(string tableId)
-        {
-            switch ((tableId ?? string.Empty).Trim())
-            {
-                case "POI_dumpingGround": return ModEntry.T("pool_dumping");
-                case "junkTable": return ModEntry.T("pool_junk");
-                case "accessCardTable": return ModEntry.T("pool_access_card");
-                case "allModuleTable": return ModEntry.T("pool_module_all");
-                case "t1moduleTable": return ModEntry.T("pool_module_t1");
-                case "t2moduleTable": return ModEntry.T("pool_module_t2");
-                case "makeshiftWeaponTable": return ModEntry.T("pool_weapon_makeshift");
-                case "materialTable": return ModEntry.T("pool_material");
-                case "householdTable": return ModEntry.T("pool_household");
-                case "packedFoodTable": return ModEntry.T("pool_food_packed");
-                case "toolTable": return ModEntry.T("pool_tool");
-                case "medicalTable": return ModEntry.T("pool_medical");
-                default: return tableId;
-            }
         }
 
         /// <summary>把一张战利品表的全部产出铺成图鉴格子。</summary>
