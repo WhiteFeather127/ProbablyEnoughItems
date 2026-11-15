@@ -982,8 +982,14 @@ namespace ItemCatalog.UI
                 CatalogWindow.ResetExternalCells();   // 旧格子的提示框 / 拖拽登记一起失效
                 var builder = new CustomUIBuilder(manager, _window, _bodyHost);
 
-                // 标题栏直接用物品名（不再在正文里重复一个 header）
-                try { _window.SetTitle(_entry == null ? "?" : _entry.DisplayName); }
+                // 标题栏直接用物品名（不再在正文里重复一个 header）。
+                // SetTitle 每次都可能重建文字对象（对齐回默认左对齐），
+                // 所以居中每轮渲染都补一次，不能只在首次开窗时设。
+                try
+                {
+                    _window.SetTitle(_entry == null ? "?" : _entry.DisplayName);
+                    CenterTitle();
+                }
                 catch (Exception e) { Warn("set title: " + e.Message); }
 
                 // 物品名仍居中；来源/用途靠左贴在标题栏内侧
@@ -1049,6 +1055,34 @@ namespace ItemCatalog.UI
         }
 
         private static TMPro.TMP_Text _dirLabel;
+
+        /// <summary>
+        /// 把标题栏的物品名居中。游戏的 <c>SetTitle</c> 建出来的文字对象默认左对齐，
+        /// 且每次重设标题都可能换新对象 —— 所以每轮渲染都调一次，
+        /// 按文字内容找回标题再设对齐。
+        /// </summary>
+        private static void CenterTitle()
+        {
+            if (_window == null || _entry == null) return;
+
+            try
+            {
+                var root = _window.Rect;
+                if (root == null) return;
+
+                string title = _entry.DisplayName;
+                var texts = root.GetComponentsInChildren<TMPro.TMP_Text>(true);
+                for (int i = 0; i < texts.Length; i++)
+                {
+                    if (texts[i] != null && texts[i].text == title)
+                    {
+                        texts[i].alignment = TMPro.TextAlignmentOptions.Center;
+                        break;
+                    }
+                }
+            }
+            catch { }
+        }
 
         /// <summary>
         /// 在标题栏左侧写「来源 / 用途」。
@@ -1151,7 +1185,7 @@ namespace ItemCatalog.UI
                 case CatLocation: return SourceTitle(category);
                 case CatCraftOut: return ModEntry.T("rec_cat_craft_out");
                 case CatCraftIn: return ModEntry.T("rec_cat_craft_in");
-                case CatUse: return Loc("cat_use", "产物");
+                case CatUse: return Loc("cat_use", "使用");
                 case CatLoot: return ModEntry.T("src_loot");
                 case CatLootUse: return ModEntry.T("loot_use");
                 case CatLock: return ModEntry.T("loot_use");
