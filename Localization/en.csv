@@ -1,4 +1,4 @@
-btn_open,Catalog
+﻿btn_open,Catalog
 win_title,Probably Enough Items
 count,{0} entries
 page,{0} / {1}
@@ -82,3 +82,5 @@ name_aug_med,Augmentation Medic
 name_aug_material,Augmentation Supplier
 dir_source,Source
 dir_use,Uses
+
+prebuilt_durability,Durability {0}

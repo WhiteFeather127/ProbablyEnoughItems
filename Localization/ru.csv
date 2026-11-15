@@ -1,4 +1,4 @@
-btn_open,Каталог
+﻿btn_open,Каталог
 win_title,Каталог предметов
 count,Записей: {0}
 page,{0} / {1}
@@ -82,3 +82,5 @@ use_tag_water,качество воды
 use_tag_xeno,трупы ксеносов
 dir_source,Источник
 dir_use,Применение
+
+prebuilt_durability,Прочность {0}

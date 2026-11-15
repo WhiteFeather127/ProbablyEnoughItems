@@ -47,6 +47,12 @@ namespace ItemCatalog.UI
         private static bool _pressArmed;
         private static float _suppressClickUntil;     // 拖拽结束后短暂屏蔽点击，避免又取一件
 
+        // 预构建键（PreBuiltItemHelper）：不是目录物品，拿取走 ItemSpawner.Spawn
+        private static string _hoverPreBuilt;
+        private static string _pressPreBuilt;
+        private static readonly Dictionary<string, string> _preBuiltCells =
+            new Dictionary<string, string>(StringComparer.Ordinal);
+
         private static bool _dragging;
         private static ItemEntry _dragEntry;
         private static GameItem _dragItem;       // 拖拽中的实体物品（先放进 dummy 容器）
@@ -1944,6 +1950,105 @@ namespace ItemCatalog.UI
             }
         }
 
+        /// <summary>
+        /// 给预构建键的格子（没有目录条目）挂提示框与拖拽登记。
+        /// 悬停显示：物品名 + 生成时的耐久范围（采样预构建工厂得出）。
+        /// </summary>
+        internal static void BindPreBuiltCell(CustomUIElement element, string id)
+        {
+            if (element == null || string.IsNullOrEmpty(id)) return;
+
+            try
+            {
+                _preBuiltCells[element.id] = id;
+
+                var host = HitGraphic(element);
+
+                var trigger = host != null ? host.GetComponent<UnityEngine.EventSystems.EventTrigger>() : null;
+                if (trigger == null && host != null) trigger = host.AddComponent<UnityEngine.EventSystems.EventTrigger>();
+
+                if (trigger != null)
+                {
+                    trigger.triggers.Clear();
+
+                    var enter = new UnityEngine.EventSystems.EventTrigger.Entry
+                    {
+                        eventID = UnityEngine.EventSystems.EventTriggerType.PointerEnter
+                    };
+                    enter.callback.AddListener(delegate
+                    {
+                        _hoverPreBuilt = id;
+                        ShowPreBuiltTooltip(id, host);
+                    });
+                    trigger.triggers.Add(enter);
+
+                    var exit = new UnityEngine.EventSystems.EventTrigger.Entry
+                    {
+                        eventID = UnityEngine.EventSystems.EventTriggerType.PointerExit
+                    };
+                    exit.callback.AddListener(delegate
+                    {
+                        if (_hoverPreBuilt == id) _hoverPreBuilt = null;
+                        HideNativeTooltip();
+                    });
+                    trigger.triggers.Add(exit);
+                }
+            }
+            catch (Exception e)
+            {
+                Warn("bind prebuilt cell '" + id + "': " + e.Message);
+            }
+        }
+
+        /// <summary>预构建键的悬停提示：名字 + 耐久范围。没有耐久（箱子 / 纸条这类）就只有名字。</summary>
+        private static void ShowPreBuiltTooltip(string id, GameObject host)
+        {
+            try
+            {
+                string name = RecipeWindow.ItemNameFor(id);
+                string range = PreBuiltItems.DurabilityRange(id);
+
+                string durabilityLine = null;
+                if (!string.IsNullOrEmpty(range))
+                {
+                    string label = ModEntry.T("prebuilt_durability");
+                    durabilityLine = string.Format(label, range);
+                }
+
+                string plain = name;
+                if (!string.IsNullOrEmpty(durabilityLine)) plain += "\n" + durabilityLine;
+
+                var rich = new RichText(
+                    plain,
+                    null,
+                    null,
+                    "<b>" + name + "</b>"
+                    + (string.IsNullOrEmpty(durabilityLine) ? "" : "\n" + durabilityLine),
+                    null,
+                    0,
+                    0,
+                    false);
+
+                // 走原版叠层（Item Details 徽章挂在这条通道上）；失败再退到 TooltipManager
+                if (ShowViaOverlay(rich, null)) return;
+
+                var manager = GetTooltipManager();
+                if (manager == null) return;
+
+                try
+                {
+                    var owner = host != null ? host.GetComponent<UnityEngine.Component>() : null;
+                    if (owner != null) manager.SetAndShowTooltip(rich.nakedText, owner);
+                    else manager.SetAndShowTooltip(rich.nakedText);
+                }
+                catch (Exception e) { Warn("prebuilt tooltip show: " + e.Message); }
+            }
+            catch (Exception e)
+            {
+                Warn("prebuilt tooltip '" + id + "': " + e.Message);
+            }
+        }
+
         /// <summary>取格子里真正接收射线的那个子物体（Image 通常挂在子节点上）。</summary>
         private static GameObject HitGraphic(CustomUIElement element)
         {
@@ -1964,6 +2069,9 @@ namespace ItemCatalog.UI
         internal static void ResetExternalCells()
         {
             _externalCells.Clear();
+            _preBuiltCells.Clear();
+            _hoverPreBuilt = null;
+            _pressPreBuilt = null;
             HideNativeTooltip();
         }
 
@@ -2082,9 +2190,10 @@ namespace ItemCatalog.UI
             if (Input.GetMouseButtonDown(0))
             {
                 _pressEntry = FindHoveredEntry();
+                _pressPreBuilt = _pressEntry == null ? _hoverPreBuilt : null;
                 _pressPos = Input.mousePosition;
                 // 只有勾选「拿取物品」才允许起拖；没勾选时按普通点击（选中查看）处理
-                _pressArmed = _pressEntry != null && _takeMode;
+                _pressArmed = (_pressEntry != null || _pressPreBuilt != null) && _takeMode;
                 return;
             }
 
@@ -2094,17 +2203,56 @@ namespace ItemCatalog.UI
                 return;
             }
 
-            if (!_pressArmed || _pressEntry == null) return;
+            if (!_pressArmed || (_pressEntry == null && _pressPreBuilt == null)) return;
 
             var now = (Vector2)Input.mousePosition;
             if ((now - _pressPos).sqrMagnitude < DragStartPixels * DragStartPixels) return;
 
-            var entry = _pressEntry;
             _pressArmed = false;
-            _pressEntry = null;
             _suppressClickUntil = Time.unscaledTime + 0.35f;
 
+            // 预构建键没有目录条目：直接按游戏函数生成再走同一条拖拽链
+            if (_pressEntry == null)
+            {
+                var preBuilt = _pressPreBuilt;
+                _pressPreBuilt = null;
+                BeginDragPreBuilt(preBuilt);
+                return;
+            }
+
+            var entry = _pressEntry;
+            _pressEntry = null;
             BeginDrag(entry);
+        }
+
+        /// <summary>
+        /// 拖起一个预构建键（portable_water_purifier_used 这类）。
+        /// 生成必须走 ItemSpawner.Spawn —— 游戏在那儿接了 PreBuiltItemHelper 的工厂，
+        /// 耐久随机等逻辑才会生效；后面的寄存 / 渲染 / 原版拖拽与普通拿取共用。
+        /// </summary>
+        private static void BeginDragPreBuilt(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return;
+
+            GameItem item;
+            try { item = PreBuiltItems.Spawn(id); }
+            catch (Exception e) { Warn("prebuilt spawn '" + id + "': " + e.Message); return; }
+
+            if (item == null) return;
+            if (!PlaceInDummyStorage(item, id)) return;
+
+            _dragEntry = null;
+            _dragItem = item;
+            _dragging = true;
+
+            _dragItemNode = BindDragItemNode(item);
+            _dragItemNodeAttempts = 0;
+
+            MoveDragWindowToMouse((Vector3)Input.mousePosition);
+
+            _vanillaDragStarted = false;
+            _vanillaDragAttempts = 0;
+            TryStartVanillaDrag();
         }
 
         /// <summary>拖起：物品先寄存在图鉴自己的窗口里，再交给原版拖拽。</summary>
@@ -2756,6 +2904,9 @@ namespace ItemCatalog.UI
         {
             if (item == null) return;
 
+            // 预构建键没有目录条目：日志里的 id 用物品自己的显示名顶上
+            string logId = entry != null ? entry.Id : (item.identifier ?? "<prebuilt>");
+
             // 已经在这个容器里了就别再搬一次（否则可能被二次接收，凭空多出一件）
             try
             {
@@ -2765,7 +2916,7 @@ namespace ItemCatalog.UI
                 if (target != null && ReferenceEquals(item.parentInventory, target))
                 {
                     if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[drop] " + entry.Id + " already in " + zone.Kind);
+                        ModEntry.Log.Log("[drop] " + logId + " already in " + zone.Kind);
 
                     try { item.SetEnableDisableTag(DragDummyTag, false); } catch { }
                     return;
@@ -2786,13 +2937,13 @@ namespace ItemCatalog.UI
             }
             catch (Exception e)
             {
-                Warn("drop '" + entry.Id + "' -> " + zone.Kind + ": " + e.Message);
+                Warn("drop '" + logId + "' -> " + zone.Kind + ": " + e.Message);
                 return;
             }
 
             if (ModEntry.Log != null)
             {
-                ModEntry.Log.Log("[drop] " + entry.Id + " #" + entry.VariantIndex
+                ModEntry.Log.Log("[drop] " + logId + (entry != null ? " #" + entry.VariantIndex : "")
                     + " -> " + zone.Kind);
             }
         }

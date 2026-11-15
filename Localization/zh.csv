@@ -1,4 +1,4 @@
-btn_open,图鉴
+﻿btn_open,图鉴
 win_title,物品图鉴
 count,共 {0} 项
 page,{0} / {1}
@@ -82,3 +82,5 @@ name_aug_med,义体医师
 name_aug_material,义体材料商
 dir_source,来源
 dir_use,用途
+
+prebuilt_durability,耐久 {0}

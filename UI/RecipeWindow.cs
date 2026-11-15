@@ -1703,6 +1703,13 @@ namespace ItemCatalog.UI
             var element = builder.Last;
             MarkMatch(element, match, hasButton);
             CatalogWindow.BindCell(element, entry, hasButton, emptyOnly, !emptyOnly);
+
+            // 预构建键（portable_water_purifier_used 这类）没有目录条目：
+            // 提示框挂我们自己的（名字 + 耐久范围），拖出时按游戏函数生成
+            if (entry == null && PreBuiltItems.IsPreBuilt(id))
+            {
+                CatalogWindow.BindPreBuiltCell(element, id);
+            }
         }
 
         /// <summary>无图标格子的左键动作；找不到目录条目时给个空动作，别把 null 传给按钮。</summary>
@@ -2564,6 +2571,12 @@ namespace ItemCatalog.UI
 
             _nameCache[id] = name;
             return name;
+        }
+
+        /// <summary>给提示框用：预构建键（没有目录条目）的可读名，带缓存。</summary>
+        internal static string ItemNameFor(string id)
+        {
+            return ItemName(id);
         }
 
         private static string Shorten(string text)
