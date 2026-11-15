@@ -776,12 +776,15 @@ namespace ItemCatalog.UI
                         order.Add(boxSite);
                     }
 
+                    // 同一地方的几张池子合成**一页**：垃圾倾倒场的垃圾堆 /
+                    // 残骸 / 拾荒（scav_afterhour）/ POI 组都是同一条获取途径，
+                    // 分页只会让人以为它们是不同的来源。并集去重铺开。
                     for (int i = 0; i < order.Count; i++)
                     {
                         _categories.Add(new Category
                         {
                             Kind = CatLoot,
-                            Loot = buckets[order[i]],
+                            Loot = new List<LootTableInfo> { MergeLootTables(buckets[order[i]]) },
                             Site = order[i]
                         });
                     }
@@ -2187,6 +2190,37 @@ namespace ItemCatalog.UI
             }
 
             return GameLocText(site) ?? site;
+        }
+
+        /// <summary>
+        /// 同一地方的几张池子并成一张表：物品 id 并集去重（第一次出现的权重保留）。
+        /// 池 id 取第一张的（只在调试日志里有意义）。
+        /// </summary>
+        private static LootTableInfo MergeLootTables(List<LootTableInfo> tables)
+        {
+            var merged = new LootTableInfo
+            {
+                TableId = tables != null && tables.Count > 0 ? tables[0].TableId : null
+            };
+            if (tables == null) return merged;
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < tables.Count; i++)
+            {
+                var t = tables[i];
+                if (t == null || t.Items == null) continue;
+
+                for (int k = 0; k < t.Items.Count; k++)
+                {
+                    var it = t.Items[k];
+                    if (it == null || string.IsNullOrEmpty(it.Id)) continue;
+                    if (!seen.Add(it.Id)) continue;
+
+                    merged.Items.Add(new LootItemRef { Id = it.Id, Weight = it.Weight });
+                }
+            }
+
+            return merged;
         }
 
         /// <summary>把一张战利品表的全部产出铺成图鉴格子。</summary>
