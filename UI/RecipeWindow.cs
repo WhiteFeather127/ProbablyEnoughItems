@@ -1667,6 +1667,13 @@ namespace ItemCatalog.UI
             if (rotate != null && rotate.Count > 0) sprite = rotate[0];
 
             var entry = RecipeIndex.FindEntry(id);
+
+            // 预构建键（portable_water_purifier_used 这类）不在目录里：照抄容器的写法，
+            // 给它一条带实例的条目（样本在隔离随机流里生成），后面的 BindCell /
+            // 原生提示框链 / 拖拽拿取就全和普通容器格子一样了。
+            if (entry == null && PreBuiltItems.IsPreBuilt(id))
+                entry = CatalogWindow.PreBuiltEntry(id);
+
             string elementId = "g" + index;
 
             bool hasButton = sprite == null;
@@ -1703,13 +1710,6 @@ namespace ItemCatalog.UI
             var element = builder.Last;
             MarkMatch(element, match, hasButton);
             CatalogWindow.BindCell(element, entry, hasButton, emptyOnly, !emptyOnly);
-
-            // 预构建键（portable_water_purifier_used 这类）没有目录条目：
-            // 提示框挂我们自己的（名字 + 耐久范围），拖出时按游戏函数生成
-            if (entry == null && PreBuiltItems.IsPreBuilt(id))
-            {
-                CatalogWindow.BindPreBuiltCell(element, id);
-            }
         }
 
         /// <summary>无图标格子的左键动作；找不到目录条目时给个空动作，别把 null 传给按钮。</summary>
@@ -1723,7 +1723,11 @@ namespace ItemCatalog.UI
         private static void BindGoods(CustomUIBuilder builder, string id, bool hasButton)
         {
             if (id == null) return;
-            CatalogWindow.BindCell(builder.Last, RecipeIndex.FindEntry(id), hasButton);
+
+            var entry = RecipeIndex.FindEntry(id);
+            if (entry == null && PreBuiltItems.IsPreBuilt(id)) entry = CatalogWindow.PreBuiltEntry(id);
+
+            CatalogWindow.BindCell(builder.Last, entry, hasButton);
         }
 
         /// <summary>

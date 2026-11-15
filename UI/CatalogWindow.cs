@@ -47,11 +47,9 @@ namespace ItemCatalog.UI
         private static bool _pressArmed;
         private static float _suppressClickUntil;     // 拖拽结束后短暂屏蔽点击，避免又取一件
 
-        // 预构建键（PreBuiltItemHelper）：不是目录物品，拿取走 ItemSpawner.Spawn
-        private static string _hoverPreBuilt;
-        private static string _pressPreBuilt;
-        private static readonly Dictionary<string, string> _preBuiltCells =
-            new Dictionary<string, string>(StringComparer.Ordinal);
+        // 预构建键（PreBuiltItemHelper）的合成条目缓存：Id → 带实例的 ItemEntry
+        private static readonly Dictionary<string, ItemEntry> _preBuiltEntries =
+            new Dictionary<string, ItemEntry>(StringComparer.Ordinal);
 
         private static bool _dragging;
         private static ItemEntry _dragEntry;
@@ -1954,80 +1952,30 @@ namespace ItemCatalog.UI
         /// 给预构建键的格子（没有目录条目）挂提示框与拖拽登记。
         /// 悬停显示：物品名 + 生成时的耐久范围（采样预构建工厂得出）。
         /// </summary>
-        internal static void BindPreBuiltCell(CustomUIElement element, string id)
+        /// <summary>
+        /// 给预构建键造一条带实例的目录条目（样本在隔离随机流里生成）。
+        /// 有了实例，BindCell 挂的原生提示框链、拖拽拿取就与普通容器格子完全一致——
+        /// 这就是「照抄容器的写法」。实例按 id 缓存，换场景时清掉。
+        /// </summary>
+        internal static ItemEntry PreBuiltEntry(string id)
         {
-            if (element == null || string.IsNullOrEmpty(id)) return;
+            if (string.IsNullOrEmpty(id)) return null;
 
-            _preBuiltCells[element.id] = id;
+            ItemEntry cached;
+            if (_preBuiltEntries.TryGetValue(id, out cached) && cached != null) return cached;
 
-            // 借到了本体图标的变体（portable_water_purifier_used 这类）走的是 AddImage
-            // 路径，BindCell 对 null entry 直接返回，MakeClickable 没执行过——
-            // 格子上没有任何 raycast 目标，悬停事件根本不触发。这里补上。
-            if (element.button == null) MakeClickable(element, delegate { });
+            var item = CreatePreviewItem(id);
+            if (item == null) return null;
 
-            var host = HitGraphic(element);
-            if (host == null) return;
-
-            var trigger = host.GetComponent<UnityEngine.EventSystems.EventTrigger>()
-                          ?? host.AddComponent<UnityEngine.EventSystems.EventTrigger>();
-            trigger.triggers.Clear();
-
-            var enter = new UnityEngine.EventSystems.EventTrigger.Entry
+            var entry = new ItemEntry
             {
-                eventID = UnityEngine.EventSystems.EventTriggerType.PointerEnter
+                Id = id,
+                Name = RecipeWindow.ItemNameFor(id),
+                Item = item
             };
-            enter.callback.AddListener(delegate
-            {
-                _hoverPreBuilt = id;
-                ShowPreBuiltTooltip(id, host);
-            });
-            trigger.triggers.Add(enter);
 
-            var exit = new UnityEngine.EventSystems.EventTrigger.Entry
-            {
-                eventID = UnityEngine.EventSystems.EventTriggerType.PointerExit
-            };
-            exit.callback.AddListener(delegate
-            {
-                if (_hoverPreBuilt == id) _hoverPreBuilt = null;
-                HideNativeTooltip();
-            });
-            trigger.triggers.Add(exit);
-        }
-
-        /// <summary>预构建键的悬停提示：名字 + 耐久范围。没有耐久（箱子 / 纸条这类）就只有名字。</summary>
-        private static void ShowPreBuiltTooltip(string id, GameObject host)
-        {
-            string name = RecipeWindow.ItemNameFor(id);
-            string range = PreBuiltItems.DurabilityRange(id);
-
-            string durabilityLine = string.IsNullOrEmpty(range)
-                ? null
-                : string.Format(ModEntry.T("prebuilt_durability"), range);
-
-            string plain = string.IsNullOrEmpty(durabilityLine)
-                ? name
-                : name + "\n" + durabilityLine;
-
-            var rich = new RichText(
-                plain,
-                null,
-                null,
-                string.IsNullOrEmpty(durabilityLine) ? "<b>" + name + "</b>" : "<b>" + name + "</b>\n" + durabilityLine,
-                null,
-                0,
-                0,
-                false);
-
-            // 走原版叠层（Item Details 徽章挂在这条通道上）；失败再退到 TooltipManager
-            if (ShowRichViaOverlay(rich)) return;
-
-            var manager = GetTooltipManager();
-            if (manager == null) return;
-
-            var owner = host != null ? host.GetComponent<UnityEngine.Component>() : null;
-            if (owner != null) manager.SetAndShowTooltip(rich.nakedText, owner);
-            else manager.SetAndShowTooltip(rich.nakedText);
+            _preBuiltEntries[id] = entry;
+            return entry;
         }
 
         /// <summary>取格子里真正接收射线的那个子物体（Image 通常挂在子节点上）。</summary>
@@ -2050,9 +1998,7 @@ namespace ItemCatalog.UI
         internal static void ResetExternalCells()
         {
             _externalCells.Clear();
-            _preBuiltCells.Clear();
-            _hoverPreBuilt = null;
-            _pressPreBuilt = null;
+            _preBuiltEntries.Clear();
             HideNativeTooltip();
         }
 
@@ -2171,10 +2117,9 @@ namespace ItemCatalog.UI
             if (Input.GetMouseButtonDown(0))
             {
                 _pressEntry = FindHoveredEntry();
-                _pressPreBuilt = _pressEntry == null ? _hoverPreBuilt : null;
                 _pressPos = Input.mousePosition;
                 // 只有勾选「拿取物品」才允许起拖；没勾选时按普通点击（选中查看）处理
-                _pressArmed = (_pressEntry != null || _pressPreBuilt != null) && _takeMode;
+                _pressArmed = _pressEntry != null && _takeMode;
                 return;
             }
 
@@ -2184,53 +2129,17 @@ namespace ItemCatalog.UI
                 return;
             }
 
-            if (!_pressArmed || (_pressEntry == null && _pressPreBuilt == null)) return;
+            if (!_pressArmed || _pressEntry == null) return;
 
             var now = (Vector2)Input.mousePosition;
             if ((now - _pressPos).sqrMagnitude < DragStartPixels * DragStartPixels) return;
 
+            var entry = _pressEntry;
             _pressArmed = false;
+            _pressEntry = null;
             _suppressClickUntil = Time.unscaledTime + 0.35f;
 
-            // 预构建键没有目录条目：直接按游戏函数生成再走同一条拖拽链
-            if (_pressEntry == null)
-            {
-                var preBuilt = _pressPreBuilt;
-                _pressPreBuilt = null;
-                BeginDragPreBuilt(preBuilt);
-                return;
-            }
-
-            var entry = _pressEntry;
-            _pressEntry = null;
             BeginDrag(entry);
-        }
-
-        /// <summary>
-        /// 拖起一个预构建键（portable_water_purifier_used 这类）。
-        /// 生成必须走 ItemSpawner.Spawn —— 游戏在那儿接了 PreBuiltItemHelper 的工厂，
-        /// 耐久随机等逻辑才会生效；后面的寄存 / 渲染 / 原版拖拽与普通拿取共用。
-        /// </summary>
-        private static void BeginDragPreBuilt(string id)
-        {
-            if (string.IsNullOrEmpty(id)) return;
-
-            var item = ItemSpawner.Spawn(id);
-            if (item == null) return;
-            if (!PlaceInDummyStorage(item, id)) return;
-
-            _dragEntry = null;
-            _dragItem = item;
-            _dragging = true;
-
-            _dragItemNode = BindDragItemNode(item);
-            _dragItemNodeAttempts = 0;
-
-            MoveDragWindowToMouse((Vector3)Input.mousePosition);
-
-            _vanillaDragStarted = false;
-            _vanillaDragAttempts = 0;
-            TryStartVanillaDrag();
         }
 
         /// <summary>拖起：物品先寄存在图鉴自己的窗口里，再交给原版拖拽。</summary>
@@ -4064,20 +3973,6 @@ namespace ItemCatalog.UI
             }
         }
 
-        /// <summary>
-        /// 预构建键的提示框走这条：内容是静态的（名字 + 耐久范围），
-        /// 不能复用 ShowViaOverlay——它的刷新回调是 RebuildTooltip(entry)，
-        /// entry 为 null 时每 0.25 秒返回 null，提示框会被立刻清掉。
-        /// </summary>
-        private static bool ShowRichViaOverlay(RichText rich)
-        {
-            if (rich == null || OverlayHandler.current == null) return false;
-
-            TooltipFollower.Begin(rich, TooltipWidthFor(null), delegate { return rich; });
-            _overlayShown = true;
-            return true;
-        }
-
         private static bool ShowViaOverlay(RichText rich, ItemEntry entry)
         {
             if (rich == null) return false;
@@ -5784,6 +5679,10 @@ namespace ItemCatalog.UI
                     finally { CatalogVariantKit.RestoreModulePool(pool); }
                 }
 
+                // 预构建键（portable_water_purifier_used 这类）：工厂注册在
+                // ItemSpawner.Spawn 里，目录里没有这个 id，只能走 spawner
+                if (PreBuiltItems.IsPreBuilt(id)) return ItemSpawner.Spawn(id);
+
                 return DirectoryMaster.Item(id);
             }
             catch (Exception e)
@@ -5810,7 +5709,31 @@ namespace ItemCatalog.UI
         {
             if (entry == null) return null;
 
-            return BuildRichTooltip(entry, true);
+            return AppendPrebuiltRange(entry, BuildRichTooltip(entry, true));
+        }
+
+        /// <summary>
+        /// 预构建键的原生提示框后追加一行「生成时的耐久范围」。
+        /// RichText 的属性只读，所以拷一份新的出来。
+        /// </summary>
+        private static RichText AppendPrebuiltRange(ItemEntry entry, RichText rich)
+        {
+            if (rich == null || entry == null) return rich;
+
+            string range = PreBuiltItems.DurabilityRange(entry.Id);
+            if (range == null) return rich;
+
+            string line = "\n" + string.Format(ModEntry.T("prebuilt_durability"), range);
+
+            return new RichText(
+                rich.nakedText + line,
+                rich.richTextStrikethrough,
+                rich.richTextUnderline,
+                rich.richTextForeground + line,
+                rich.richTextBackground,
+                rich.recommendedWidth,
+                rich.recommendedHeight,
+                rich.isTruncated);
         }
 
         /// <summary>
