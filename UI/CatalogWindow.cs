@@ -409,6 +409,9 @@ namespace ItemCatalog.UI
         {
             HideNativeTooltip();   // 切场景/重建前先把悬停提示框收掉
 
+            // 换场景后物品实例全换了：重建目录，顺带让配方 / 来源索引一起失效重算
+            try { Catalog.CatalogDataBuilder.Build(true); } catch { }
+
             AnchorOverride = null;   // 旧场景的对象已销毁，别拿它算锚点
             _dropMark = null;        // 红底随窗口一起没了
             _groupMarks.Clear();     // 多选红底挂在物品节点上，同样随场景销毁

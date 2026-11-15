@@ -14,7 +14,9 @@
 #         也可以写 `item:<物品 id>`（按物品名显示）或直接写文字。
 #
 # 没在表里的池，如果能对上箱子（box_pools.csv），就以那个箱子为大类；
-# 两者都没有的池不显示（玩家遇不到）。
+# 两者都没有的池不单独列——但如果某件物品别的来源一个都没有，
+# 图鉴会把这些「查不到出处」的池兜底列成一个「掉落池」大类，
+# 免得整页空白（blank_keycard 这类只在表里出现的东西就靠这个）。
 #
 # 数据来源：Assembly-CSharp.dll 里按池 id 反查引用它的方法（2026-11-14）：
 #   junkTable / dumpingGroundTG / dumpingGroundFreshTG / POI_dumpingGround
