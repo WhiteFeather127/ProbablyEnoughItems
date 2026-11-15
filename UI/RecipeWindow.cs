@@ -120,13 +120,14 @@ namespace ItemCatalog.UI
         private const int CatLocation = 1;
         private const int CatCraftOut = 2;
         private const int CatCraftIn = 3;
-        private const int CatUseOut = 4;     // 来源侧：用了什么才得到这件
-        private const int CatUsedBy = 5;     // 去处侧：这件东西用掉能得到什么
+        private const int CatUseOut = 4;     // （已被 CatUse 取代，占位保留编号）
+        private const int CatUsedBy = 5;     // （已被 CatUse 取代，占位保留编号）
         private const int CatLoot = 6;       // 来源侧：能开出它的战利品表（开箱/搜容器）
         private const int CatLootUse = 7;    // 去处侧：这箱子/这张卡能开出什么
         private const int CatLock = 8;       // 去处侧：箱子要哪张卡 / 卡能开什么
         private const int CatWanted = 9;     // 去处侧：哪个客人收这件（收购清单命中）
         private const int CatMachine = 10;   // 来源侧：这件东西自己是机器（界面 + 产出配方）
+        private const int CatUse = 11;       // 双向：使用互查（怎么得到它 + 用它能做出什么）
 
         private sealed class Category
         {
@@ -704,7 +705,7 @@ namespace ItemCatalog.UI
                 var uses = UseIndex.Producing(_entry.Id);
                 if (uses.Count > 0)
                 {
-                    _categories.Add(new Category { Kind = CatUseOut, Uses = uses });
+                    AddUseCategory(uses);
                 }
 
                 var loot = LootSource.For(_entry.Id);
@@ -738,6 +739,41 @@ namespace ItemCatalog.UI
                         }
 
                         bucket.Add(table);
+                    }
+
+                    // 箱子反查：box_contents / box_pools 里包含这件东西的箱子，
+                    // 以 item:<箱子> 为站点并入同一组——箱内物品从两个方向都能找到箱子
+                    var boxes = LootSource.BoxesForItem(_entry.Id);
+                    for (int b = 0; b < boxes.Count; b++)
+                    {
+                        string boxSite = "item:" + boxes[b];
+                        if (buckets.ContainsKey(boxSite)) continue;
+
+                        var boxTables = LootSource.AsBox(boxes[b]);
+                        if (boxTables == null || boxTables.Count == 0) continue;
+
+                        // 内容物全集里确认真的有当前物品（避免空占位页）
+                        bool has = false;
+                        for (int t = 0; t < boxTables.Count && !has; t++)
+                        {
+                            var items = boxTables[t] != null ? boxTables[t].Items : null;
+                            if (items == null) continue;
+
+                            for (int k = 0; k < items.Count; k++)
+                            {
+                                if (items[k] != null &&
+                                    string.Equals(items[k].Id, _entry.Id, StringComparison.Ordinal))
+                                {
+                                    has = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!has) continue;
+
+                        buckets[boxSite] = boxTables;
+                        order.Add(boxSite);
                     }
 
                     for (int i = 0; i < order.Count; i++)
@@ -789,7 +825,7 @@ namespace ItemCatalog.UI
                 var used = UseIndex.Using(_entry.Id, _entry.Item);
                 if (used.Count > 0)
                 {
-                    _categories.Add(new Category { Kind = CatUsedBy, Uses = used });
+                    AddUseCategory(used);
                 }
 
                 // 他自己就是箱子 → 开启后能开出什么
@@ -1104,8 +1140,7 @@ namespace ItemCatalog.UI
                 case CatLocation: return SourceTitle(category);
                 case CatCraftOut: return ModEntry.T("rec_cat_craft_out");
                 case CatCraftIn: return ModEntry.T("rec_cat_craft_in");
-                case CatUseOut: return ModEntry.T("rec_cat_use_out");
-                case CatUsedBy: return ModEntry.T("rec_cat_use_in");
+                case CatUse: return Loc("cat_use", "使用");
                 case CatLoot: return ModEntry.T("src_loot");
                 case CatLootUse: return ModEntry.T("loot_use");
                 case CatLock: return ModEntry.T("loot_use");
@@ -1433,11 +1468,15 @@ namespace ItemCatalog.UI
             SourceSeed = source == null ? null : source.SourceId;
             SourceWater = source == null ? null : source.Water;
 
-            // 大标题：阵营，靠左
-            builder.AddHeader(FactionTitle(source), "src_faction");
-            var faction = builder.Last;
-            if (faction != null && faction.text != null)
-                faction.text.alignment = TextAlignmentOptions.Left;
+            // 大标题：阵营，靠左。地点（杰克逊博士 / 配给站）没有阵营，
+            // 「地点商店」标签也冗余——名字已经在分类标题上，不写。
+            if (source == null || source.Kind != SourceKind.Location)
+            {
+                builder.AddHeader(FactionTitle(source), "src_faction");
+                var faction = builder.Last;
+                if (faction != null && faction.text != null)
+                    faction.text.alignment = TextAlignmentOptions.Left;
+            }
 
             // 小标题：客人名，居中。
             // 客人 / 求购是「多个来源合并成一个类」，必须靠这行区分是谁；
@@ -1847,6 +1886,27 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
+        /// 使用互查：把「别的物品被用 → 得到这件」（来源方向）与
+        /// 「这件被用 → 得到别的」（去处方向）合并成**同一个**「使用」大类。
+        /// 来源窗口和用途窗口都会挂上它——同一页从两个方向都能找到对方，
+        /// 不再分「使用来源 / 使用用途」两个类。
+        /// </summary>
+        private static void AddUseCategory(List<UseInfo> seed)
+        {
+            var merged = new List<UseInfo>();
+            for (int i = 0; i < seed.Count; i++)
+                if (seed[i] != null && !merged.Contains(seed[i])) merged.Add(seed[i]);
+
+            // 补上另一个方向（本次打开可能只查了一边）
+            var other = UseIndex.Using(_entry.Id, _entry.Item);
+            for (int i = 0; i < other.Count; i++)
+                if (other[i] != null && !merged.Contains(other[i])) merged.Add(other[i]);
+
+            if (merged.Count > 0)
+                _categories.Add(new Category { Kind = CatUse, Uses = merged });
+        }
+
+        /// <summary>
         /// 大标题的阵营名用原版本地化：CSV 的 faction 列填的就是 ClientName 表 key，
         /// 跟 StoreReputation.InitReputation 里 factionDisplay 的取法一致
         /// （faction_name_lower_level / _upper_level / _security / _black_market /
@@ -1904,11 +1964,7 @@ namespace ItemCatalog.UI
             var table = loot[_page];
             if (table == null) return;
 
-            // 标题就是「在哪儿」：垃圾倾倒场 / 小偷 / 装着它的那只箱子
-            string title = SiteName(site);
-            if (string.IsNullOrEmpty(title)) title = Loc("src_loot", "掉落池");
-            builder.AddHeader(title, "loot_site");
-
+            // 地点名 / 「可能开出」都不写：地点在分类标题上，内容就是那一格池子。
             // 只有「地方」是箱子时才画箱子 + 需要的卡；地点类没有箱子可画
             string boxId = !string.IsNullOrEmpty(site) &&
                            site.StartsWith("item:", StringComparison.OrdinalIgnoreCase)
@@ -1928,8 +1984,6 @@ namespace ItemCatalog.UI
 
                 RenderItemGrid(builder, pair.ToArray(), 800);
             }
-
-            builder.AddLabel(Loc("loot_opens", "可能开出"), "loot_opens");
 
             RenderLootItems(builder, table);
         }
@@ -2164,6 +2218,23 @@ namespace ItemCatalog.UI
             var use = uses[_page];
             if (use == null) return;
 
+            // 方向标注：这条记录的产物里有当前物品 = 来源方向；否则 = 去处方向。
+            // 合并后的「使用」类两个方向都有，靠这行区分。
+            bool isIn = false;
+            if (use.Produces != null)
+            {
+                for (int i = 0; i < use.Produces.Length; i++)
+                {
+                    if (string.Equals(use.Produces[i], _entry.Id, StringComparison.Ordinal))
+                    {
+                        isIn = true;
+                        break;
+                    }
+                }
+            }
+
+            builder.AddLabel(Loc(isIn ? "use_dir_source" : "use_dir_target",
+                    isIn ? "怎么得到它" : "能拿它做什么"), "use_dir");
             builder.AddLabel(ModEntry.T(UseKindKey(use.Kind)), "use_kind");
 
             var sources = new List<string>(use.Sources ?? new string[0]);

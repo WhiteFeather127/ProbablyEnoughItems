@@ -126,3 +126,17 @@ uses,injector_blue,apply,,
 uses,injector_blood_red,apply,,
 uses,injector_pink,apply,,
 uses,injector_pink_alt,apply,,
+
+# ===== 2026-11-15 倾倒场工具残骸堆（DebrisHelper.TOOL_REWARDS，需要工具才能拿到的物品）=====
+
+# 工具残骸堆用对应工具清理：堆消失，按工具给奖励（垃圾倾倒场的残骸堆由
+#   DebrisHelper.PullDumpingGround / PlaceHoarderPiles 摆出，debris_pile2）：
+uses,debris_pile2+crowbar,apply,common_electronic,
+#   撬棍 → 旧电子件
+uses,debris_pile2+wire_cutter,apply,wire,
+#   剪线钳 → 电线
+uses,debris_pile2+welder,apply,scrap_metal,
+#   焊接器 → 废金属
+
+# 休整残骸堆过夜推进 → 废金属（DebrisHelper.OnNight）
+uses,debris_pile1,apply,scrap_metal,

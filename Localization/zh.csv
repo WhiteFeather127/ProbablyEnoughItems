@@ -90,3 +90,6 @@ mach_recipes,产出配方
 mach_battery,电池
 mach_module,模块
 mach_note,纸条
+cat_use,使用
+use_dir_source,怎么得到它
+use_dir_target,能拿它做什么

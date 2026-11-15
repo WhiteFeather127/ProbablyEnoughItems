@@ -56,6 +56,57 @@ namespace ItemCatalog.Catalog
         private static readonly List<LootTableInfo> Empty = new List<LootTableInfo>();
 
         /// <summary>
+        /// 反查：哪些箱子里能开出这件东西。两条路：
+        ///   1. `box_contents.csv` 直接列了它的箱子；
+        ///   2. `box_pools.csv` 指向的池（运行时掉落表）里有它的箱子。
+        /// 来源页用它把「箱子」补成 <c>item:&lt;箱子&gt;</c> 站点——
+        /// 箱内物品与箱子从两个方向都能找到对方。
+        /// </summary>
+        internal static List<string> BoxesForItem(string itemId)
+        {
+            var boxes = new List<string>();
+            if (string.IsNullOrEmpty(itemId)) return boxes;
+
+            EnsureBuilt();
+            EnsureBoxContents();
+            EnsureBoxPools();
+
+            foreach (var pair in _boxContents)
+            {
+                var items = pair.Value;
+                for (int i = 0; i < items.Count; i++)
+                {
+                    if (items[i] != null && string.Equals(items[i].Id, itemId, StringComparison.Ordinal))
+                    {
+                        if (!boxes.Contains(pair.Key)) boxes.Add(pair.Key);
+                        break;
+                    }
+                }
+            }
+
+            List<LootTableInfo> tables;
+            if (_byItem.TryGetValue(itemId, out tables) && tables != null)
+            {
+                foreach (var pair in _boxPools)
+                {
+                    if (boxes.Contains(pair.Key)) continue;
+
+                    for (int i = 0; i < tables.Count; i++)
+                    {
+                        var t = tables[i];
+                        if (t != null && string.Equals(t.TableId, pair.Value, StringComparison.Ordinal))
+                        {
+                            boxes.Add(pair.Key);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            return boxes;
+        }
+
+        /// <summary>
         /// 这件物品是箱子时，返回它开出的那张表。
         ///
         /// 两条来源：

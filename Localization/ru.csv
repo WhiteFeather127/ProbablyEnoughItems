@@ -90,3 +90,6 @@ mach_recipes,Рецепты
 mach_battery,Батарея
 mach_module,Модуль
 mach_note,Записка
+cat_use,Использование
+use_dir_source,Как получить
+use_dir_target,Что из неё делают
