@@ -2243,6 +2243,13 @@ namespace ItemCatalog.UI
                     if (it == null || string.IsNullOrEmpty(it.Id)) continue;
                     if (!seen.Add(it.Id)) continue;
 
+                    // 不是物品的 id（POI 节点 junk_pile / fresh_scrap_pile 这类：
+                    // 组表的成员既不是表也不是物品时会被当物品收进来）——
+                    // 目录 / 预构建 / 本体映射全都解析不了，格子只会变成一排文字，过滤掉
+                    if (RecipeIndex.FindEntry(it.Id) == null &&
+                        !PreBuiltItems.IsPreBuilt(it.Id) &&
+                        BaseItemId(it.Id) == null) continue;
+
                     merged.Items.Add(new LootItemRef { Id = it.Id, Weight = it.Weight });
                 }
             }
@@ -2828,6 +2835,15 @@ namespace ItemCatalog.UI
             return CatalogWindow.IconFor(baseId) != null ? baseId : null;
         }
 
+        /// <summary>满装盒（掉落表旧命名）→ 目录里的真身容器物品。</summary>
+        private static readonly Dictionary<string, string> FullBoxAliases =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "full_water_purification_tablet_box", "water_tablet_container" },
+                { "full_nutrient_tablet_box", "nutrient_tablet_container" },
+                { "full_water_test_strip_box", "water_test_container" }
+            };
+
         /// <summary>
         /// 特殊物品 id → 本体物品 id：random_* 展开占位，状态后缀（_used 等）剥掉，
         /// 满装前缀（full_beer / full_water_test_strip_box 这类）也剥掉。
@@ -2842,6 +2858,17 @@ namespace ItemCatalog.UI
             {
                 string expanded = LootSource.ExpandPlaceholder(text);
                 if (expanded != text && RecipeIndex.FindEntry(expanded) != null) return expanded;
+            }
+
+            // 掉落表里的满装盒是旧命名，目录真身是游戏自己的 *_container 容器物品：
+            //   full_water_purification_tablet_box → water_tablet_container
+            //   full_nutrient_tablet_box           → nutrient_tablet_container
+            //   full_water_test_strip_box          → water_test_container
+            string fullBoxBase;
+            if (FullBoxAliases.TryGetValue(text, out fullBoxBase) &&
+                RecipeIndex.FindEntry(fullBoxBase) != null)
+            {
+                return fullBoxBase;
             }
 
             // 运行时改名的瓶：目录里没有这个 id（游戏把 mini_bottle 改名灌酒，
