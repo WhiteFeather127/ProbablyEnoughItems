@@ -84,3 +84,9 @@ dir_source,Source
 dir_use,Uses
 
 prebuilt_durability,Durability {0}
+cat_machine,Machine
+mach_title,Machine UI
+mach_recipes,Recipes
+mach_battery,Battery
+mach_module,Module
+mach_note,Note

@@ -112,6 +112,10 @@ namespace ItemCatalog.Catalog
         private static readonly Dictionary<string, ItemEntry> _entryById =
             new Dictionary<string, ItemEntry>(StringComparer.Ordinal);
 
+        /// <summary>机器 id → 它自己的产出配方（机器详情页用）。</summary>
+        private static readonly Dictionary<string, List<RecipeInfo>> _byMachine =
+            new Dictionary<string, List<RecipeInfo>>(StringComparer.Ordinal);
+
         internal static int MachineCount { get; private set; }
         internal static int UnresolvedOutputs { get; private set; }
         internal static bool Built { get; private set; }
@@ -128,6 +132,7 @@ namespace ItemCatalog.Catalog
             _byMaterial.Clear();
             _byMaterialTag.Clear();
             _entryById.Clear();
+            _byMachine.Clear();
 
             MachineCount = 0;
             UnresolvedOutputs = 0;
@@ -187,6 +192,9 @@ namespace ItemCatalog.Catalog
         /// <summary>把一条配方登记进两张反查表。</summary>
         private static void IndexRecipe(RecipeInfo info)
         {
+            // 机器自己的产出页：MachineId 就是那台机器的物品 id
+            if (!string.IsNullOrEmpty(info.MachineId)) AddTo(_byMachine, info.MachineId, info);
+
             for (int i = 0; i < info.Outputs.Count; i++)
             {
                 AddTo(_byOutput, info.Outputs[i].Id, info);
@@ -222,6 +230,17 @@ namespace ItemCatalog.Catalog
             }
 
             if (!list.Contains(info)) list.Add(info);
+        }
+
+        /// <summary>这台机器（或蓝图 / 贩卖机）自己的全部配方，按登记顺序。</summary>
+        internal static List<RecipeInfo> ByMachine(string machineId)
+        {
+            Build();
+
+            List<RecipeInfo> list;
+            return machineId != null && _byMachine.TryGetValue(machineId, out list)
+                ? list
+                : new List<RecipeInfo>();
         }
 
         // ---------------------------------------------------------------- 查询

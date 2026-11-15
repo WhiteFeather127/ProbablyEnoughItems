@@ -84,3 +84,9 @@ dir_source,Источник
 dir_use,Применение
 
 prebuilt_durability,Прочность {0}
+cat_machine,Машина
+mach_title,Интерфейс машины
+mach_recipes,Рецепты
+mach_battery,Батарея
+mach_module,Модуль
+mach_note,Записка

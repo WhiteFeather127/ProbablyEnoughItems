@@ -126,6 +126,7 @@ namespace ItemCatalog.UI
         private const int CatLootUse = 7;    // 去处侧：这箱子/这张卡能开出什么
         private const int CatLock = 8;       // 去处侧：箱子要哪张卡 / 卡能开什么
         private const int CatWanted = 9;     // 去处侧：哪个客人收这件（收购清单命中）
+        private const int CatMachine = 10;   // 来源侧：这件东西自己是机器（界面 + 产出配方）
 
         private sealed class Category
         {
@@ -686,6 +687,14 @@ namespace ItemCatalog.UI
                 AddSourceCategory(CatClient, sources);
                 AddSourceCategory(CatLocation, sources);
 
+                // 他自己是机器 → 机器界面（电池 / 模块 / 功能槽 / 容器网格）+ 自己的产出配方。
+                // 判定依据与配方采集一致：带 recipeManager 且登记过配方的物品就是机器。
+                var ownRecipes = RecipeIndex.ByMachine(_entry.Id);
+                if (ownRecipes.Count > 0)
+                {
+                    _categories.Add(new Category { Kind = CatMachine, Recipes = ownRecipes });
+                }
+
                 var produced = RecipeIndex.Producing(_entry.Id);
                 if (produced.Count > 0)
                 {
@@ -972,6 +981,7 @@ namespace ItemCatalog.UI
                 if (category.Sources != null) RenderSourcePage(builder);
                 else if (category.Uses != null) RenderUsePage(builder, category.Uses);
                 else if (category.Kind == CatLock) RenderLockPage(builder);
+                else if (category.Kind == CatMachine) RenderMachinePage(builder, category.Recipes);
                 else if (category.Loot != null && category.LootAsUse) RenderLootUsePage(builder, category.Loot);
                 else if (category.Loot != null) RenderLootPage(builder, category.Loot, category.Site);
                 else RenderRecipePage(builder, category.Recipes);
@@ -1099,6 +1109,7 @@ namespace ItemCatalog.UI
                 case CatLoot: return ModEntry.T("src_loot");
                 case CatLootUse: return ModEntry.T("loot_use");
                 case CatLock: return ModEntry.T("loot_use");
+                case CatMachine: return Loc("cat_machine", "机器");
                 default: return "?";
             }
         }
@@ -2431,6 +2442,146 @@ namespace ItemCatalog.UI
             if (entry != null && !string.IsNullOrEmpty(entry.DisplayName)) name = entry.DisplayName;
 
             return name ?? "-";
+        }
+
+        /// <summary>
+        /// 机器页：上半部分按游戏窗口的面板顺序还原机器界面
+        /// （电池 / 模块 / 功能槽 / 容器网格），下半部分是它自己的产出配方
+        /// （工具 = 必需的模块，材料 = 原料，产物 = 做出来的东西）。
+        /// 面板结构与标签来自 <see cref="MachinePanels"/>（抄自各机器类的 IL）。
+        /// </summary>
+        private static void RenderMachinePage(CustomUIBuilder builder, List<RecipeInfo> recipes)
+        {
+            var panels = MachinePanels.For(_entry.Id);
+            if (panels != null && panels.Length > 0)
+            {
+                builder.AddLabel(Loc("mach_title", "机器界面"), "mach_title");
+
+                for (int i = 0; i < panels.Length; i++)
+                {
+                    var panel = panels[i];
+                    if (panel == null) continue;
+
+                    string label = MachinePanelLabel(panel);
+
+                    if (panel.Kind == MachinePanels.Grid)
+                    {
+                        builder.AddLabel(label, "mach_panel");
+                        DrawGridShape(builder);
+                        continue;
+                    }
+
+                    builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleLeft);
+                    builder.AddLabel(label, "mach_panel");
+                    builder.AddFlexibleSpace();
+                    DrawSlot(builder);
+                    builder.End();
+                }
+            }
+
+            if (recipes != null && recipes.Count > 0)
+            {
+                builder.AddLabel(Loc("mach_recipes", "产出配方"), "mach_recipes");
+                for (int i = 0; i < recipes.Count; i++)
+                {
+                    if (recipes[i] == null) continue;
+                    if (i > 0) builder.AddSeparator("mach_sep", 4);
+                    RenderRecipe(builder, recipes[i]);
+                }
+            }
+        }
+
+        /// <summary>面板标签：优先游戏自己的 mech_*_label_* 键（跟随游戏语言），取不到用兜底。</summary>
+        private static string MachinePanelLabel(MachinePanels.Panel panel)
+        {
+            if (panel == null) return "-";
+
+            if (!string.IsNullOrEmpty(panel.GameLabelKey))
+            {
+                string text = null;
+                try { text = LocHelper.GetLocalizedMechanicOrDefault(panel.GameLabelKey, null); } catch { }
+
+                if (!string.IsNullOrEmpty(text) &&
+                    !string.Equals(text, panel.GameLabelKey, StringComparison.OrdinalIgnoreCase) &&
+                    text.IndexOf("Translation Error", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    return text;
+                }
+            }
+
+            switch (panel.Kind)
+            {
+                case MachinePanels.Battery: return Loc("mach_battery", "电池");
+                case MachinePanels.Module: return Loc("mach_module", "模块");
+                case MachinePanels.Note: return Loc("mach_note", "纸条");
+                default: return panel.Fallback ?? "-";
+            }
+        }
+
+        /// <summary>画容器网格：形状码 7 列一行，'1' 画格框，'0' 留空。</summary>
+        private static void DrawGridShape(CustomUIBuilder builder)
+        {
+            string shape = MachinePanels.ContainerShape;
+            var frame = MachineSlotSprite();
+
+            // 布局还没就绪拿不到描边图时，退回字符画（等宽方块 + 全角空格对齐）
+            if (frame == null)
+            {
+                for (int r = 0; r * MachinePanels.ShapeCols < shape.Length; r++)
+                {
+                    var row = new System.Text.StringBuilder();
+                    for (int c = 0; c < MachinePanels.ShapeCols; c++)
+                    {
+                        int idx = r * MachinePanels.ShapeCols + c;
+                        row.Append(idx < shape.Length && shape[idx] == '1' ? "▢" : "　");
+                    }
+
+                    builder.AddLabel(row.ToString(), "mach_grid_r" + r);
+                }
+
+                return;
+            }
+
+            for (int r = 0; r * MachinePanels.ShapeCols < shape.Length; r++)
+            {
+                builder.BeginRow(2f, UnityEngine.TextAnchor.MiddleCenter);
+
+                for (int c = 0; c < MachinePanels.ShapeCols; c++)
+                {
+                    int idx = r * MachinePanels.ShapeCols + c;
+                    if (idx < shape.Length && shape[idx] == '1')
+                        builder.AddImage(frame, 18f, 18f, "mach_cell_" + r + "_" + c);
+                    else
+                        builder.AddSpace(18f);
+                }
+
+                builder.End();
+            }
+        }
+
+        /// <summary>单格功能槽：一个格框。</summary>
+        private static void DrawSlot(CustomUIBuilder builder)
+        {
+            var frame = MachineSlotSprite();
+            if (frame != null) builder.AddImage(frame, 24f, 24f, "mach_slot");
+            else builder.AddLabel("▢", "mach_slot_text");
+        }
+
+        /// <summary>
+        /// 格框图：直接用游戏 RenderHandler 的血条描边（本来就是给 UI 框用的）。
+        /// 拿不到返回 null，调用方走字符画兜底。
+        /// </summary>
+        private static Sprite _machineSlotSprite;
+
+        private static Sprite MachineSlotSprite()
+        {
+            if (_machineSlotSprite != null) return _machineSlotSprite;
+
+            var handler = RenderHandler.current;
+            if (handler == null) return null;
+
+            _machineSlotSprite = handler.healthBarOutline;
+            return _machineSlotSprite;
         }
 
         private static void RenderRecipe(CustomUIBuilder builder, RecipeInfo recipe)
