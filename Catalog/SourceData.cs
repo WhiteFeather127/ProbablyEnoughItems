@@ -111,6 +111,8 @@ namespace ItemCatalog.Catalog
             watch.Stop();
             Built = true;
 
+            AuditLookup();
+
             if (ModEntry.Log != null)
             {
                 ModEntry.Log.Log(string.Format(
@@ -118,6 +120,34 @@ namespace ItemCatalog.Catalog
                     ClientTypeCount, LocationCount, commissary, _byItem.Count, RandomItemCount,
                     watch.ElapsedMilliseconds));
             }
+        }
+
+        /// <summary>
+        /// 反查保证：货单里每个 id 要么本身就是目录物品，要么能通过别名
+        /// （状态后缀 / random_* 展开）落到一个目录物品上。两条都不满足的
+        /// id 玩家永远查不到来源，这里逐个记日志暴露出来。
+        /// </summary>
+        private static void AuditLookup()
+        {
+            int gaps = 0;
+            foreach (var pair in _byItem)
+            {
+                if (RecipeIndex.FindEntry(pair.Key) != null) continue;
+                if (HasResolvableAlias(pair.Key)) continue;
+
+                gaps++;
+                if (gaps <= 12) Warn("反查缺口 '" + pair.Key + "'（" + pair.Value.Count + " 个来源挂在这里）");
+            }
+
+            if (gaps > 0) Warn("共 " + gaps + " 个 id 无法从目录物品反查到来源（见上）");
+        }
+
+        /// <summary>这个 id 是否能通过别名落到一个目录物品上。</summary>
+        private static bool HasResolvableAlias(string id)
+        {
+            string alias = ResolveAlias(id);
+            return !string.IsNullOrEmpty(alias) && alias != id
+                   && RecipeIndex.FindEntry(alias) != null;
         }
 
         private static void AddHardcoded()
@@ -397,25 +427,25 @@ namespace ItemCatalog.Catalog
         /// </summary>
         private static void AddAliasSource(string itemId, SourceInfo source)
         {
-            if (string.IsNullOrEmpty(itemId)) return;
-
-            string alias;
-            if (itemId.StartsWith("random_", StringComparison.Ordinal))
-            {
-                alias = LootSource.ExpandPlaceholder(itemId);
-            }
-            else
-            {
-                alias = null;
-                for (int i = 0; i < AliasSuffixes.Length; i++)
-                {
-                    if (!itemId.EndsWith(AliasSuffixes[i], StringComparison.Ordinal)) continue;
-                    alias = itemId.Substring(0, itemId.Length - AliasSuffixes[i].Length);
-                    break;
-                }
-            }
-
+            string alias = ResolveAlias(itemId);
             if (!string.IsNullOrEmpty(alias) && alias != itemId) Add(alias, source);
+        }
+
+        /// <summary>货单 id → 目录物品 id 的别名解析；不是别名时返回 null。</summary>
+        private static string ResolveAlias(string itemId)
+        {
+            if (string.IsNullOrEmpty(itemId)) return null;
+
+            if (itemId.StartsWith("random_", StringComparison.Ordinal))
+                return LootSource.ExpandPlaceholder(itemId);
+
+            for (int i = 0; i < AliasSuffixes.Length; i++)
+            {
+                if (!itemId.EndsWith(AliasSuffixes[i], StringComparison.Ordinal)) continue;
+                return itemId.Substring(0, itemId.Length - AliasSuffixes[i].Length);
+            }
+
+            return null;
         }
 
         internal static List<SourceInfo> For(string itemId)

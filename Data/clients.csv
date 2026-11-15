@@ -110,7 +110,7 @@ client,IceMiner,name_ice_miner,,,矿业/工业,pool:getRandomPilotSpriteName,hq,
 client,Miner,name_miner,,,矿业/工业,pool:GetRandomMinerSpriteName,,,SUBSTANCE|NARCOTIC,,common_ore,,,,
 client,RadioactiveWasteCustomer,name_corporate_waste_manager,,,矿业/工业,pool:GetRandomLowerLevelSpriteName,,,,,nuclear_waste,,,,
 # ---- 快递/供应商 ----
-client,CourrierBeer,name_red_imp_courrier,,,快递/供应商,pool:GetCourrierSpriteName,,,,,beerCase|red_beer,,,,
+client,CourrierBeer,name_red_imp_courrier,,,快递/供应商,pool:GetCourrierSpriteName,,,,,beer_case|red_beer,,,,
 client,CourrierMining,name_gp_mining_courrier,,,快递/供应商,pool:GetCourrierSpriteName,,,,,common_ore,,,,
 client,Supplier,name_supply_runner,,src_client_supplier,快递/供应商,pool:GetRandomMerchantSpriteName,base@large_bottled_water,1,,,bandage_item|module_extractor|water_pitcher|wine_bottle|wine_yeast|fillerweed_seed|kotton_seed|flux_agent|50ml_cylinder|mini_bottle|printer_plastic|kotton_fabric|large_bottled_water|energy_credit|water_filter|nutrient_tablet_container|nutrient_tablet|nutrifruit_seed_packet|nutrifruit_seed|water_tablet_container|water_tablet|water_test_container|water_test_strip|cassette,,,cassette1|cassette1d|cassette1l|cassette2|cassette2d|cassette2l|cassette3|cassette3d|cassette3l|cassette4|cassette4d|cassette4l|cassette5|cassette5d|cassette5l|cassette6|cassette6d|cassette6l|cassette7|cassette7d|cassette7l|cassette8|cassette8d|cassette8l|cassette9|cassette9d|cassette9l|cassette10|cassette10d|cassette10l|cassette11|cassette11d|cassette11l|cassette12|cassette12d|cassette12l|cassette13|cassette13d|cassette13l|cassette14|cassette14d|cassette14l,
 # ---- 退休者 ----
