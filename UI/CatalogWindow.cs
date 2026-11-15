@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using ProbablyEnoughItems.Api;
@@ -1958,100 +1958,76 @@ namespace ItemCatalog.UI
         {
             if (element == null || string.IsNullOrEmpty(id)) return;
 
-            try
+            _preBuiltCells[element.id] = id;
+
+            // 借到了本体图标的变体（portable_water_purifier_used 这类）走的是 AddImage
+            // 路径，BindCell 对 null entry 直接返回，MakeClickable 没执行过——
+            // 格子上没有任何 raycast 目标，悬停事件根本不触发。这里补上。
+            if (element.button == null) MakeClickable(element, delegate { });
+
+            var host = HitGraphic(element);
+            if (host == null) return;
+
+            var trigger = host.GetComponent<UnityEngine.EventSystems.EventTrigger>()
+                          ?? host.AddComponent<UnityEngine.EventSystems.EventTrigger>();
+            trigger.triggers.Clear();
+
+            var enter = new UnityEngine.EventSystems.EventTrigger.Entry
             {
-                _preBuiltCells[element.id] = id;
-
-                // 借到了本体图标的变体（portable_water_purifier_used 这类）走的是 AddImage
-                // 路径，BindCell 对 null entry 直接返回，MakeClickable 没执行过——
-                // 格子上没有任何 raycast 目标，悬停事件根本不触发。这里补上。
-                if (element.button == null) MakeClickable(element, delegate { });
-
-                var host = HitGraphic(element);
-
-                var trigger = host != null ? host.GetComponent<UnityEngine.EventSystems.EventTrigger>() : null;
-                if (trigger == null && host != null) trigger = host.AddComponent<UnityEngine.EventSystems.EventTrigger>();
-
-                if (trigger != null)
-                {
-                    trigger.triggers.Clear();
-
-                    var enter = new UnityEngine.EventSystems.EventTrigger.Entry
-                    {
-                        eventID = UnityEngine.EventSystems.EventTriggerType.PointerEnter
-                    };
-                    enter.callback.AddListener(delegate
-                    {
-                        _hoverPreBuilt = id;
-                        ShowPreBuiltTooltip(id, host);
-                    });
-                    trigger.triggers.Add(enter);
-
-                    var exit = new UnityEngine.EventSystems.EventTrigger.Entry
-                    {
-                        eventID = UnityEngine.EventSystems.EventTriggerType.PointerExit
-                    };
-                    exit.callback.AddListener(delegate
-                    {
-                        if (_hoverPreBuilt == id) _hoverPreBuilt = null;
-                        HideNativeTooltip();
-                    });
-                    trigger.triggers.Add(exit);
-                }
-            }
-            catch (Exception e)
+                eventID = UnityEngine.EventSystems.EventTriggerType.PointerEnter
+            };
+            enter.callback.AddListener(delegate
             {
-                Warn("bind prebuilt cell '" + id + "': " + e.Message);
-            }
+                _hoverPreBuilt = id;
+                ShowPreBuiltTooltip(id, host);
+            });
+            trigger.triggers.Add(enter);
+
+            var exit = new UnityEngine.EventSystems.EventTrigger.Entry
+            {
+                eventID = UnityEngine.EventSystems.EventTriggerType.PointerExit
+            };
+            exit.callback.AddListener(delegate
+            {
+                if (_hoverPreBuilt == id) _hoverPreBuilt = null;
+                HideNativeTooltip();
+            });
+            trigger.triggers.Add(exit);
         }
 
         /// <summary>预构建键的悬停提示：名字 + 耐久范围。没有耐久（箱子 / 纸条这类）就只有名字。</summary>
         private static void ShowPreBuiltTooltip(string id, GameObject host)
         {
-            try
-            {
-                string name = RecipeWindow.ItemNameFor(id);
-                string range = PreBuiltItems.DurabilityRange(id);
+            string name = RecipeWindow.ItemNameFor(id);
+            string range = PreBuiltItems.DurabilityRange(id);
 
-                string durabilityLine = null;
-                if (!string.IsNullOrEmpty(range))
-                {
-                    string label = ModEntry.T("prebuilt_durability");
-                    durabilityLine = string.Format(label, range);
-                }
+            string durabilityLine = string.IsNullOrEmpty(range)
+                ? null
+                : string.Format(ModEntry.T("prebuilt_durability"), range);
 
-                string plain = name;
-                if (!string.IsNullOrEmpty(durabilityLine)) plain += "\n" + durabilityLine;
+            string plain = string.IsNullOrEmpty(durabilityLine)
+                ? name
+                : name + "\n" + durabilityLine;
 
-                var rich = new RichText(
-                    plain,
-                    null,
-                    null,
-                    "<b>" + name + "</b>"
-                    + (string.IsNullOrEmpty(durabilityLine) ? "" : "\n" + durabilityLine),
-                    null,
-                    0,
-                    0,
-                    false);
+            var rich = new RichText(
+                plain,
+                null,
+                null,
+                string.IsNullOrEmpty(durabilityLine) ? "<b>" + name + "</b>" : "<b>" + name + "</b>\n" + durabilityLine,
+                null,
+                0,
+                0,
+                false);
 
-                // 走原版叠层（Item Details 徽章挂在这条通道上）；失败再退到 TooltipManager
-                if (ShowRichViaOverlay(rich)) return;
+            // 走原版叠层（Item Details 徽章挂在这条通道上）；失败再退到 TooltipManager
+            if (ShowRichViaOverlay(rich)) return;
 
-                var manager = GetTooltipManager();
-                if (manager == null) return;
+            var manager = GetTooltipManager();
+            if (manager == null) return;
 
-                try
-                {
-                    var owner = host != null ? host.GetComponent<UnityEngine.Component>() : null;
-                    if (owner != null) manager.SetAndShowTooltip(rich.nakedText, owner);
-                    else manager.SetAndShowTooltip(rich.nakedText);
-                }
-                catch (Exception e) { Warn("prebuilt tooltip show: " + e.Message); }
-            }
-            catch (Exception e)
-            {
-                Warn("prebuilt tooltip '" + id + "': " + e.Message);
-            }
+            var owner = host != null ? host.GetComponent<UnityEngine.Component>() : null;
+            if (owner != null) manager.SetAndShowTooltip(rich.nakedText, owner);
+            else manager.SetAndShowTooltip(rich.nakedText);
         }
 
         /// <summary>取格子里真正接收射线的那个子物体（Image 通常挂在子节点上）。</summary>
@@ -2239,10 +2215,7 @@ namespace ItemCatalog.UI
         {
             if (string.IsNullOrEmpty(id)) return;
 
-            GameItem item;
-            try { item = PreBuiltItems.Spawn(id); }
-            catch (Exception e) { Warn("prebuilt spawn '" + id + "': " + e.Message); return; }
-
+            var item = ItemSpawner.Spawn(id);
             if (item == null) return;
             if (!PlaceInDummyStorage(item, id)) return;
 
@@ -4092,32 +4065,17 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 用 OverlayHandler（原生提示框叠层）显示富文本。
-        /// 这是游戏自己的悬停提示通道，Item Details 的类型徽章、其它美化 mod 的补丁都打在这上面。
-        /// </summary>
-        /// <summary>
         /// 预构建键的提示框走这条：内容是静态的（名字 + 耐久范围），
         /// 不能复用 ShowViaOverlay——它的刷新回调是 RebuildTooltip(entry)，
         /// entry 为 null 时每 0.25 秒返回 null，提示框会被立刻清掉。
         /// </summary>
         private static bool ShowRichViaOverlay(RichText rich)
         {
-            if (rich == null) return false;
+            if (rich == null || OverlayHandler.current == null) return false;
 
-            var overlay = OverlayHandler.current;
-            if (overlay == null) return false;
-
-            try
-            {
-                TooltipFollower.Begin(rich, TooltipWidthFor(null), delegate { return rich; });
-                _overlayShown = true;
-                return true;
-            }
-            catch (Exception e)
-            {
-                Warn("prebuilt overlay show failed: " + e.Message);
-                return false;
-            }
+            TooltipFollower.Begin(rich, TooltipWidthFor(null), delegate { return rich; });
+            _overlayShown = true;
+            return true;
         }
 
         private static bool ShowViaOverlay(RichText rich, ItemEntry entry)

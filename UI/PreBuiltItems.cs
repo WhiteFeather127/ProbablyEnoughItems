@@ -34,8 +34,7 @@ namespace ItemCatalog.UI
 
             EnsureIds();
 
-            bool yes;
-            return _ids.TryGetValue(id, out yes) && yes;
+            return _ids.ContainsKey(id);
         }
 
         private static void EnsureIds()
@@ -44,32 +43,19 @@ namespace ItemCatalog.UI
 
             _ids = new Dictionary<string, bool>(StringComparer.Ordinal);
 
-            try
+            var field = typeof(PreBuiltItemHelper).GetField("preBuiltItems",
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Static |
+                System.Reflection.BindingFlags.Public);
+
+            var dict = field != null ? field.GetValue(null) as System.Collections.IDictionary : null;
+            if (dict == null) return;
+
+            foreach (var key in dict.Keys)
             {
-                var field = typeof(PreBuiltItemHelper).GetField("preBuiltItems",
-                    System.Reflection.BindingFlags.NonPublic |
-                    System.Reflection.BindingFlags.Static |
-                    System.Reflection.BindingFlags.Public);
-
-                var dict = field != null ? field.GetValue(null) as System.Collections.IDictionary : null;
-                if (dict == null) return;
-
-                foreach (var key in dict.Keys)
-                {
-                    var text = key as string;
-                    if (!string.IsNullOrEmpty(text)) _ids[text] = true;
-                }
+                var text = key as string;
+                if (!string.IsNullOrEmpty(text)) _ids[text] = true;
             }
-            catch (Exception e)
-            {
-                Warn("prebuilt ids: " + e.Message);
-            }
-        }
-
-        /// <summary>按游戏函数生成。ItemSpawner.Spawn 先查预构建表，再回退目录工厂。</summary>
-        internal static GameItem Spawn(string id)
-        {
-            return ItemSpawner.Spawn(id);
         }
 
         /// <summary>
@@ -82,12 +68,6 @@ namespace ItemCatalog.UI
 
             string range;
             return StaticRanges.TryGetValue(id, out range) ? range : null;
-        }
-
-        private static void Warn(string message)
-        {
-            if (ModEntry.Log == null) return;
-            ModEntry.Log.Warning("[prebuilt] " + message);
         }
     }
 }
