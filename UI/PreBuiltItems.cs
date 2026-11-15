@@ -8,18 +8,25 @@ namespace ItemCatalog.UI
     /// （图鉴里查不到条目），而是游戏生成函数的别名——二手净水器、各种箱子、
     /// 纸条、注水滤芯…生成时会随机耐久 / 内容物。
     ///
-    /// 因此两件事必须走游戏自己的函数：
-    /// · 拿取（拖出）用 <see cref="ItemSpawner.Spawn"/>，耐久才是游戏内的那套随机；
-    /// · 提示框里的耐久范围靠采样得出（工厂里写死的区间静态读不到）。
+    /// · 拿取（拖出）必须走 <see cref="ItemSpawner.Spawn"/>，耐久才是游戏内的那套随机；
+    /// · 提示框里的耐久范围用静态表（从工厂 IL 抄的常量），绝不在此采样——
+    ///   采样会白白消耗游戏全局 RNG 的状态。
     /// </summary>
     internal static class PreBuiltItems
     {
         private static Dictionary<string, bool> _ids;
-        private static readonly Dictionary<string, string> RangeCache =
-            new Dictionary<string, string>(StringComparer.Ordinal);
 
-        /// <summary>采样次数：够小（快），也够大（能覆盖到区间两端）。</summary>
-        private const int Samples = 16;
+        /// <summary>
+        /// 带随机耐久的预构建键（全集，抄自 PreBuiltItemHelper 各工厂的 IL）。
+        /// 全程序集扫过一遍：除了二手净水器，其余预构建键的随机
+        /// 都不是耐久——random_*_module 的 0~100 挑的是外观形状，
+        /// RandomCigarette 的 0~100 是品质，loot_crate_* 的 RNG 是内容物数量。
+        /// </summary>
+        private static readonly Dictionary<string, string> StaticRanges =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "portable_water_purifier_used", "15 ~ 50" }
+            };
 
         internal static bool IsPreBuilt(string id)
         {
@@ -66,44 +73,15 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 耐久范围文本（“15 ~ 50”）。工厂内部会随机一档（二手净水器是 15~50），
-        /// 静态读不到区间，所以采样若干次取最小 / 最大，结果按 id 缓存。
-        /// 不是耐久物品（采样值恒为 0）返回 null，提示框就不写这一行。
+        /// 耐久范围文本（“15 ~ 50”），查静态表。不在表里（或没有耐久）返回 null，
+        /// 提示框就不写这一行。注意：这里不做任何生成采样，避免消耗游戏 RNG。
         /// </summary>
         internal static string DurabilityRange(string id)
         {
-            if (!IsPreBuilt(id)) return null;
+            if (string.IsNullOrEmpty(id)) return null;
 
-            string cached;
-            if (RangeCache.TryGetValue(id, out cached)) return cached;
-
-            int min = int.MaxValue;
-            int max = int.MinValue;
-
-            for (int i = 0; i < Samples; i++)
-            {
-                GameItem item = null;
-                try { item = ItemSpawner.Spawn(id); }
-                catch { break; }
-
-                if (item == null) break;
-
-                int value;
-                try { value = DurabilityHelper.GetRealDurability(item); }
-                catch { value = 0; }
-
-                if (value > 0)
-                {
-                    if (value < min) min = value;
-                    if (value > max) max = value;
-                }
-            }
-
-            string result = null;
-            if (max > 0) result = min == max ? min.ToString() : min + " ~ " + max;
-
-            RangeCache[id] = result;
-            return result;
+            string range;
+            return StaticRanges.TryGetValue(id, out range) ? range : null;
         }
 
         private static void Warn(string message)
