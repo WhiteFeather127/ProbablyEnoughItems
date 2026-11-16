@@ -23,7 +23,9 @@ namespace ItemCatalog.UI
         private const string WinId = "recipe:win";
         private const float WinWidth = 600f;
         private const float WinMinHeight = 240f;
-        private const float WinMaxHeight = 900f;
+        // 上限放到屏幕高：标题栏已用 ignoreLayout 锁死，不会再被内容挤压，
+        // 流式排列下窗口该多大就多大，超出的部分靠屏幕约束兜住。
+        private const float WinMaxHeight = 1200f;
         // 标题栏 + 内容区上下留白的真实高度（实测约 118，之前写 64 少给了 54px，
         // 导致窗口高度不够、布局组只能压缩标题栏 → 所有页面标题/关闭按钮被压扁）。
         private const float WindowChrome = 120f;
@@ -1452,6 +1454,21 @@ namespace ItemCatalog.UI
                     if (chrome > 4f && topH > 1f && pagerH > 1f)
                     {
                         _measuredChrome = chrome;
+
+                        // 一件一件固定：顶部行 / 翻页条都锁死成实测高度 + 不可弹性压缩，
+                        // 布局组空间紧张时只能从面板身上让，不会把这俩压扁。
+                        var topLe = EnsureLayoutElement(_machineTopRow);
+                        topLe.minHeight = topH;
+                        topLe.preferredHeight = topH;
+                        topLe.flexibleHeight = 0f;
+
+                        var pagerLe = EnsureLayoutElement(_machinePagerRow);
+                        pagerLe.minHeight = pagerH;
+                        pagerLe.preferredHeight = pagerH;
+                        pagerLe.flexibleHeight = 0f;
+
+                        // 面板可用高度 = 屏幕可用高 − 标题栏 − 顶部行 − 翻页条 − 间距，
+                        // 即「最后一件（翻页条）底边为止」的剩余空间全给面板。
                         float avail = MaxContentHeight() - chrome - topH - pagerH - 16f;
                         avail = Mathf.Max(160f, avail);
 
@@ -1485,7 +1502,8 @@ namespace ItemCatalog.UI
         /// <summary>窗口最长到 WinMaxHeight，但别长出屏幕（留 80px 给标题栏与任务栏）。</summary>
         private static float MaxContentHeight()
         {
-            float cap = Screen.height > 0 ? Mathf.Min(WinMaxHeight, Screen.height - 80f) : WinMaxHeight;
+            // 流式排列：窗口按各件固定高度累加，只受屏幕边界约束（留 40px 给任务栏/边缘）。
+            float cap = Screen.height > 0 ? Mathf.Min(WinMaxHeight, Screen.height - 40f) : WinMaxHeight;
             return Mathf.Max(cap, WinMinHeight);
         }
 
