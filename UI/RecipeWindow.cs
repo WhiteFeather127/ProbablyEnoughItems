@@ -115,19 +115,15 @@ namespace ItemCatalog.UI
         /// <summary>
         /// 大类。客人/地点来自 SourceIndex，合成来自 RecipeIndex，
         /// 使用来自 UseIndex（开箱、喝掉、涂抹这类「对物品本身动手」的转化）。
+        /// 合成与使用都是**双向**大类：来源窗口和用途窗口看到同一份内容
+        /// （配方页当前物品在哪列高亮自明方向；使用页投入在上、产物在下）。
         /// </summary>
         private const int CatClient = 0;
         private const int CatLocation = 1;
-        private const int CatCraftOut = 2;
-        private const int CatCraftIn = 3;
-        private const int CatUseOut = 4;     // （已被 CatUse 取代，占位保留编号）
-        private const int CatUsedBy = 5;     // （已被 CatUse 取代，占位保留编号）
-        private const int CatLoot = 6;       // 来源侧：能开出它的战利品表（开箱/搜容器）
-        private const int CatLootUse = 7;    // 去处侧：这箱子/这张卡能开出什么
-        private const int CatLock = 8;       // 去处侧：箱子要哪张卡 / 卡能开什么
-        private const int CatWanted = 9;     // 去处侧：哪个客人收这件（收购清单命中）
-        private const int CatMachine = 10;   // 来源侧：这件东西自己是机器（界面 + 产出配方）
-        private const int CatUse = 11;       // 双向：使用互查（怎么得到它 + 用它能做出什么）
+        private const int CatCraft = 2;      // 双向：产出它的配方 + 把它当材料用掉的配方
+        private const int CatLoot = 6;       // 双向：能开出它的地点池（同一地点合并成一页）
+        private const int CatMachine = 10;   // 双向：这件东西自己是机器（界面 + 产出配方）
+        private const int CatUse = 11;       // 双向：使用互查 + 箱子/卡的开启关系
 
         private sealed class Category
         {
@@ -136,18 +132,11 @@ namespace ItemCatalog.UI
             internal List<RecipeInfo> Recipes;
             internal List<UseInfo> Uses;
             internal List<LootTableInfo> Loot;
-            internal bool LootAsUse;   // true = 去处侧（箱子/卡 → 产出）
 
             /// <summary>
-            /// true = 这一页是「求购」：结构照来源页（阵营 / 客人名 / 立绘 / 翻页），
-            /// 但正文不画他卖的货，改画他收什么。
-            /// </summary>
-            internal bool IsWanted;
-
-            /// <summary>
-            /// 来源侧掉落池对应的「地方」：`item:&lt;箱子 id&gt;`（能开到的箱子）
-            /// 或游戏本地化键（`location_dumping_grounds` 这种地点/人名）。
-            /// 有它就按它给分类起名，不再统一叫「掉落池」。
+            /// 掉落池对应的「地方」：游戏本地化键（`location_dumping_grounds`
+            /// 这种地点/人名）。有它就按它给分类起名，不再统一叫「掉落池」。
+            /// 箱子的开启关系走「使用」大类，不再有 item:箱子 掉落页。
             /// </summary>
             internal string Site;
         }
@@ -171,9 +160,6 @@ namespace ItemCatalog.UI
         private static RectTransform _bodyHost;
 
         private static ItemEntry _entry;
-
-        /// <summary>false = 来源（左键）；true = 去处（右键）。</summary>
-        private static bool _asUse;
 
         private static int _category;
         private static int _page;
@@ -231,18 +217,16 @@ namespace ItemCatalog.UI
             internal HashSet<string> Exclude;       // 已经单独列出的具体物品，别在标签格里重复画
         }
 
+        /// <summary>
+        /// 打开（或复用）窗口。来源与去处已合并成同一页：
+        /// 客人 / 地点 / 机器 / 合成(双向) / 使用(双向，含开启) / 掉落池。
+        /// 兼容重载保留 asUse 参数仅为旧调用点，不再区分方向。
+        /// </summary>
         internal static void OpenFor(ItemEntry entry)
-        {
-            OpenFor(entry, false);
-        }
-
-        /// <summary>打开（或复用）窗口。asUse=false 看来源，true 看去处。</summary>
-        internal static void OpenFor(ItemEntry entry, bool asUse)
         {
             if (entry == null) return;
 
             _entry = entry;
-            _asUse = asUse;
             _category = 0;
             _page = 0;
 
@@ -264,12 +248,18 @@ namespace ItemCatalog.UI
             {
                 try
                 {
-                    ModEntry.Log.Log("[recipe] open id=" + entry.Id + " asUse=" + asUse
+                    ModEntry.Log.Log("[recipe] open id=" + entry.Id
                                      + " cats=" + _categories.Count + " " + CategoryDigest()
                                      + " " + State());
                 }
                 catch { }
             }
+        }
+
+        /// <summary>旧签名兼容：方向参数已无意义，统一打开同一页。</summary>
+        internal static void OpenFor(ItemEntry entry, bool asUse)
+        {
+            OpenFor(entry);
         }
 
         /// <summary>
@@ -680,220 +670,90 @@ namespace ItemCatalog.UI
             _categories = new List<Category>();
             if (_entry == null) return;
 
-            if (!_asUse)
+            // 来源方向：谁卖给我（客人合并 / 地点各自成类——配给站、杰克逊博士）
+            var sources = SourceIndex.For(_entry.Id);
+
+            AddSourceCategory(CatClient, sources);
+            AddSourceCategory(CatLocation, sources);
+
+            // 他自己是机器 → 机器界面（电池 / 模块 / 功能槽 / 容器网格）+ 自己的产出配方。
+            // 判定依据与配方采集一致：带 recipeManager 且登记过配方的物品就是机器。
+            var ownRecipes = RecipeIndex.ByMachine(_entry.Id);
+            if (ownRecipes.Count > 0)
             {
-                // 来源只算「谁卖给我」；收购清单属于用途侧（见 CatWantedBy）
-                var sources = SourceIndex.For(_entry.Id);
-
-                AddSourceCategory(CatClient, sources);
-                AddSourceCategory(CatLocation, sources);
-
-                // 他自己是机器 → 机器界面（电池 / 模块 / 功能槽 / 容器网格）+ 自己的产出配方。
-                // 判定依据与配方采集一致：带 recipeManager 且登记过配方的物品就是机器。
-                var ownRecipes = RecipeIndex.ByMachine(_entry.Id);
-                if (ownRecipes.Count > 0)
-                {
-                    _categories.Add(new Category { Kind = CatMachine, Recipes = ownRecipes });
-                }
-
-                var produced = RecipeIndex.Producing(_entry.Id);
-                if (produced.Count > 0)
-                {
-                    _categories.Add(new Category { Kind = CatCraftOut, Recipes = produced });
-                }
-
-                var uses = UseIndex.Producing(_entry.Id);
-                if (uses.Count > 0)
-                {
-                    AddUseCategory(uses);
-                }
-
-                var loot = LootSource.For(_entry.Id);
-                if (loot.Count > 0)
-                {
-                    // 掉落池本身不该是一个大类：玩家遇到的是「垃圾倾倒场能翻出什么」、
-                    // 「小偷身上有什么」。所以按池所属的地方分组，每个地方一个大类，
-                    // 池在里面展开。
-                    var order = new List<string>();
-                    var buckets = new Dictionary<string, List<LootTableInfo>>(StringComparer.Ordinal);
-
-                    for (int i = 0; i < loot.Count; i++)
-                    {
-                        var table = loot[i];
-                        if (table == null) continue;
-
-                        string site = LootSource.SiteFor(table.TableId);
-                        if (string.IsNullOrEmpty(site))
-                        {
-                            // 查不到出处的池只是内部数据，不单独成篇：
-                            // 等有箱子 / 地点引用它时再在那边展开。
-                            continue;
-                        }
-
-                        List<LootTableInfo> bucket;
-                        if (!buckets.TryGetValue(site, out bucket))
-                        {
-                            bucket = new List<LootTableInfo>();
-                            buckets[site] = bucket;
-                            order.Add(site);
-                        }
-
-                        bucket.Add(table);
-                    }
-
-                    // 箱子反查：box_contents / box_pools 里包含这件东西的箱子，
-                    // 以 item:<箱子> 为站点并入同一组——箱内物品从两个方向都能找到箱子
-                    var boxes = LootSource.BoxesForItem(_entry.Id);
-                    for (int b = 0; b < boxes.Count; b++)
-                    {
-                        string boxSite = "item:" + boxes[b];
-                        if (buckets.ContainsKey(boxSite)) continue;
-
-                        var boxTables = LootSource.AsBox(boxes[b]);
-                        if (boxTables == null || boxTables.Count == 0) continue;
-
-                        // 内容物全集里确认真的有当前物品（避免空占位页）
-                        bool has = false;
-                        for (int t = 0; t < boxTables.Count && !has; t++)
-                        {
-                            var items = boxTables[t] != null ? boxTables[t].Items : null;
-                            if (items == null) continue;
-
-                            for (int k = 0; k < items.Count; k++)
-                            {
-                                if (items[k] != null &&
-                                    string.Equals(items[k].Id, _entry.Id, StringComparison.Ordinal))
-                                {
-                                    has = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (!has) continue;
-
-                        buckets[boxSite] = boxTables;
-                        order.Add(boxSite);
-                    }
-
-                    // 地点页 = 这个地方**全部池子**的并集（不是只含当前物品的那几张）：
-                    // 玩家问的是「垃圾倾倒场能给什么」，垃圾堆 / 残骸 / 拾荒 /
-                    // 背包发现合在一页里；当前物品命中了其中至少一张才进这个站点。
-                    for (int i = 0; i < order.Count; i++)
-                    {
-                        string site = order[i];
-
-                        if (site.StartsWith("item:", StringComparison.OrdinalIgnoreCase))
-                        {
-                            // 箱子站点：内容物本来就是一张表，原样合并
-                            _categories.Add(new Category
-                            {
-                                Kind = CatLoot,
-                                Loot = new List<LootTableInfo> { MergeLootTables(buckets[site]) },
-                                Site = site
-                            });
-                            continue;
-                        }
-
-                        var siteTables = new List<LootTableInfo>();
-                        var allTables = LootSource.Tables;
-                        for (int t = 0; t < allTables.Length; t++)
-                        {
-                            var tt = allTables[t];
-                            if (tt == null) continue;
-
-                            if (string.Equals(LootSource.SiteFor(tt.TableId), site, StringComparison.Ordinal))
-                                siteTables.Add(tt);
-                        }
-
-                        if (siteTables.Count == 0) continue;
-
-                        _categories.Add(new Category
-                        {
-                            Kind = CatLoot,
-                            Loot = new List<LootTableInfo> { MergeLootTables(siteTables) },
-                            Site = site
-                        });
-                    }
-
-                }
+                _categories.Add(new Category { Kind = CatMachine, Recipes = ownRecipes });
             }
-            else
+
+            // 合成（双向）：产出它的配方 + 把它当材料用掉的配方，同一个「合成」大类。
+            AddCraftCategory();
+
+            // 使用（双向）：怎么得到它 / 能拿它做什么；箱子与卡的「开启」关系
+            // 也并进这个大类（合成 open 使用记录），不再单独开「开启」类。
+            AddUseCategory(UseIndex.Producing(_entry.Id));
+
+            // 掉落池（同一地点合并成一页）：地点池并集。
+            // 箱子的开启关系已并入「使用」（合成 open 使用记录），
+            // 这里不再挂 item:箱子 掉落页——同一关系在两个大类里各出现一次只会重复。
+            var loot = LootSource.For(_entry.Id);
+            if (loot.Count > 0)
             {
-                // 他自己是机器 → 机器界面 + 产出配方在**两个窗口都要给**：
-                // 机器是双向内容（来源侧看它产出什么，用途侧看它消耗什么），
-                // 用途窗口只有一条琐碎的使用记录会很莫名其妙（如蒸发器）。
-                var ownRecipes = RecipeIndex.ByMachine(_entry.Id);
-                if (ownRecipes.Count > 0)
-                {
-                    _categories.Add(new Category { Kind = CatMachine, Recipes = ownRecipes });
-                }
+                // 掉落池本身不该是一个大类：玩家遇到的是「垃圾倾倒场能翻出什么」。
+                // 按池所属的地方分组，每个地方一个大类，池的并集在里面展开。
+                var order = new List<string>();
+                var buckets = new Dictionary<string, List<LootTableInfo>>(StringComparer.Ordinal);
 
-                // 谁收这件：用来源页那套结构（阵营 / 客人名 / 立绘 / 一页一个客人），
-                // 正文换成「他收什么」。放在用途侧第一类 —— 「卖给谁」是最常用的去处。
-                var wanted = SourceIndex.WantedBy(_entry.Id, _entry.Item);
-                if (wanted.Count > 0)
+                for (int i = 0; i < loot.Count; i++)
                 {
-                    // 所有买家合成一个大类「客人」，页内翻页切换，一页一个客人
-                    var picked = new List<SourceInfo>();
-                    for (int i = 0; i < wanted.Count; i++)
+                    var table = loot[i];
+                    if (table == null) continue;
+
+                    string site = LootSource.SiteFor(table.TableId);
+                    if (string.IsNullOrEmpty(site) ||
+                        site.StartsWith("item:", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (wanted[i] == null) continue;
-                        picked.Add(wanted[i]);
+                        // 查不到出处的池只是内部数据，不单独成篇；
+                        // item: 站点（箱子）的开启关系已并入「使用」。
+                        continue;
                     }
 
-                    if (picked.Count > 0)
+                    List<LootTableInfo> bucket;
+                    if (!buckets.TryGetValue(site, out bucket))
                     {
-                        _categories.Add(new Category
-                        {
-                            Kind = CatWanted,
-                            Sources = picked,
-                            IsWanted = true
-                        });
+                        bucket = new List<LootTableInfo>();
+                        buckets[site] = bucket;
+                        order.Add(site);
                     }
+
+                    bucket.Add(table);
                 }
 
-                var consumed = RecipeIndex.Consuming(_entry.Id, _entry.Item);
-                if (consumed.Count > 0)
+                // 地点页 = 这个地方**全部池子**的并集（不是只含当前物品的那几张）：
+                // 玩家问的是「垃圾倾倒场能给什么」，垃圾堆 / 残骸 / 拾荒 /
+                // 背包发现合在一页里；当前物品命中了其中至少一张才进这个站点。
+                for (int i = 0; i < order.Count; i++)
                 {
-                    _categories.Add(new Category { Kind = CatCraftIn, Recipes = consumed });
-                }
+                    string site = order[i];
 
-                // 传 Item 是为了让 `tag:XXX` 那类「整类目标」也能命中
-                // （拆解只对带 ADV_GUN_TAG 的枪、屠宰只对带 BLADE_ITEM_TAG 的刀）。
-                var used = UseIndex.Using(_entry.Id, _entry.Item);
-                if (used.Count > 0)
-                {
-                    AddUseCategory(used);
-                }
+                    var siteTables = new List<LootTableInfo>();
+                    var allTables = LootSource.Tables;
+                    for (int t = 0; t < allTables.Length; t++)
+                    {
+                        var tt = allTables[t];
+                        if (tt == null) continue;
 
-                // 他自己就是箱子 → 开启后能开出什么
-                var asBox = LootSource.AsBox(_entry.Id);
-                if (asBox.Count > 0)
-                {
+                        if (string.Equals(LootSource.SiteFor(tt.TableId), site, StringComparison.Ordinal))
+                            siteTables.Add(tt);
+                    }
+
+                    if (siteTables.Count == 0) continue;
+
                     _categories.Add(new Category
                     {
-                        Kind = CatLootUse,
-                        Loot = asBox,
-                        LootAsUse = true
+                        Kind = CatLoot,
+                        Loot = new List<LootTableInfo> { MergeLootTables(siteTables) },
+                        Site = site
                     });
                 }
-
-                // 他自己是卡 → 能开哪些箱子（表 id 不是物品 id 时会是 0 条）
-                var asKey = LootSource.ForKey(_entry.Item);
-                if (asKey.Count == 0) asKey = LootSource.BoxesForKeyId(_entry.Id);
-                if (asKey.Count > 0)
-                {
-                    _categories.Add(new Category
-                    {
-                        Kind = CatLootUse,
-                        Loot = asKey,
-                        LootAsUse = true
-                    });
-                }
-
-                // 锁信息不再单独开一页：开启页已经把「箱子 + 卡」并排画出来了，
-                // 两个大类都叫「开启」会变成 1/2、2/2 两页，看着像重复。
             }
 
             if (_category < 0) _category = 0;
@@ -1022,9 +882,6 @@ namespace ItemCatalog.UI
                 }
                 catch (Exception e) { Warn("set title: " + e.Message); }
 
-                // 物品名仍居中；来源/用途靠左贴在标题栏内侧
-                ApplyDirectionLabel();
-
                 // 大类翻页：按钮贴两端，名称居中；到头就禁用，不做循环
                 builder.BeginRow(6f);
                 builder.AddButton("<", delegate { TurnCategory(-1); }, "cat_prev");
@@ -1047,7 +904,7 @@ namespace ItemCatalog.UI
 
                 if (category == null)
                 {
-                    builder.AddWarning(_asUse ? ModEntry.T("use_none") : ModEntry.T("src_none"), "cat_empty");
+                    builder.AddWarning(Loc("cat_none", "暂未收录"), "cat_empty");
                     builder.End();
                     CustomUIBuilder.RebuildLayout(_bodyHost);
                     ApplyContentHeight();
@@ -1063,9 +920,7 @@ namespace ItemCatalog.UI
                 SourceWater = null;
                 if (category.Sources != null) RenderSourcePage(builder);
                 else if (category.Uses != null) RenderUsePage(builder, category.Uses);
-                else if (category.Kind == CatLock) RenderLockPage(builder);
                 else if (category.Kind == CatMachine) RenderMachinePage(builder, category.Recipes);
-                else if (category.Loot != null && category.LootAsUse) RenderLootUsePage(builder, category.Loot);
                 else if (category.Loot != null) RenderLootPage(builder, category.Loot, category.Site);
                 else RenderRecipePage(builder, category.Recipes);
 
@@ -1083,8 +938,6 @@ namespace ItemCatalog.UI
                 Warn("render: " + e.Message);
             }
         }
-
-        private static TMPro.TMP_Text _dirLabel;
 
         /// <summary>
         /// 把标题栏的物品名居中。游戏的 <c>SetTitle</c> 建出来的文字对象默认左对齐，
@@ -1114,90 +967,6 @@ namespace ItemCatalog.UI
             catch { }
         }
 
-        /// <summary>
-        /// 在标题栏左侧写「来源 / 用途」。
-        ///
-        /// 窗口标题由 `CustomUIWindow.SetTitle` 居中绘制，没有「左侧留白」这种接口，
-        /// 所以这里复制标题那个文字对象（字体、颜色、描边全都跟着），改成靠左摆放。
-        /// 找不到标题节点就什么都不做——宁可没有这个标签，也不去猜坐标。
-        /// </summary>
-        private static void ApplyDirectionLabel()
-        {
-            if (_window == null || _entry == null) return;
-
-            string dir = ModEntry.T(_asUse ? "dir_use" : "dir_source");
-            if (string.IsNullOrEmpty(dir)) return;
-
-            try
-            {
-                if (_dirLabel != null)
-                {
-                    _dirLabel.text = dir;
-                    return;
-                }
-
-                var root = _window.Rect;
-                if (root == null) return;
-
-                TMPro.TMP_Text title = null;
-                var texts = root.GetComponentsInChildren<TMPro.TMP_Text>(true);
-                for (int i = 0; i < texts.Length; i++)
-                {
-                    if (texts[i] != null && texts[i].text == _entry.DisplayName)
-                    {
-                        title = texts[i];
-                        break;
-                    }
-                }
-
-                if (title == null || title.transform.parent == null) return;
-
-                // 物品名居中：默认是左对齐，和左边的「来源/用途」挤在一起看着像两段标题
-                try { title.alignment = TMPro.TextAlignmentOptions.Center; } catch { }
-
-                // 就放在标题栏里，但让它的布局组忽略这份克隆：
-                // 否则会被当成第三个子物体排在关闭按钮后面（跑到右边去）；
-                // 挂到窗口根上又会被竖排布局组排到最底下。
-                var bar = title.transform.parent as RectTransform;
-                if (bar == null) return;
-
-                var clone = UnityEngine.Object.Instantiate(title.gameObject, bar);
-                clone.name = "directionLabel";
-
-                try
-                {
-                    var ignore = clone.GetComponent<UnityEngine.UI.LayoutElement>();
-                    if (ignore == null) ignore = clone.AddComponent<UnityEngine.UI.LayoutElement>();
-                    ignore.ignoreLayout = true;
-                }
-                catch { }
-
-                var rect = clone.transform as RectTransform;
-                if (rect != null)
-                {
-                    float side = bar.rect.height > 4f ? bar.rect.height : 30f;
-
-                    rect.anchorMin = new Vector2(0f, 0.5f);
-                    rect.anchorMax = new Vector2(0f, 0.5f);
-                    rect.pivot = new Vector2(0f, 0.5f);
-                    rect.anchoredPosition = new Vector2(10f, 0f);
-                    rect.sizeDelta = new Vector2(140f, side);
-                }
-
-                // 画在最上层，否则会被窗口背景/内容盖住
-                try { clone.transform.SetAsLastSibling(); } catch { }
-
-                _dirLabel = clone.GetComponent<TMPro.TMP_Text>();
-                if (_dirLabel != null)
-                {
-                    _dirLabel.text = dir;
-                    _dirLabel.raycastTarget = false;
-                    try { _dirLabel.alignment = TMPro.TextAlignmentOptions.Left; } catch { }
-                }
-            }
-            catch (Exception e) { Warn("direction label: " + e.Message); }
-        }
-
         private static string CategoryTitle(Category category)
         {
             if (category == null) return "?";
@@ -1209,16 +978,12 @@ namespace ItemCatalog.UI
             switch (category.Kind)
             {
                 // 客人合并在一个类里，标题写「客人」，是谁看页内那行；
-                // 地点拆开成多个类，标题直接写地点名
+                // 地点拆开成多个类，标题直接写地点名（配给站 / 杰克逊博士）
                 case CatClient: return ModEntry.T("src_clients");
-                case CatWanted: return ModEntry.T("src_clients");
                 case CatLocation: return SourceTitle(category);
-                case CatCraftOut: return ModEntry.T("rec_cat_craft_out");
-                case CatCraftIn: return ModEntry.T("rec_cat_craft_in");
+                case CatCraft: return Loc("cat_craft", "合成");
                 case CatUse: return Loc("cat_use", "使用");
                 case CatLoot: return ModEntry.T("src_loot");
-                case CatLootUse: return ModEntry.T("loot_use");
-                case CatLock: return ModEntry.T("loot_use");
                 case CatMachine: return Loc("cat_machine", "机器");
                 default: return "?";
             }
@@ -1475,20 +1240,6 @@ namespace ItemCatalog.UI
             _sourcePages.Clear();
             if (category == null || category.Sources == null) return;
 
-            // 求购页一页一个客人，正文是他的收购清单，不画货单
-            if (category.IsWanted)
-            {
-                for (int i = 0; i < category.Sources.Count; i++)
-                {
-                    _sourcePages.Add(new SourcePage
-                    {
-                        Source = category.Sources[i],
-                        Cells = new List<GoodsCell>()
-                    });
-                }
-                return;
-            }
-
             for (int i = 0; i < category.Sources.Count; i++)
             {
                 var source = category.Sources[i];
@@ -1554,12 +1305,11 @@ namespace ItemCatalog.UI
             }
 
             // 小标题：客人名，居中。
-            // 客人 / 求购是「多个来源合并成一个类」，必须靠这行区分是谁；
+            // 客人是「多个来源合并成一个类」，必须靠这行区分是谁；
             // 地点那种一个类一个来源，名字已经在分类标题上了，正文再写一遍是重复。
             bool showClientName = _categories != null
                                   && _category >= 0 && _category < _categories.Count
-                                  && (_categories[_category].Kind == CatClient
-                                      || _categories[_category].Kind == CatWanted);
+                                  && _categories[_category].Kind == CatClient;
 
             if (showClientName)
             {
@@ -1640,79 +1390,8 @@ namespace ItemCatalog.UI
                     gridLayout.minHeight = CellHeight;
                 }
             }
-
-            // 「他在收什么」只出现在求购页：普通来源页只讲他卖/给的货。
-            var cat = _category >= 0 && _category < _categories.Count ? _categories[_category] : null;
-            if (cat != null && cat.IsWanted) RenderBuys(builder, source, false);
         }
 
-        /// <summary>
-        /// 「求购」区块。数据来自 `clients.csv` 第 10/11 列，
-        /// 是从各客人 `willAcceptItem` 谓词的 IL 里抄出来的
-        /// （`IsTag("WATER")` / `IsID("bottled_water_premium")`）：
-        ///   · 种类：只显示标签名（WATER、FOOD…），不展开成具体物品；
-        ///   · 特殊物品：和货单格子一样，有图标、能点击、能悬停。
-        /// </summary>
-        private static void RenderBuys(CustomUIBuilder builder, SourceInfo source, bool withHeader = true)
-        {
-            if (source == null) return;
-
-            var tags = source.BuysTags;
-            var items = source.BuysItems;
-
-            bool hasTags = tags != null && tags.Length > 0;
-            bool hasItems = items != null && items.Length > 0;
-
-            if (!hasTags && !hasItems) return;
-
-            // 求购页本身就叫「求购」，正文里不再重复一个同名标题
-            if (withHeader) builder.AddHeader(ModEntry.T("src_clients"), "src_buys");
-
-            if (hasTags)
-            {
-                // 不再单独写一行「食物 / 医疗品 / …」的纯文字：格子本身已经说明了种类，
-                // 多这一行只是重复。
-
-                // 标签格要排除已经单独列出的具体物品，否则同一个瓶子会画两遍：
-                // 囤水者既收任意 WATER、又专收 bottled_water_premium，
-                // 不排除的话「求购」下面会出现两格一模一样的水。
-                HashSet<string> exclude = null;
-                if (hasItems)
-                {
-                    exclude = new HashSet<string>(StringComparer.Ordinal);
-                    for (int k = 0; k < items.Length; k++)
-                        if (!string.IsNullOrEmpty(items[k])) exclude.Add(items[k]);
-                }
-
-                // 每个收购标签给一格「这一类」的物品：当前物品属于该类就固定显示它，
-                // 否则轮播该类全部物品。
-                //
-                // 标签格和「具体物品」共用同一张网格：以前两者各建一个 grid，
-                // 结果被排成上下两行。现在物品跟着标签一起交给 RenderTagStrip，
-                // 由它在同一行里接着画。
-                builder.BeginColumn(2f);
-                var buyStripHost = builder.CurrentContainer;
-                builder.End();
-
-                var buyStrip = new TagStrip
-                {
-                    Host = buyStripHost,
-                    Tags = tags,
-                    Items = items,
-                    Base = 800 + _tagStripSeq * 8,
-                    CurrentId = _entry == null ? null : _entry.Id,
-                    Exclude = exclude
-                };
-                _tagStripSeq++;
-                _tagStrips.Add(buyStrip);
-                RenderTagStrip(buyStrip);
-                return;
-            }
-
-            if (!hasItems) return;
-
-            RenderItemGrid(builder, items, 500);
-        }
 
         /// <summary>
         /// 一排图鉴格子。用 `BeginGrid` 而不是 `BeginRow`：
@@ -1977,16 +1656,159 @@ namespace ItemCatalog.UI
         private static void AddUseCategory(List<UseInfo> seed)
         {
             var merged = new List<UseInfo>();
-            for (int i = 0; i < seed.Count; i++)
-                if (seed[i] != null && !merged.Contains(seed[i])) merged.Add(seed[i]);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
 
-            // 补上另一个方向（本次打开可能只查了一边）
-            var other = UseIndex.Using(_entry.Id, _entry.Item);
-            for (int i = 0; i < other.Count; i++)
-                if (other[i] != null && !merged.Contains(other[i])) merged.Add(other[i]);
+            // 箱子/卡的「开启」关系（合成 open 记录，并进「使用」大类）：
+            // 他自己是箱子 → 箱(+卡) 开出内容物；他自己是卡 → (卡+箱) 开出各箱；
+            // 他是箱内容物 → (箱+卡) 怎么得到它。open 在这套记录里天然双向。
+            var opens = SynthesizeOpenRelations();
+            for (int i = 0; i < opens.Count; i++)
+            {
+                var u = opens[i];
+                if (u == null || !seen.Add(UseSignature(u))) continue;
+                merged.Add(u);
+            }
+
+            // csv 使用记录：两个方向都并入，签名去重（避免与合成记录重复）
+            AppendUseSeed(merged, seen, seed);
+            AppendUseSeed(merged, seen, UseIndex.Using(_entry.Id, _entry.Item));
 
             if (merged.Count > 0)
                 _categories.Add(new Category { Kind = CatUse, Uses = merged });
+        }
+
+        /// <summary>使用记录的签名（方式 + 来源 + 产物）：同一条关系只留一份。</summary>
+        private static string UseSignature(UseInfo u)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append(u.Kind ?? "");
+            sb.Append('|');
+            var s = u.Sources ?? new string[0];
+            for (int i = 0; i < s.Length; i++) { sb.Append(s[i]); sb.Append(','); }
+            sb.Append('>');
+            var p = u.Produces ?? new string[0];
+            for (int i = 0; i < p.Length; i++) { sb.Append(p[i]); sb.Append(','); }
+            return sb.ToString();
+        }
+
+        private static void AppendUseSeed(List<UseInfo> merged, HashSet<string> seen, List<UseInfo> seed)
+        {
+            if (seed == null) return;
+
+            for (int i = 0; i < seed.Count; i++)
+            {
+                var u = seed[i];
+                if (u == null || !seen.Add(UseSignature(u))) continue;
+                merged.Add(u);
+            }
+        }
+
+        /// <summary>
+        /// 合成箱子/卡的「开启」使用记录（并进「使用」大类，不再单独开「开启」类）：
+        ///   他自己是箱子：Sources=[箱, 需要的卡]，Produces=[内容物并集]；
+        ///   他自己是卡：能开的每个箱一条，Sources=[卡, 箱]，Produces=[内容物]；
+        ///   他是箱内容物：装着它的每个箱一条（BoxesForItem）——来源方向可查。
+        /// 「箱子 + 需要的卡 → 可能开出 → 内容物」的渲染就是使用页的样子
+        /// （来源格子在上、产物分界线、产物格子在下），两个方向同一页。
+        /// </summary>
+        private static List<UseInfo> SynthesizeOpenRelations()
+        {
+            var result = new List<UseInfo>();
+            if (_entry == null) return result;
+
+            string self = _entry.Id;
+
+            // 他自己是箱子：每个内容物表一条（来源 = 箱 + 需要的卡）
+            var asBox = LootSource.AsBox(self);
+            for (int i = 0; i < asBox.Count; i++)
+            {
+                var t = asBox[i];
+                if (t == null || t.Items == null || t.Items.Count == 0) continue;
+
+                var src = new List<string>(2) { self };
+                string keyId = LootKeyFor(self, _entry);
+                if (!string.IsNullOrEmpty(keyId)) src.Add(keyId);
+
+                result.Add(new UseInfo { Sources = src.ToArray(), Kind = "open", Produces = LootIds(t) });
+            }
+
+            // 他自己是卡：能开哪些箱（每个箱一条，来源 = 卡 + 箱）
+            var asKey = LootSource.ForKey(_entry.Item);
+            if (asKey.Count == 0) asKey = LootSource.BoxesForKeyId(self);
+            for (int i = 0; i < asKey.Count; i++)
+            {
+                var t = asKey[i];
+                if (t == null || t.Items == null || t.Items.Count == 0) continue;
+
+                string boxId = LootSource.BoxForPool(t.TableId) ?? t.TableId;
+                result.Add(new UseInfo { Sources = new[] { self, boxId }, Kind = "open", Produces = LootIds(t) });
+            }
+
+            // 箱内容物反查：装着它的箱子（open 记录的来源方向）
+            var boxes = LootSource.BoxesForItem(self);
+            for (int b = 0; b < boxes.Count; b++)
+            {
+                string boxId = boxes[b];
+                var boxEntry = RecipeIndex.FindEntry(boxId);
+                var boxTables = LootSource.AsBox(boxId);
+                if (boxTables == null || boxTables.Count == 0) continue;
+
+                var products = new List<string>();
+                for (int i = 0; i < boxTables.Count; i++)
+                {
+                    var ids = LootIds(boxTables[i]);
+                    for (int k = 0; k < ids.Length; k++)
+                        if (!products.Contains(ids[k])) products.Add(ids[k]);
+                }
+
+                var src = new List<string>(2) { boxId };
+                string keyId = LootKeyFor(boxId, boxEntry);
+                if (!string.IsNullOrEmpty(keyId)) src.Add(keyId);
+
+                result.Add(new UseInfo { Sources = src.ToArray(), Kind = "open", Produces = products.ToArray() });
+            }
+
+            return result;
+        }
+
+        /// <summary>一张掉落表的全部物品 id（去重，按池内记录的原样）。</summary>
+        private static string[] LootIds(LootTableInfo t)
+        {
+            if (t == null || t.Items == null) return new string[0];
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var ids = new List<string>();
+            for (int i = 0; i < t.Items.Count; i++)
+            {
+                var it = t.Items[i];
+                if (it == null || string.IsNullOrEmpty(it.Id)) continue;
+                if (!seen.Add(it.Id)) continue;
+                ids.Add(it.Id);
+            }
+            return ids.ToArray();
+        }
+
+        /// <summary>
+        /// 合成互查（双向）：产出它的配方（来源方向）+ 把它当材料用掉的配方（去处方向）
+        /// 合并成同一个「合成」大类——配方页材料与产物自明方向（当前物品在哪列高亮），
+        /// 来源窗口与用途窗口看到同一页。
+        /// </summary>
+        private static void AddCraftCategory()
+        {
+            var merged = new List<RecipeInfo>();
+
+            var produced = RecipeIndex.Producing(_entry.Id);
+            for (int i = 0; i < produced.Count; i++)
+                if (produced[i] != null && !merged.Contains(produced[i])) merged.Add(produced[i]);
+
+            // 传 Item 是为了让 `tag:XXX` 那类「整类目标」也能命中
+            // （拆解只对带 ADV_GUN_TAG 的枪、屠宰只对带 BLADE_ITEM_TAG 的刀）。
+            var consumed = RecipeIndex.Consuming(_entry.Id, _entry.Item);
+            for (int i = 0; i < consumed.Count; i++)
+                if (consumed[i] != null && !merged.Contains(consumed[i])) merged.Add(consumed[i]);
+
+            if (merged.Count > 0)
+                _categories.Add(new Category { Kind = CatCraft, Recipes = merged });
         }
 
         /// <summary>
@@ -2114,56 +1936,6 @@ namespace ItemCatalog.UI
             if (boxEntry == null || boxEntry.Item == null) return null;
 
             return LockKeys.KeyForBox(boxEntry.Item);
-        }
-
-        /// <summary>
-        /// 去处侧：这箱子 / 这张卡能开出什么。
-        /// 与来源侧调**同一个渲染器** <see cref="RenderLootBody"/>（site 传 null，
-        /// 由它从池反查箱子 / 直接用表 id），两个方向页面完全一致。
-        /// </summary>
-        private static void RenderLootUsePage(CustomUIBuilder builder, List<LootTableInfo> loot)
-        {
-            RenderLootBody(builder, loot, null);
-        }
-
-        /// <summary>
-        /// 去处侧的「锁信息」页：箱子显示自己的锁 id 和需要的卡，卡显示自己能开的锁。
-        /// 掉落表是场景掉落池（`junkTable` / `medicalTable`…），不是箱子物品本身，
-        /// 所以箱子开出的内容给不出来 —— 这一页只给「锁」这一层确定的信息。
-        /// </summary>
-        private static void RenderLockPage(CustomUIBuilder builder)
-        {
-            var item = _entry == null ? null : _entry.Item;
-
-            builder.AddHeader(Loc("loot_use", "开启"), "lock_title");
-
-            string boxLockId = LockKeys.LockIdOf(item);
-            string keyLockId = LockKeys.TagLockId(item);
-
-            if (!string.IsNullOrEmpty(boxLockId))
-            {
-                builder.AddLabel(Loc("lock_id", "锁编号") + "：" + boxLockId, "lock_id");
-
-                string keyId = LockKeys.KeyForBox(item);
-
-                if (!string.IsNullOrEmpty(keyId))
-                {
-                    builder.AddLabel(Loc("loot_needs", "需要卡"), "loot_needs");
-
-                    builder.BeginRow(6f);
-                    RenderUseItem(builder, keyId, "lockkey");
-                    builder.AddFlexibleSpace();
-                    builder.End();
-                }
-            }
-
-            if (!string.IsNullOrEmpty(keyLockId))
-            {
-                builder.AddLabel(Loc("lock_opens", "可开的锁") + "：" + keyLockId, "lock_opens");
-
-                if (LockKeys.IsMasterKey(keyLockId))
-                    builder.AddLabel(Loc("lock_master", "命令卡可开所有锁"), "lock_master");
-            }
         }
 
         /// <summary>
