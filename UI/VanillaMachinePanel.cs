@@ -122,31 +122,37 @@ namespace ItemCatalog.UI
         /// </summary>
         internal float MeasureContentHeight()
         {
-            if (_attachedRect == null) return 0f;
+            float minY, maxY;
+            if (!MeasureContentBounds(out minY, out maxY)) return 0f;
+            float scaleY = Mathf.Abs(_attachedRect.lossyScale.y) > 0.001f
+                ? _attachedRect.lossyScale.y : 1f;
+            float measured = (maxY - minY) / scaleY;
+            return (measured < 10f || measured > 4000f) ? 0f : measured;
+        }
+
+        /// <summary>内容包围盒的世界 Y 范围（用来把内容对齐到容器中心）。</summary>
+        internal bool MeasureContentBounds(out float minY, out float maxY)
+        {
+            minY = float.MaxValue;
+            maxY = float.MinValue;
+            if (_attachedRect == null) return false;
             try
             {
-                float scaleY = Mathf.Abs(_attachedRect.lossyScale.y) > 0.001f
-                    ? _attachedRect.lossyScale.y : 1f;
-
-                float minY = float.MaxValue, maxY = float.MinValue;
                 var all = _attachedRect.GetComponentsInChildren<RectTransform>(true);
                 for (int i = 0; i < all.Length; i++)
                 {
                     var rt = all[i];
                     if (rt == null || rt == _attachedRect) continue;
+                    if (!rt.gameObject.activeInHierarchy) continue;
 
                     var c = new Vector3[4];
                     rt.GetWorldCorners(c);
                     if (c[0].y < minY) minY = c[0].y;
                     if (c[1].y > maxY) maxY = c[1].y;
                 }
-
-                if (minY > maxY) return 0f;
-                float measured = (maxY - minY) / scaleY;
-                if (measured < 10f || measured > 4000f) return 0f;
-                return measured;
+                return maxY > minY;
             }
-            catch { return 0f; }
+            catch { return false; }
         }
 
         /// <summary>把原版窗口内容挂到指定容器（窗口框/标题栏不要，只嵌面板行）。</summary>
@@ -225,6 +231,28 @@ namespace ItemCatalog.UI
                 float measuredH = MeasureContentHeight();
                 bool useMeasured = measuredH > 10f && measuredH < boxH;
                 float nativeH = useMeasured ? measuredH : boxH;
+
+                // 内容在 rect 里不一定居中（面板行有 padding），直接顶边/居中对齐都会
+                // 出现「靠上被裁」或「底部留空」。这里量内容包围盒，把面板整体平移，
+                // 让内容中心与容器中心重合，再据此给容器高度。
+                if (useMeasured)
+                {
+                    float minY, maxY;
+                    if (MeasureContentBounds(out minY, out maxY) && maxY > minY)
+                    {
+                        var c = new Vector3[4];
+                        _attachedRect.GetWorldCorners(c);
+                        float rectCenterY = (c[0].y + c[1].y) * 0.5f;
+                        float contentCenterY = (minY + maxY) * 0.5f;
+                        float dy = rectCenterY - contentCenterY;
+                        if (Mathf.Abs(dy) > 0.5f)
+                        {
+                            var pos = _attachedRect.position;
+                            _attachedRect.position = new Vector3(pos.x, pos.y + dy, pos.z);
+                        }
+                    }
+                }
+
                 float scaledHeight = nativeH * ratio;
 
                 if (ModEntry.Log != null)
