@@ -115,40 +115,6 @@ namespace ItemCatalog.UI
             }
         }
 
-        /// <summary>
-        /// 实测面板里**内容**的真实高度（世界包围盒），而不是用窗口的 heightPixels——
-        /// 后者包含底部留白（面板行 padding/yPadding），实际内容只占上面一部分，
-        /// 导致布局位置和视觉位置不一致（看起来「面板靠上、下面空一段」）。
-        /// </summary>
-        internal float MeasureContentHeight()
-        {
-            if (_attachedRect == null) return 0f;
-            try
-            {
-                float scaleY = Mathf.Abs(_attachedRect.lossyScale.y) > 0.001f
-                    ? _attachedRect.lossyScale.y : 1f;
-
-                float minY = float.MaxValue, maxY = float.MinValue;
-                var all = _attachedRect.GetComponentsInChildren<RectTransform>(true);
-                for (int i = 0; i < all.Length; i++)
-                {
-                    var rt = all[i];
-                    if (rt == null || rt == _attachedRect) continue;
-
-                    var c = new Vector3[4];
-                    rt.GetWorldCorners(c);
-                    if (c[0].y < minY) minY = c[0].y;
-                    if (c[1].y > maxY) maxY = c[1].y;
-                }
-
-                if (minY > maxY) return 0f;
-                float measured = (maxY - minY) / scaleY;
-                if (measured < 10f || measured > 4000f) return 0f;
-                return measured;
-            }
-            catch { return 0f; }
-        }
-
         /// <summary>把原版窗口内容挂到指定容器（窗口框/标题栏不要，只嵌面板行）。</summary>
         internal RectTransform AttachContentTo(RectTransform host)
         {
@@ -169,12 +135,11 @@ namespace ItemCatalog.UI
 
                 rect.SetParent(host, false);
                 rect.localScale = Vector3.one;
-                // 顶边对齐（不是居中）：面板 rect 比实际内容高（含底部留白），
-                // 居中的话内容会整体偏上、下面空一段（用户看到的「位置和布局不符」）。
-                // 顶边锚定后内容从 host 顶部开始，配合实测高度修正占位，底部不留空。
-                rect.anchorMin = new Vector2(0.5f, 1f);
-                rect.anchorMax = new Vector2(0.5f, 1f);
-                rect.pivot = new Vector2(0.5f, 1f);
+                // 正中心锚点：host 高度已显式设成面板缩放后的高度，面板上下正好填满；
+                // 配合 host 上的 RectMask2D，即使有毫米级误差也只会被裁、不会遮挡上下内容。
+                rect.anchorMin = new Vector2(0.5f, 0.5f);
+                rect.anchorMax = new Vector2(0.5f, 0.5f);
+                rect.pivot = new Vector2(0.5f, 0.5f);
                 rect.anchoredPosition = Vector2.zero;
                 // 明确设尺寸：handler 是空布局壳，rect.size 常为 0，
                 // 不设 sizeDelta 面板会缩成一点。用 Validate() 算好的像素尺寸。
@@ -210,33 +175,26 @@ namespace ItemCatalog.UI
             if (_attachedRect == null || host == null) return 0f;
             try
             {
-                // 真实高度优先用**实测内容包围盒**（MeasureContentHeight），
-                // 窗口 heightPixels 含底部留白，用它会让内容偏上、下面空一段。
+                // 比例走 CanvasRatio：Canvas 差异补偿 + 可用高度封顶（maxHeight>0 时），
+                // 保证面板缩放后不会高过窗口能给出的空间、把标题栏挤扁。
+                float ratio = CanvasRatio(host, maxHeight);
+
+                // 只改缩放，anchor/pivot 已在 AttachContentTo 设成正中心，这里不碰
+                _attachedRect.localScale = new Vector3(ratio, ratio, 1f);
+
+                // 用 Validate() 算好的 widthPixels/heightPixels 作为面板真实尺寸——
+                // _attachedRect（childElement.handler）是空布局壳，rect.size 常为 0，
+                // 之前用它算高度 → host≈0 → 窗口特别矮。
                 float nativeW = _window != null && _window.widthPixels > 1f
                     ? _window.widthPixels : _attachedRect.rect.width;
-                float boxH = _window != null && _window.heightPixels > 1f
+                float nativeH = _window != null && _window.heightPixels > 1f
                     ? _window.heightPixels : _attachedRect.rect.height;
-                float measuredH = MeasureContentHeight();
-                bool useMeasured = measuredH > 10f && measuredH < boxH;
-                float nativeH = useMeasured ? measuredH : boxH;
-
-                // Canvas 差异补偿；有 maxHeight 时按可用高度封顶
-                float ratio = CanvasRatio(host, 0f);
-                if (maxHeight > 0f && nativeH > 1f)
-                {
-                    float limit = maxHeight / nativeH;
-                    if (limit > 0.2f && limit < ratio) ratio = limit;
-                }
-
-                _attachedRect.localScale = new Vector3(ratio, ratio, 1f);
                 float scaledHeight = nativeH * ratio;
 
                 if (ModEntry.Log != null)
                     ModEntry.Log.Log("[vanilla-machine] ratio=" + ratio
                                      + " maxH=" + maxHeight
-                                     + " box=" + nativeW + "x" + boxH
-                                     + " content=" + measuredH
-                                     + " used=" + nativeH
+                                     + " native=" + nativeW + "x" + nativeH
                                      + " scaledH=" + scaledHeight);
                 return scaledHeight;
             }

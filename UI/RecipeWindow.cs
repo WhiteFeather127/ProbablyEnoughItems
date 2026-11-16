@@ -23,12 +23,8 @@ namespace ItemCatalog.UI
         private const string WinId = "recipe:win";
         private const float WinWidth = 600f;
         private const float WinMinHeight = 240f;
-        // 上限放到屏幕高：标题栏已用 ignoreLayout 锁死，不会再被内容挤压，
-        // 流式排列下窗口该多大就多大，超出的部分靠屏幕约束兜住。
-        private const float WinMaxHeight = 1200f;
-        // 标题栏 + 内容区上下留白的真实高度（实测约 118，之前写 64 少给了 54px，
-        // 导致窗口高度不够、布局组只能压缩标题栏 → 所有页面标题/关闭按钮被压扁）。
-        private const float WindowChrome = 120f;
+        private const float WinMaxHeight = 900f;
+        private const float WindowChrome = 64f;   // 标题栏 + 内容区上下留白
         private const float IconSide = 40f;
 
         private const float CellWidth = 56f;
@@ -227,13 +223,6 @@ namespace ItemCatalog.UI
         private static VanillaMachinePanel _vanillaMachine;
         private static int _vanillaVariant;   // 当前档内轮播到第几条配方
 
-        // ── 机器页动态布局（不做常量估算，全部用实测尺寸）──
-        private static RectTransform _machineTopRow;    // 顶部行（配方名 + 机器图标）
-        private static RectTransform _machinePagerRow;  // 底部翻页条
-        private static float _measuredChrome;           // 实测标题栏高度（窗口高 − 内容区高）
-        private static float _machinePanelMaxH;         // 动态算出的面板可用高度
-        private static int _machineLayoutPass;          // 已收敛轮次，防止反复重画
-
         private static int _tagStripSeq;
 
         /// <summary>查不到出处的掉落池：别的来源都没有时才兜底列成「掉落池」大类。</summary>
@@ -378,8 +367,6 @@ namespace ItemCatalog.UI
             _machineStrips.Clear();
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaVariant = 0;
-            _machinePanelMaxH = 0f;   // 换物品后重新实测
-            _machineLayoutPass = 0;
             _tagStripSeq = 0;
             SourceSeed = null;
             SourceWater = null;
@@ -963,65 +950,11 @@ namespace ItemCatalog.UI
 
             if (_window != null)
             {
-                // 标题栏固定高度、内容流式：先锁标题栏再排版，之后内容区再高也压不到它
-                LockWindowChrome(_window);
                 try { CustomUIBuilder.RebuildLayout(_window.ContentRoot); }
                 catch { }
             }
 
             Render();
-        }
-
-        /// <summary>
-        /// 锁定窗口标题栏：窗口 root 挂着 VerticalLayoutGroup，空间不足时它会压缩**所有**
-        /// 子级（连标题栏一起压扁，关闭按钮变形）。这里把 contentRoot 之外的直接子级
-        /// （标题栏）脱离布局组、锚定在窗口顶边并保持自身高度，同时给布局组加等高的
-        /// top padding——内容区从标题栏下方开始流式排列，永远不会挤压标题栏。
-        /// </summary>
-        private static void LockWindowChrome(CustomUIWindow window)
-        {
-            if (window == null) return;
-            var root = window.Rect;
-            var content = window.ContentRoot;
-            if (root == null || content == null || root == content) return;
-
-            try
-            {
-                var group = root.GetComponent<UnityEngine.UI.VerticalLayoutGroup>();
-                if (group == null) return;
-
-                for (int i = 0; i < root.childCount; i++)
-                {
-                    var child = root.GetChild(i) as RectTransform;
-                    if (child == null || child == content) continue;
-
-                    float h = child.rect.height;
-                    if (h < 1f) h = UnityEngine.UI.LayoutUtility.GetPreferredHeight(child);
-                    if (h < 1f) continue;
-
-                    // 只脱离布局组，**保留 prefab 原本的 anchor/pivot/位置/尺寸**。
-                    // 之前强行设 anchor 贴窗口顶边 + anchoredPosition=0，没算窗口边框内缩，
-                    // 标题栏才跑偏。
-                    var le = EnsureLayoutElement(child);
-                    le.ignoreLayout = true;
-
-                    // 内容区让开：量「窗口顶边 → 标题栏底边」的实际距离（含边框内缩），
-                    // 而不是直接用标题栏自身高度。
-                    float scaleY = Mathf.Abs(root.lossyScale.y) > 0.001f ? root.lossyScale.y : 1f;
-                    var rc = new Vector3[4];
-                    var cc = new Vector3[4];
-                    root.GetWorldCorners(rc);
-                    child.GetWorldCorners(cc);
-                    float inset = (rc[1].y - cc[0].y) / scaleY;   // 左上角 → 左下角
-                    if (inset < 1f || inset > 400f) inset = h;
-
-                    group.padding.top = Mathf.RoundToInt(inset);
-                    if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[chrome-lock] titleH=" + h + " inset=" + inset);
-                    break;   // 只处理标题栏
-                }
-            }
-            catch (Exception e) { Warn("lock chrome: " + e.Message); }
         }
 
         /// <summary>窗口被游戏关掉（Esc / 点 X）时，别留下悬空提示框和拖拽登记。</summary>
@@ -1334,7 +1267,6 @@ namespace ItemCatalog.UI
         {
             builder.BeginRow(6f);
             var pagerRow = builder.CurrentContainer;
-            _machinePagerRow = pagerRow;   // 机器页动态布局要用它的实测高度
             builder.AddFlexibleSpace();
             builder.AddButton("<", delegate { TurnPage(-1); Render(); }, "src_pp");
             if (builder.Last != null) builder.Last.SetInteractable(_page > 0);
@@ -1375,16 +1307,14 @@ namespace ItemCatalog.UI
                 float preferred = UnityEngine.UI.LayoutUtility.GetPreferredHeight(_bodyHost);
                 if (preferred < 1f) preferred = EstimateHeight();
 
-                // 窗口高度 = 内容首选 + 标题栏。标题栏优先用**实测值**（上一轮量到的
-                // 窗口高−内容区高），首轮还没有实测才退回常量兜底。
-                float chromeNow = _measuredChrome > 10f ? _measuredChrome : WindowChrome;
-                float height = Mathf.Clamp(preferred + chromeNow, WinMinHeight, MaxContentHeight());
-
-                // 只有机器页需要特殊处理：原版面板是 ignoreLayout 的绝对定位节点，
-                // 它的高度要显式声明给 ContentRoot，否则内容区撑不开、面板被裁。
-                // 其它页面保持通用逻辑（bodyHost 按内容自适应），不能改动它们的布局。
                 var pageCategory = _categories.Count == 0 ? null : _categories[_category];
                 bool machinePage = pageCategory != null && pageCategory.Kind == CatMachine;
+
+                float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
+
+                // 机器页：窗口高度直接给满。WindowChrome(64) 比实际标题栏(~118)少 54px，
+                // 按内容算窗口会永久缺这 54px、内容被压扁。只对机器页覆盖，其它页面不动。
+                if (machinePage) height = MaxContentHeight();
                 if (machinePage && _window.ContentRoot != null)
                 {
                     var crLayout = EnsureLayoutElement(_window.ContentRoot);
@@ -1442,64 +1372,6 @@ namespace ItemCatalog.UI
                         return;
                     }
                 }
-
-                // ── 机器页动态布局：全部读实测尺寸，不做常量估算 ──
-                // 实测标题栏 = 窗口高 − 内容区高；面板可用高度 = 窗口上限 − 标题栏
-                // − 顶部行实测高 − 翻页条实测高 − 间距。算出来和当前值差得多就重画一轮，
-                // 最多 3 轮（通常第二轮就收敛），避免反复重排。
-                var pageCat = _categories.Count == 0 ? null : _categories[_category];
-                if (pageCat != null && pageCat.Kind == CatMachine
-                    && _machineTopRow != null && _machinePagerRow != null
-                    && _window.Rect != null && _window.ContentRoot != null
-                    && _machineLayoutPass < 3)
-                {
-                    float winH = _window.Rect.rect.height;
-                    float crH = _window.ContentRoot.rect.height;
-                    float chrome = winH - crH;
-                    float topH = _machineTopRow.rect.height;
-                    float pagerH = _machinePagerRow.rect.height;
-
-                    if (chrome > 4f && topH > 1f && pagerH > 1f)
-                    {
-                        _measuredChrome = chrome;
-
-                        // 一件一件固定：顶部行 / 翻页条都锁死成实测高度 + 不可弹性压缩，
-                        // 布局组空间紧张时只能从面板身上让，不会把这俩压扁。
-                        var topLe = EnsureLayoutElement(_machineTopRow);
-                        topLe.minHeight = topH;
-                        topLe.preferredHeight = topH;
-                        topLe.flexibleHeight = 0f;
-
-                        var pagerLe = EnsureLayoutElement(_machinePagerRow);
-                        pagerLe.minHeight = pagerH;
-                        pagerLe.preferredHeight = pagerH;
-                        pagerLe.flexibleHeight = 0f;
-
-                        // 面板可用高度 = 屏幕可用高 − 标题栏 − 顶部行 − 翻页条 − 间距，
-                        // 即「最后一件（翻页条）底边为止」的剩余空间全给面板。
-                        float avail = MaxContentHeight() - chrome - topH - pagerH - 16f;
-                        avail = Mathf.Max(160f, avail);
-
-                        // 差异超过 6px 才重画，避免抖动
-                        if (Mathf.Abs(avail - _machinePanelMaxH) > 6f)
-                        {
-                            _machinePanelMaxH = avail;
-                            _machineLayoutPass++;
-                            if (ModEntry.Log != null)
-                                ModEntry.Log.Log("[mach-fit] win=" + winH + " cr=" + crH
-                                                 + " chrome=" + chrome + " top=" + topH
-                                                 + " pager=" + pagerH + " avail=" + avail
-                                                 + " pass=" + _machineLayoutPass);
-                            Render();
-                            return;
-                        }
-
-                        if (ModEntry.Log != null && _machineLayoutPass == 0)
-                            ModEntry.Log.Log("[mach-fit] settled chrome=" + chrome
-                                             + " top=" + topH + " pager=" + pagerH
-                                             + " avail=" + avail);
-                    }
-                }
             }
             catch (Exception e)
             {
@@ -1510,8 +1382,7 @@ namespace ItemCatalog.UI
         /// <summary>窗口最长到 WinMaxHeight，但别长出屏幕（留 80px 给标题栏与任务栏）。</summary>
         private static float MaxContentHeight()
         {
-            // 流式排列：窗口按各件固定高度累加，只受屏幕边界约束（留 40px 给任务栏/边缘）。
-            float cap = Screen.height > 0 ? Mathf.Min(WinMaxHeight, Screen.height - 40f) : WinMaxHeight;
+            float cap = Screen.height > 0 ? Mathf.Min(WinMaxHeight, Screen.height - 80f) : WinMaxHeight;
             return Mathf.Max(cap, WinMinHeight);
         }
 
@@ -2878,7 +2749,6 @@ namespace ItemCatalog.UI
 
             // 顶部一行：配方名称在前、机器图标在后（放大），同行显示。
             builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
-            _machineTopRow = builder.CurrentContainer;
             builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
             builder.AddFlexibleSpace();
             if (_entry != null) RenderGoods(builder, _entry.Id, true, 3180, false, null, 52f);
@@ -2906,12 +2776,11 @@ namespace ItemCatalog.UI
             // 面板可用高度 = 窗口上限(900) - 实际标题栏(约 32) - 顶部行(约 56)
             // - 翻页条(34) - 间距(约 20)。窗口上限不能动（一放宽所有页面的标题栏都会被挤），
             // 所以面板按剩余空间等比缩小，比例可能略小于 2（约 1.85），但能完整显示。
-            // 面板可用高度：优先用上一轮**实测**出的值（ApplyContentHeight 里用
-            // 窗口高−内容区高 得到真实标题栏，再减去顶部行/翻页条的实测高度）。
-            // 首轮还没有实测值，用一个保守初值，随后一轮即可收敛。
-            float panelMaxH = _machinePanelMaxH > 100f
-                ? _machinePanelMaxH
-                : Mathf.Max(200f, MaxContentHeight() * 0.6f);
+            // 只影响机器页：面板可用高度按窗口实际能给出的空间算。
+            // 标题栏约 118、顶部行约 56、翻页条约 34，其余给面板。
+            // 全局窗口机制（WindowChrome / WinMaxHeight / MaxContentHeight）一律不动。
+            const float RealTitleBar = 118f;
+            float panelMaxH = Mathf.Max(120f, MaxContentHeight() - RealTitleBar - 56f - 34f - 20f);
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
@@ -2919,7 +2788,6 @@ namespace ItemCatalog.UI
             // 保证 AddSpace 占的高度和面板最终缩放后的高度一致。
             float panelH = Mathf.Max(1f, _vanillaMachine.ScaledSize(_bodyHost, panelMaxH).y);
             builder.AddSpace(panelH);
-            var spaceEl = builder.Last;   // 占位元素，稍后按实测内容高度修正
             builder.End();
 
             // 关键：host 在 bodyHost 的 VerticalLayoutGroup 下，childControlWidth/Height=true，
@@ -2938,33 +2806,12 @@ namespace ItemCatalog.UI
             // 布局跑一次后塞物品（否则 inventory inner rect 还是 0，物品会浮到格子外）。
             var rect = _vanillaMachine.AttachContentTo(host);
             if (rect != null) CustomUIBuilder.RebuildLayout(rect);
-
-            // MatchGameCanvasScale 返回**实测内容**缩放后的高度（不是 rect 高度）。
-            // 用它修正占位空间和 host 高度：rect 含底部留白，按它给高度会导致
-            // 内容偏上、下面空一段（用户说的「实际位置和布局位置不符」）。
-            float visualH = _vanillaMachine.MatchGameCanvasScale(host, panelMaxH);
-            if (visualH > 10f)
-            {
-                if (spaceEl != null && spaceEl.Rect != null)
-                {
-                    var spaceLe = spaceEl.Rect.GetComponent<UnityEngine.UI.LayoutElement>();
-                    if (spaceLe == null) spaceLe = spaceEl.Rect.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
-                    spaceLe.minHeight = visualH;
-                    spaceLe.preferredHeight = visualH;
-                }
-                if (host != null)
-                {
-                    var hostLe = EnsureLayoutElement(host);
-                    hostLe.minHeight = visualH;
-                    hostLe.preferredHeight = visualH;
-                }
-            }
-
+            _vanillaMachine.MatchGameCanvasScale(host, panelMaxH);
             FillVanillaMachine(recipe);
 
             if (ModEntry.Log != null)
                 ModEntry.Log.Log("[vanilla-machine] furnace v" + _vanillaVariant
-                                 + " panelH=" + panelH + " visualH=" + visualH
+                                 + " panelH=" + panelH
                                  + " rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
         }
 
