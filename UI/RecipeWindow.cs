@@ -1431,17 +1431,26 @@ namespace ItemCatalog.UI
                     topLe.flexibleHeight = 0f;
                 }
 
-                if (machinePage && _window.ContentRoot != null)
+                if (_window.ContentRoot != null)
                 {
                     var crLayout = EnsureLayoutElement(_window.ContentRoot);
-                    crLayout.minHeight = -1f;
-                    crLayout.preferredHeight = Mathf.Max(1f, preferred);
-                    crLayout.flexibleHeight = 0f;
+                    if (machinePage)
+                    {
+                        crLayout.minHeight = -1f;
+                        crLayout.preferredHeight = Mathf.Max(1f, preferred);
+                        crLayout.flexibleHeight = 0f;
+                    }
+                    else
+                    {
+                        // 关键：窗口是复用的，切到普通页面时**必须把机器页留下的
+                        // 高度约束清掉**，否则 ContentRoot 仍按机器页的高度撑窗口，
+                        // 标题栏被压窄（用户看到的「开一次机器后所有物品都变窄」）。
+                        crLayout.minHeight = -1f;
+                        crLayout.preferredHeight = -1f;
+                        crLayout.flexibleHeight = -1f;
+                    }
 
-                    // 必须重排**窗口 root**，不能只重排 ContentRoot：
-                    // 分配子级高度的是 root 上的布局组，只重排 ContentRoot 内部的话
-                    // 它仍按旧 preferred 分配，ContentRoot 拿不到新高度、
-                    // 多余空间全被标题栏吸收（日志实测 cr 只有 488、标题栏吃了 578）。
+                    // 分配子级高度的是窗口 root 上的布局组，必须重排 root。
                     CustomUIBuilder.RebuildLayout(_window.Rect);
                 }
 
