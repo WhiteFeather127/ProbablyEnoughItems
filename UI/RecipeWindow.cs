@@ -982,27 +982,29 @@ namespace ItemCatalog.UI
         private static float CloseButtonHeight(CustomUIWindow window)
         {
             if (window == null) return 0f;
-            var root = window.Rect;
-            var content = window.ContentRoot;
-            if (root == null) return 0f;
 
             try
             {
-                var buttons = root.GetComponentsInChildren<UnityEngine.UI.Button>(true);
-                for (int i = 0; i < buttons.Length; i++)
-                {
-                    var b = buttons[i];
-                    if (b == null) continue;
-                    var rt = b.transform as RectTransform;
-                    if (rt == null) continue;
-                    if (content != null && rt.IsChildOf(content)) continue;   // 内容区里的不算
+                // 精确取 CustomUIWindowFrame.closeButton（private frame + public 字段），
+                // 不用 GetComponentsInChildren 乱猜——那会拿到被拉伸的容器按钮（实测 110 高）。
+                var frameField = typeof(CustomUIWindow).GetField("frame",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                var frame = frameField == null ? null : frameField.GetValue(window);
+                if (frame == null) return 0f;
 
-                    float h = rt.rect.height;
-                    if (h >= 16f && h <= 120f) return h;
-                }
+                var btnField = frame.GetType().GetField("closeButton",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                var btn = btnField == null ? null : btnField.GetValue(frame) as UnityEngine.UI.Button;
+                if (btn == null) return 0f;
+
+                var rt = btn.transform as RectTransform;
+                if (rt == null) return 0f;
+
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[close-btn] name=" + btn.name + " h=" + rt.rect.height);
+                return rt.rect.height;
             }
-            catch { }
-            return 0f;
+            catch (Exception e) { Warn("close button: " + e.Message); return 0f; }
         }
 
         /// <summary>
