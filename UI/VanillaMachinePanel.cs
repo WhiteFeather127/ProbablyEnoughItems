@@ -88,28 +88,29 @@ namespace ItemCatalog.UI
                 var rect = node != null ? node.rectTransform : _window.rectTransform;
                 if (rect == null) return null;
 
-                // 保留游戏原版的窗口尺寸（widthPixels 由 UISettings.gridSize × 格数算出），
-                // 不拉伸。锚点/pivot 设成正中心，面板在窗口内容区里居中显示。
+                // BeginColumn 给 host 挂了 VerticalLayoutGroup，会强制接管所有子节点的
+                // 尺寸和位置（childControlWidth/Height=true），我们设的 anchor/height 全被覆盖。
+                // 这个 host 里只放这一块原版面板，不需要布局组——直接移除，
+                // 之后 anchor/anchoredPosition/sizeDelta 才完全由我们自己控制。
+                var group = host.GetComponent<UnityEngine.UI.VerticalLayoutGroup>();
+                if (group != null)
+                {
+                    group.enabled = false;   // 先停用，当帧就不再参与布局
+                    UnityEngine.Object.Destroy(group);
+                }
+
                 rect.SetParent(host, false);
                 rect.localScale = Vector3.one;
+                // 正中心锚点 + 零偏移 → 面板在 host（进而窗口内容区）正中心
                 rect.anchorMin = new Vector2(0.5f, 0.5f);
                 rect.anchorMax = new Vector2(0.5f, 0.5f);
                 rect.pivot = new Vector2(0.5f, 0.5f);
                 rect.anchoredPosition = Vector2.zero;
 
-                // host 是 VerticalLayoutGroup（childControlWidth/Height=true，
-                // childAlignment 默认非居中），它会接管子节点的尺寸和位置。
-                // 给面板加 LayoutElement 声明原版尺寸：布局组按这个尺寸分配空间，
-                // 结合 BeginColumn(..., MiddleCenter) 让面板在 host 里居中。
+                // 面板自己也不参与任何布局（防御：万一父级还有别的布局组件）
                 var le = rect.GetComponent<UnityEngine.UI.LayoutElement>();
                 if (le == null) le = rect.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
-                le.ignoreLayout = false;
-                le.minWidth = rect.rect.width;
-                le.preferredWidth = rect.rect.width;
-                le.flexibleWidth = 0f;
-                le.minHeight = rect.rect.height;
-                le.preferredHeight = rect.rect.height;
-                le.flexibleHeight = 0f;
+                le.ignoreLayout = true;
 
                 _attachedRect = rect;
                 return rect;
@@ -151,20 +152,15 @@ namespace ItemCatalog.UI
                 // 只改缩放，anchor/pivot 已在 AttachContentTo 设成正中心，这里不碰
                 _attachedRect.localScale = new Vector3(ratio, ratio, 1f);
 
-                // 布局组按 LayoutElement 的 preferred 尺寸分配空间，而那个尺寸是
-                // AttachContentTo 时按本地像素设的。缩放后视觉尺寸 = 本地 × ratio，
-                // 必须同步更新 preferred，否则 host 高度按未缩放尺寸算，面板会被裁/留白。
-                var le = _attachedRect.GetComponent<UnityEngine.UI.LayoutElement>();
-                if (le != null)
-                {
-                    float w = _attachedRect.rect.width * ratio;
-                    float h = _attachedRect.rect.height * ratio;
-                    le.minWidth = le.preferredWidth = w;
-                    le.minHeight = le.preferredHeight = h;
-                }
-
-                // 缩放后的实际高度（sizeDelta 是本地尺寸，显示高度 = 本地 × localScale）
+                // host 的布局组已移除，ApplyContentHeight 靠 host 自己的 LayoutElement
+                // preferredHeight 量高度。设成缩放后的面板视觉高度，窗口就正好包住面板。
+                // 面板本体是 ignoreLayout 的，不干扰 host 高度。
                 float scaledHeight = _attachedRect.rect.height * ratio;
+                var hostLe = host.GetComponent<UnityEngine.UI.LayoutElement>();
+                if (hostLe == null) hostLe = host.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
+                hostLe.minWidth = hostLe.preferredWidth = _attachedRect.rect.width * ratio;
+                hostLe.minHeight = hostLe.preferredHeight = scaledHeight;
+                hostLe.flexibleHeight = 0f;
 
                 if (ModEntry.Log != null)
                     ModEntry.Log.Log("[vanilla-machine] canvas scale ours=" + ours
