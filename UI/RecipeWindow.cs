@@ -2737,6 +2737,13 @@ namespace ItemCatalog.UI
             builder.AddSpace(panelH);
             builder.End();
 
+            // 关键：host 在 bodyHost 的 VerticalLayoutGroup 下，childControlWidth=true，
+            // 它的宽度取自己的 preferredWidth。不设的话只有默认 100px，
+            // 面板 anchor(0.5) 居中在 100px 的 host 里 → 中线贴着窗口左边缘。
+            // 设成内容区宽度让 host 撑满，面板才对准窗口正中。
+            if (host != null)
+                EnsureLayoutElement(host).preferredWidth = WinWidth - 40f;
+
             // 第二步：把面板挂进占位容器、相对 host 正中心绝对定位，再缩放补偿 Canvas 差异，
             // 布局跑一次后塞物品（否则 inventory inner rect 还是 0，物品会浮到格子外）。
             var rect = _vanillaMachine.AttachContentTo(host);
