@@ -89,14 +89,20 @@ namespace ItemCatalog.UI
                 if (rect == null) return null;
 
                 // 保留游戏原版的窗口尺寸（widthPixels 由 UISettings.gridSize × 格数算出），
-                // 不拉伸、不缩放——缩放会破坏格子里物品的坐标。
-                // 只把锚点设成顶部居中，让原版面板在详情窗口里居中显示。
+                // 不拉伸。锚点/pivot 设成正中心，面板在窗口内容区里居中显示。
                 rect.SetParent(host, false);
                 rect.localScale = Vector3.one;
-                rect.anchorMin = new Vector2(0.5f, 1f);
-                rect.anchorMax = new Vector2(0.5f, 1f);
-                rect.pivot = new Vector2(0.5f, 1f);
+                rect.anchorMin = new Vector2(0.5f, 0.5f);
+                rect.anchorMax = new Vector2(0.5f, 0.5f);
+                rect.pivot = new Vector2(0.5f, 0.5f);
                 rect.anchoredPosition = Vector2.zero;
+
+                // 面板是 reparent 进来的，不参与 host 的 VerticalLayoutGroup 排布，
+                // 否则布局会再挪它一次、破坏居中。host 高度由 minHeight 控制。
+                var ignore = rect.GetComponent<UnityEngine.UI.LayoutElement>();
+                if (ignore == null) ignore = rect.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
+                ignore.ignoreLayout = true;
+
                 _attachedRect = rect;
                 return rect;
             }
@@ -134,13 +140,8 @@ namespace ItemCatalog.UI
                 float ratio = game / ours;
                 // 比例异常（比如某 Canvas 还没初始化，scaleFactor=0/极大）就别缩放
                 if (ratio < 0.2f || ratio > 6f) ratio = 1f;
+                // 只改缩放，anchor/pivot 已在 AttachContentTo 设成正中心，这里不碰
                 _attachedRect.localScale = new Vector3(ratio, ratio, 1f);
-
-                // 水平居中：锚点/pivot 都在顶边中央，X 偏移 0
-                _attachedRect.anchorMin = new Vector2(0.5f, 1f);
-                _attachedRect.anchorMax = new Vector2(0.5f, 1f);
-                _attachedRect.pivot = new Vector2(0.5f, 1f);
-                _attachedRect.anchoredPosition = new Vector2(0f, 0f);
 
                 // 缩放后的实际高度（sizeDelta 是本地尺寸，显示高度 = 本地 × localScale）
                 float scaledHeight = _attachedRect.rect.height * ratio;

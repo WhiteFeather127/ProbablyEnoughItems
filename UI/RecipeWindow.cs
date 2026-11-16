@@ -2739,10 +2739,14 @@ namespace ItemCatalog.UI
                 // 两个 Canvas 的 CanvasScaler 不同，按 scaleFactor 比例补偿，
                 // 让面板显示尺寸和游戏里正常机器窗口一致（不拍脑袋填倍数）。
                 float panelH = _vanillaMachine.MatchGameCanvasScale(host);
-                // 占位容器高度按缩放后的实际面板高度适配（不再写死 360），
-                // 窗口高度 ApplyContentHeight 会跟着 host 的首选高度走。
+                // 窗口高度适配机器面板高度：host 高度 = 缩放后的面板高度，
+                // 面板 anchor 在正中(0.5)，host 正好这么高时面板就垂直居中且不被裁。
                 if (host != null && panelH > 0f)
-                    EnsureLayoutElement(host).minHeight = panelH + 16f;
+                {
+                    var hostLayout = EnsureLayoutElement(host);
+                    hostLayout.minHeight = panelH;
+                    hostLayout.preferredHeight = panelH;
+                }
                 FillVanillaMachine(recipe);
 
                 if (ModEntry.Log != null)
