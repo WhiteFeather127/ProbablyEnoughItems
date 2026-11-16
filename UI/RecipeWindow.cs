@@ -23,9 +23,7 @@ namespace ItemCatalog.UI
         private const string WinId = "recipe:win";
         private const float WinWidth = 600f;
         private const float WinMinHeight = 240f;
-        // 顶边固定后窗口可以往下长，放宽上限让原版机器面板（缩放后约 802px）能完整放下；
-        // 仍受 Screen.height-80 约束，不会长出屏幕。
-        private const float WinMaxHeight = 1100f;
+        private const float WinMaxHeight = 900f;
         private const float WindowChrome = 64f;   // 标题栏 + 内容区上下留白
         private const float IconSide = 40f;
 
@@ -1383,9 +1381,7 @@ namespace ItemCatalog.UI
         /// <summary>窗口最长到 WinMaxHeight，但别长出屏幕（留 80px 给标题栏与任务栏）。</summary>
         private static float MaxContentHeight()
         {
-            // 留 40px 给窗口标题栏与屏幕边缘（原来留 80，机器页内容 968+翻页条 40
-            // 在 1080p 上会被卡到 1000，翻页条被挤出去）。
-            float cap = Screen.height > 0 ? Mathf.Min(WinMaxHeight, Screen.height - 40f) : WinMaxHeight;
+            float cap = Screen.height > 0 ? Mathf.Min(WinMaxHeight, Screen.height - 80f) : WinMaxHeight;
             return Mathf.Max(cap, WinMinHeight);
         }
 
@@ -2776,10 +2772,10 @@ namespace ItemCatalog.UI
             // 占位容器：里面放一个 AddSpace(面板高度)，让 bodyHost 的 VerticalLayoutGroup
             // 把「标题 + 面板高度 + 翻页条」都算进总高——这样窗口高度正好包住面板，
             // 标题和翻页条不会被挤出窗口（之前面板 ignoreLayout，高度算不进去才被挤）。
-            // 面板可用高度 = 窗口上限 - 实际标题栏 - 标题行(约 56) - 翻页条(34) - 间距(约 20)。
-            // 标题栏实测比 WindowChrome(64) 高（约 118），这里用保守值，宁可面板略小，
-            // 也不能让内容顶掉标题栏、把关闭按钮压扁。
-            const float RealTitleBar = 130f;
+            // 面板可用高度 = 窗口上限(900) - 实际标题栏(约 32) - 顶部行(约 56)
+            // - 翻页条(34) - 间距(约 20)。窗口上限不能动（一放宽所有页面的标题栏都会被挤），
+            // 所以面板按剩余空间等比缩小，比例可能略小于 2（约 1.85），但能完整显示。
+            const float RealTitleBar = 32f;
             float panelMaxH = Mathf.Max(120f, MaxContentHeight() - RealTitleBar - 56f - 34f - 20f);
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
