@@ -1321,7 +1321,10 @@ namespace ItemCatalog.UI
                 if (contentRoot != null)
                 {
                     var crLayout = EnsureLayoutElement(contentRoot);
-                    crLayout.minHeight = innerHeight;
+                    // 只给软性 preferredHeight，**不设 minHeight**：
+                    // minHeight 是硬下限，会逼布局组去牺牲标题栏空间（关闭按钮被压扁）。
+                    // preferred 参与计算，但不剥夺标题栏该有的高度。
+                    crLayout.minHeight = -1f;
                     crLayout.preferredHeight = innerHeight;
                     crLayout.flexibleHeight = 0f;
                 }
@@ -2792,9 +2795,11 @@ namespace ItemCatalog.UI
             // 占位容器：里面放一个 AddSpace(面板高度)，让 bodyHost 的 VerticalLayoutGroup
             // 把「标题 + 面板高度 + 翻页条」都算进总高——这样窗口高度正好包住面板，
             // 标题和翻页条不会被挤出窗口（之前面板 ignoreLayout，高度算不进去才被挤）。
-            // 面板可用高度 = 窗口能给出的最大高度 - chrome - 标题行(约 56) - 翻页条(34) - 间距(约 20)。
-            // 标题栏固定、窗口向下扩展，但内容仍不能超过窗口上限。
-            float panelMaxH = Mathf.Max(120f, MaxContentHeight() - WindowChrome - 56f - 34f - 20f);
+            // 面板可用高度 = 窗口上限 - 实际标题栏 - 标题行(约 56) - 翻页条(34) - 间距(约 20)。
+            // 标题栏实测比 WindowChrome(64) 高（约 118），这里用保守值，宁可面板略小，
+            // 也不能让内容顶掉标题栏、把关闭按钮压扁。
+            const float RealTitleBar = 130f;
+            float panelMaxH = Mathf.Max(120f, MaxContentHeight() - RealTitleBar - 56f - 34f - 20f);
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
