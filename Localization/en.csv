@@ -117,3 +117,9 @@ mach_note_junk,With junk module, junk melts into scrap
 mach_inputs,Inputs
 mach_modules,Modules
 mach_outputs,Products
+mach_evap_output,Distillation output
+mach_trap_output,Trap output
+mach_note_evap,Dry an alcoholic container: solvent recovery module + alcohol
+mach_note_evap_beer,Any alcoholic container yields alcohol
+mach_note_trap,Bait with cheese → processed cheese
+mach_note_trap_food,Any food works as bait

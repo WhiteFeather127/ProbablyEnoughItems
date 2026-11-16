@@ -117,3 +117,9 @@ mach_note_junk,С модулем мусор Converts в лом
 mach_inputs,Вход
 mach_modules,Модули
 mach_outputs,Выход
+mach_evap_output,Перегонка
+mach_trap_output,Ловушка
+mach_note_evap,Сушка ёмкости: модуль + спирт
+mach_note_evap_beer,Любая ёмкость со спиртом даёт спирт
+mach_note_trap,Приманка: сыр → переработанный сыр
+mach_note_trap_food,Любая еда подходит

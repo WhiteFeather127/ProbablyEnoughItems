@@ -119,3 +119,9 @@ mach_note_junk,装上垃圾模块后，垃圾可以直接熔成废金属
 mach_inputs,投入
 mach_modules,模块
 mach_outputs,产物
+mach_evap_output,蒸馏产出
+mach_trap_output,捕鼠夹产出
+mach_note_evap,把含酒精的容器蒸干：留下溶剂回收模块，馏出酒精
+mach_note_evap_beer,任何含酒精的液体容器都能蒸出酒精
+mach_note_trap,放上奶酪作诱饵，周期结束后得到加工奶酪
+mach_note_trap_food,任何食物都能当诱饵

@@ -38,13 +38,6 @@ uses,red_beer,drink,empty_beer_bottle,
 #   MiscItemDirectory::<ScratcherTicketStack>b__76_2  →  ItemSpawner.Spawn("scratcher")
 uses,scratcher_stack,open,scratcher,
 
-# 捕鼠夹周期产出
-#   RatTrap::<CreateMouseTrap>b__3  →  processed_cheese
-uses,mouse_trap,apply,processed_cheese,
-
-# 蒸发器周期产出溶剂回收模块
-#   MachineEvaporator::<Evaporator>b__7  →  WaterHelper.AddLiquid + evaporator_module_solvent_recovery
-uses,evaporator,apply,evaporator_module_solvent_recovery,
 
 # ===== 2026-11-12 支持 `tag:XXX` 键后，把「整类目标」的补上 =====
 # 第 2 列可以用 `tag:TAG_NAME` 表示「任意带这个标签的物品」，

@@ -49,6 +49,9 @@ namespace ItemCatalog.UI
         private static readonly Dictionary<string, Panel[]> Panels =
             new Dictionary<string, Panel[]>(StringComparer.Ordinal)
             {
+                { "mouse_trap", new[] {
+                    // RatTrap::CreateMouseTrapWindow：只有一个「trap」槽
+                    P(Slot, "mech_mouse_trap_label_trap", "捕鼠槽") } },
                 { "furnace", new[] {
                     P(Grid, null, "容器网格"),
                     P(Battery, null, "电池"),
@@ -343,10 +346,61 @@ namespace ItemCatalog.UI
             }
         };
 
+        /// <summary>
+        /// 蒸发器：把容器里的液体蒸干，产出溶剂回收模块 + 酒精。
+        /// 依据 MachineEvaporator/<>c__DisplayClass0_0::&lt;Evaporator&gt;b__7
+        /// （AddLiquid("alcohol") + 生成 evaporator_module_solvent_recovery）。
+        /// 投料是装了酒的液体容器（游戏按 LIQUID_CONTAINER_TAG 收），
+        /// 具体哪个容器由玩家决定，所以这里用标签格之外的「酒类容器」概括。
+        /// </summary>
+        private static readonly RecipeGroup[] EvaporatorGroups =
+        {
+            new RecipeGroup
+            {
+                TitleKey = "mach_evap_output", TitleFallback = "蒸馏产出",
+                Variants = new[]
+                {
+                    new Recipe(new[] { "alcohol" },
+                               new[] { "evaporator_module_solvent_recovery" },
+                               new[] { "evaporator_module_solvent_recovery", "alcohol" },
+                               "mach_note_evap", "把含酒精的容器蒸干：留下溶剂回收模块，馏出酒精"),
+                    new Recipe(new[] { "red_beer" },
+                               null,
+                               new[] { "evaporator_module_solvent_recovery", "alcohol" },
+                               "mach_note_evap_beer", "任何含酒精的液体容器都能蒸出酒精")
+                }
+            }
+        };
+
+        /// <summary>
+        /// 捕鼠夹：放食物后周期产出加工奶酪（并捕鼠，老鼠是活体不是配方产物）。
+        /// 依据 RatTrap/<>c__DisplayClass1_0::&lt;CreateMouseTrap&gt;b__3。
+        /// </summary>
+        private static readonly RecipeGroup[] MouseTrapGroups =
+        {
+            new RecipeGroup
+            {
+                TitleKey = "mach_trap_output", TitleFallback = "捕鼠夹产出",
+                Variants = new[]
+                {
+                    new Recipe(new[] { "cheese" },
+                               null,
+                               new[] { "processed_cheese" },
+                               "mach_note_trap", "放上奶酪作诱饵，周期结束后得到加工奶酪"),
+                    new Recipe(new[] { "FOOD" },
+                               null,
+                               new[] { "processed_cheese" },
+                               "mach_note_trap_food", "任何食物都能当诱饵")
+                }
+            }
+        };
+
         private static readonly Dictionary<string, RecipeGroup[]> Recipes =
             new Dictionary<string, RecipeGroup[]>(StringComparer.Ordinal)
             {
-                { "furnace", FurnaceGroups }
+                { "furnace", FurnaceGroups },
+                { "evaporator", EvaporatorGroups },
+                { "mouse_trap", MouseTrapGroups }
             };
 
         /// <summary>这台机器的静态产出配方组；没有静态数据时返回 null。</summary>
