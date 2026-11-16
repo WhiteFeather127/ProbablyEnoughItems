@@ -991,9 +991,11 @@ namespace ItemCatalog.UI
                     var child = root.GetChild(i) as RectTransform;
                     if (child == null || child == content) continue;
 
+                    // 用固定值锁标题栏，不用「当前 rect.height」实测：
+                    // 首次调用时窗口还是最小高度，量到的值会被后续放大，形成
+                    // 「窗口越大→标题栏越大→窗口更大」的死循环（日志实测窗口涨到 1583）。
                     float h = child.rect.height;
-                    if (h < 1f) h = UnityEngine.UI.LayoutUtility.GetPreferredHeight(child);
-                    if (h < 1f) continue;
+                    if (h < 40f || h > 200f) h = MachineTitleBarH;   // 只接受合理范围
 
                     var le = EnsureLayoutElement(child);
                     le.minHeight = h;          // 硬下限：不许被压小
@@ -1372,6 +1374,9 @@ namespace ItemCatalog.UI
                 {
                     float chromeUse = _measureChrome > 4f ? _measureChrome : MachineTitleBarH;
                     height = Mathf.Max(WinMinHeight, preferred + chromeUse);
+                    // 物理边界：窗口不能超出屏幕（之前实测值被污染时涨到 1583）。
+                    if (Screen.height > 0)
+                        height = Mathf.Min(height, Screen.height - 10f);
                 }
 
                 if (machinePage && _window.ContentRoot != null)
@@ -1440,13 +1445,15 @@ namespace ItemCatalog.UI
                     float chrome = winH - crH;
                     float pagerH = _machinePagerRow.rect.height;
 
+                    // 只接受合理范围的 chrome：内容区还没撑开时量到的差值会很大，
+                    // 直接采用会形成「窗口越大→差值越大→窗口更大」的死循环。
                     bool changed = false;
-                    if (chrome > 4f && Mathf.Abs(chrome - _measureChrome) > 2f)
+                    if (chrome >= 20f && chrome <= 220f && Mathf.Abs(chrome - _measureChrome) > 2f)
                     {
                         _measureChrome = chrome;
                         changed = true;
                     }
-                    if (pagerH > 1f && Mathf.Abs(pagerH - _measurePagerH) > 2f)
+                    if (pagerH > 1f && pagerH < 200f && Mathf.Abs(pagerH - _measurePagerH) > 2f)
                     {
                         _measurePagerH = pagerH;
                         changed = true;
@@ -2869,10 +2876,11 @@ namespace ItemCatalog.UI
             // 面板可用高度 = 窗口上限(900) - 实际标题栏(约 32) - 顶部行(约 56)
             // - 翻页条(34) - 间距(约 20)。窗口上限不能动（一放宽所有页面的标题栏都会被挤），
             // 所以面板按剩余空间等比缩小，比例可能略小于 2（约 1.85），但能完整显示。
-            // 面板高度 = 它自己的**实际高度**（Canvas 比例算出来的真实尺寸），
-            // 不拿屏幕空间去封顶——封顶会让窗口高度被迫凑到上限、下方留白。
-            // 传 0 表示不封顶，ScaledSize/MatchGameCanvasScale 内部走纯 Canvas 比例。
-            const float panelMaxH = 0f;
+            // 面板高度：按 Canvas 比例得到的真实尺寸（802），但必须保证
+            // 「窗口 = 面板 + 顶部行 + 翻页条 + 标题栏」不超过屏幕，否则内容会被裁。
+            // 170 ≈ 顶部行(56) + 翻页条(34) + 各级 spacing(约 80)。
+            float screenH = Screen.height > 0 ? Screen.height - 10f : 1070f;
+            float panelMaxH = Mathf.Max(200f, screenH - MachineTitleBarH - 170f);
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
