@@ -985,23 +985,37 @@ namespace ItemCatalog.UI
 
             try
             {
-                // 精确取 CustomUIWindowFrame.closeButton（private frame + public 字段），
+                // 精确取 CustomUIWindowFrame.closeButton（frame 是私有字段，closeButton 是公有），
                 // 不用 GetComponentsInChildren 乱猜——那会拿到被拉伸的容器按钮（实测 110 高）。
-                var frameField = typeof(CustomUIWindow).GetField("frame",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                var frame = frameField == null ? null : frameField.GetValue(window);
-                if (frame == null) return 0f;
+                // 可见性标志放开到 Public|NonPublic，避免字段声明可见性与预期不符时取不到。
+                const System.Reflection.BindingFlags Any =
+                    System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Instance;
 
-                var btnField = frame.GetType().GetField("closeButton",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                var frameField = typeof(CustomUIWindow).GetField("frame", Any);
+                var frame = frameField == null ? null : frameField.GetValue(window);
+                if (frame == null)
+                {
+                    if (ModEntry.Log != null) ModEntry.Log.Warning("[close-btn] frame=null field=" + (frameField == null ? "missing" : "ok"));
+                    return 0f;
+                }
+
+                var btnField = frame.GetType().GetField("closeButton", Any);
                 var btn = btnField == null ? null : btnField.GetValue(frame) as UnityEngine.UI.Button;
-                if (btn == null) return 0f;
+                if (btn == null)
+                {
+                    if (ModEntry.Log != null) ModEntry.Log.Warning("[close-btn] button=null field=" + (btnField == null ? "missing" : "ok") + " frameType=" + frame.GetType().Name);
+                    return 0f;
+                }
 
                 var rt = btn.transform as RectTransform;
                 if (rt == null) return 0f;
 
                 if (ModEntry.Log != null)
-                    ModEntry.Log.Log("[close-btn] name=" + btn.name + " h=" + rt.rect.height);
+                    ModEntry.Log.Log("[close-btn] name=" + btn.name
+                                     + " h=" + rt.rect.height
+                                     + " w=" + rt.rect.width);
                 return rt.rect.height;
             }
             catch (Exception e) { Warn("close button: " + e.Message); return 0f; }
@@ -1524,7 +1538,24 @@ namespace ItemCatalog.UI
                 {
                     float winH = _window.Rect.rect.height;
                     float crH = _window.ContentRoot.rect.height;
+
+                    // 标题栏实际占多少 = 窗口顶边 到 内容区顶边 的距离（世界坐标）。
+                    // 不能用 winH − crH：内容区一旦向下溢出窗口，差值会偏小
+                    // （实测标题栏真实 130，差值只算出 110，窗口于是又少给 20）。
                     float chrome = winH - crH;
+                    try
+                    {
+                        float sy = Mathf.Abs(_window.Rect.lossyScale.y) > 0.001f
+                            ? _window.Rect.lossyScale.y : 1f;
+                        var wc = new Vector3[4];
+                        var cc = new Vector3[4];
+                        _window.Rect.GetWorldCorners(wc);
+                        _window.ContentRoot.GetWorldCorners(cc);
+                        float topGap = (wc[1].y - cc[1].y) / sy;
+                        if (topGap > 4f && topGap < 400f) chrome = topGap;
+                    }
+                    catch { }
+
                     float pagerH = _machinePagerRow.rect.height;
 
                     // 只接受合理范围的 chrome：内容区还没撑开时量到的差值会很大，
