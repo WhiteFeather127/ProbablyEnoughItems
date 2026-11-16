@@ -231,6 +231,8 @@ namespace ItemCatalog.UI
         private static float _measureChrome;    // 标题栏实测高度 = 窗口高 − 内容区高
         private static float _measurePagerH;    // 翻页条实测高度
         private static int _measurePass;        // 收敛轮次，防止反复重画
+        private static RectTransform _machineTopRow;    // 机器页顶部行（配方名 + 机器图标）
+        private static RectTransform _machinePagerRow;  // 机器页底部翻页条
 
         private static int _tagStripSeq;
 
@@ -1315,6 +1317,7 @@ namespace ItemCatalog.UI
         {
             builder.BeginRow(6f);
             var pagerRow = builder.CurrentContainer;
+            _machinePagerRow = pagerRow;   // 实测高度用
             builder.AddFlexibleSpace();
             builder.AddButton("<", delegate { TurnPage(-1); Render(); }, "src_pp");
             if (builder.Last != null) builder.Last.SetInteractable(_page > 0);
@@ -2837,6 +2840,7 @@ namespace ItemCatalog.UI
 
             // 顶部一行：配方名称在前、机器图标在后（放大），同行显示。
             builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
+            _machineTopRow = builder.CurrentContainer;   // 实测高度用
             builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
             builder.AddFlexibleSpace();
             if (_entry != null) RenderGoods(builder, _entry.Id, true, 3180, false, null, 52f);
