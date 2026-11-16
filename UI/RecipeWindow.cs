@@ -1374,24 +1374,9 @@ namespace ItemCatalog.UI
                 var pageCategory = _categories.Count == 0 ? null : _categories[_category];
                 bool machinePage = pageCategory != null && pageCategory.Kind == CatMachine;
 
+                // 机器页与普通页完全共用这个公式，不再有第二套高度逻辑。
+                // preferred 取自 _bodyHost，翻页条就在它内部，所以已包含翻页条高度。
                 float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
-
-                // 机器页：窗口高度 = 内容实际高度 + 标题栏。
-                // 注意 preferred 取自 _bodyHost，而**翻页条就在 bodyHost 里面**，
-                // 所以它已经包含翻页条高度——之前再加一次 pagerH，每次都会多出一段空白。
-                if (machinePage)
-                {
-                    // 两阶段精确测量，不猜常量：
-                    // 首轮给足空间（+220），让标题栏以**自然高度**排布——此时量到的
-                    // 「窗口顶边 → bodyHost 顶边」就是真实的标题栏+padding 总量；
-                    // 第二轮用这个实测值精确设置窗口，标题栏既不压、也不多留空白。
-                    // 首轮给得比真实值略大（160）：保证标题栏以自然高度排布，
-                    // 这样第一次量到的 gap 才是真值。之后固定用实测值。
-                    float gap = _chromeMeasured > 4f ? _chromeMeasured : 160f;
-                    height = Mathf.Max(WinMinHeight, preferred + gap);
-                    if (Screen.height > 0)
-                        height = Mathf.Min(height, Screen.height - 10f);
-                }
 
                 // 顶部行（配方名 + 右上角机器图标）固定高度：
                 // 不给它声明高度的话，布局组会按剩余空间压缩/拉伸它，
@@ -1414,80 +1399,21 @@ namespace ItemCatalog.UI
 
                 if (_window.ContentRoot != null)
                 {
+                    // ContentRoot 不做任何页面差异化的高度声明：
+                    // 机器页和普通页走同一套通用逻辑，靠 _bodyHost 的 preferred 自然撑开。
+                    // 之前给机器页加 preferredHeight 补偿，既造成跨页残留（开一次机器
+                    // 所有页面都变窄），又因为补偿量估不准反复压扁标题栏。
                     var crLayout = EnsureLayoutElement(_window.ContentRoot);
-                    if (machinePage)
-                    {
-                        crLayout.minHeight = -1f;
-                        // 窗口高度 = 标题栏preferred + ContentRoot.preferred（布局组自己算，
-                        // SetSize 会被覆盖）。而框架的标题栏 preferredHeight 比它实际渲染
-                        // 占用小约 20px（padding 没算进去），所以这里补一点，
-                        // 让窗口整体够高、标题栏不被压。
-                        // 窗口高度 = 标题栏pref(框架给的,约40) + ContentRoot.preferred。
-                        // 标题栏实际要占约 130，差额只能加在 ContentRoot 上，否则
-                        // 布局组会把标题栏压到十几像素。+120 保证内容区装得下内容后
-                        // 还能留住标题栏的自然高度。
-                        crLayout.preferredHeight = Mathf.Max(1f, preferred + 120f);
-                        crLayout.flexibleHeight = 0f;
-                    }
-                    else
-                    {
-                        // 关键：窗口是复用的，切到普通页面时**必须把机器页留下的
-                        // 高度约束清掉**，否则 ContentRoot 仍按机器页的高度撑窗口，
-                        // 标题栏被压窄（用户看到的「开一次机器后所有物品都变窄」）。
-                        crLayout.minHeight = -1f;
-                        crLayout.preferredHeight = -1f;
-                        crLayout.flexibleHeight = -1f;
-                    }
+                    crLayout.minHeight = -1f;
+                    crLayout.preferredHeight = -1f;
+                    crLayout.flexibleHeight = -1f;
 
                     // 分配子级高度的是窗口 root 上的布局组，必须重排 root。
                     CustomUIBuilder.RebuildLayout(_window.Rect);
 
                     // 实测「窗口顶边 → bodyHost 顶边」= 标题栏 + 各层 padding 的真实总量。
                     // 必须在**首轮给足空间**（gap 用 220）时测量，这样标题栏是自然高度，
-                    // 量出来的值才准；测到后重画一轮，窗口就会精确贴合。
-                    if (machinePage && _machineTopRow != null)
-                    {
-                        try
-                        {
-                            float sy3 = Mathf.Abs(_window.Rect.lossyScale.y) > 0.001f
-                                ? _window.Rect.lossyScale.y : 1f;
-                            var wc3 = new Vector3[4];
-                            var bc3 = new Vector3[4];
-                            _window.Rect.GetWorldCorners(wc3);
-                            _bodyHost.GetWorldCorners(bc3);
-                            float gap = (wc3[1].y - bc3[1].y) / sy3;
-
-                            // 只接受**变大**的修正，且有下限：标题栏一旦被压，量到的 gap
-                            // 会掉到十几像素，若采纳就会「越量越小 → 窗口越矮 → 更扁」。
-                            // 低于 100 一律视为被压状态，不采纳。
-                            if (gap > 100f && gap < 300f && gap > _chromeMeasured + 2f)
-                            {
-                                _chromeMeasured = gap;
-
-                                // 只调 SetSize，**绝不在这里 Render()**：
-                                // Render 会在 ApplyContentHeight 中途清空并重建 UI，
-                                // preferred 被打回 0、窗口高度跟着变 0。
-                                float newH = Mathf.Max(WinMinHeight, preferred + gap);
-                                if (Screen.height > 0)
-                                    newH = Mathf.Min(newH, Screen.height - 10f);
-
-                                _window.SetSize(WinWidth, newH);
-                                _lastHeight = newH;
-                                CustomUIBuilder.RebuildLayout(_window.Rect);
-
-                                if (ModEntry.Log != null)
-                                    ModEntry.Log.Log("[mach-win] measured gap=" + gap
-                                                     + " preferred=" + preferred
-                                                     + " -> height=" + newH);
-                            }
-
-                            if (ModEntry.Log != null)
-                                ModEntry.Log.Log("[mach-win] gap settled=" + gap
-                                                 + " preferred=" + preferred
-                                                 + " height=" + _window.Rect.rect.height);
-                        }
-                        catch { }
-                    }
+                    // （已移除机器页的高度实测/采纳：机器页现与普通页共用同一公式）
                 }
 
                 if (Mathf.Abs(height - _lastHeight) > 2f)
@@ -1535,6 +1461,32 @@ namespace ItemCatalog.UI
                     }
                 }
 
+                // 诊断：窗口 root 的每个直接子级（标题栏 / 内容区）的实际高度与 preferred，
+                // 用来回答「标题栏差额到底从哪来」。
+                if (ModEntry.Log != null && _window.Rect != null)
+                {
+                    try
+                    {
+                        var wr = _window.Rect;
+                        var sb = new System.Text.StringBuilder();
+                        sb.Append("[win-children] winH=").Append(wr.rect.height);
+                        for (int ci = 0; ci < wr.childCount; ci++)
+                        {
+                            var ch = wr.GetChild(ci) as RectTransform;
+                            if (ch == null) continue;
+                            var le = ch.GetComponent<UnityEngine.UI.LayoutElement>();
+                            sb.Append(" | ").Append(ci).Append(':').Append(ch.name)
+                              .Append(" h=").Append(ch.rect.height.ToString("F0"))
+                              .Append(" pref=").Append(le == null ? "noLE" : le.preferredHeight.ToString("F0"))
+                              .Append(" flex=").Append(le == null ? "-" : le.flexibleHeight.ToString("F1"))
+                              .Append(" calcPref=")
+                              .Append(UnityEngine.UI.LayoutUtility.GetPreferredHeight(ch).ToString("F0"));
+                        }
+                        ModEntry.Log.Log(sb.ToString());
+                    }
+                    catch { }
+                }
+
                 // 诊断：所有页面都打一次布局实测，用来对比「普通页面为什么自适应没问题」。
                 if (ModEntry.Log != null && _window.Rect != null && _window.ContentRoot != null)
                 {
@@ -1558,61 +1510,6 @@ namespace ItemCatalog.UI
                     catch { }
                 }
 
-                // ── 机器页：把标题栏、翻页条的真实高度量出来，喂给下一轮高度计算 ──
-                // 这样窗口高度 = 内容 + 翻页条 + 标题栏 全部来自实测，不再靠常量推算；
-                // 差异明显才重画一轮（最多 2 轮），之后稳定不再重排。
-                if (machinePage && _measurePass < 2
-                    && _window.Rect != null && _window.ContentRoot != null
-                    && _machinePagerRow != null)
-                {
-                    float winH = _window.Rect.rect.height;
-                    float crH = _window.ContentRoot.rect.height;
-
-                    // 标题栏实际占多少 = 窗口顶边 到 内容区顶边 的距离（世界坐标）。
-                    // 不能用 winH − crH：内容区一旦向下溢出窗口，差值会偏小
-                    // （实测标题栏真实 130，差值只算出 110，窗口于是又少给 20）。
-                    float chrome = winH - crH;
-                    try
-                    {
-                        float sy = Mathf.Abs(_window.Rect.lossyScale.y) > 0.001f
-                            ? _window.Rect.lossyScale.y : 1f;
-                        var wc = new Vector3[4];
-                        var cc = new Vector3[4];
-                        _window.Rect.GetWorldCorners(wc);
-                        _window.ContentRoot.GetWorldCorners(cc);
-                        float topGap = (wc[1].y - cc[1].y) / sy;
-                        if (topGap > 4f && topGap < 400f) chrome = topGap;
-                    }
-                    catch { }
-
-                    float pagerH = _machinePagerRow.rect.height;
-
-                    // 只接受合理范围的 chrome：内容区还没撑开时量到的差值会很大，
-                    // 直接采用会形成「窗口越大→差值越大→窗口更大」的死循环。
-                    bool changed = false;
-                    if (chrome >= 20f && chrome <= 220f && Mathf.Abs(chrome - _measureChrome) > 2f)
-                    {
-                        _measureChrome = chrome;
-                        changed = true;
-                    }
-                    if (pagerH > 1f && pagerH < 200f && Mathf.Abs(pagerH - _measurePagerH) > 2f)
-                    {
-                        _measurePagerH = pagerH;
-                        changed = true;
-                    }
-
-                    if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[mach-measure] win=" + winH + " cr=" + crH
-                                         + " chrome=" + chrome + " pager=" + pagerH
-                                         + " changed=" + changed + " pass=" + _measurePass);
-
-                    if (changed)
-                    {
-                        _measurePass++;
-                        Render();
-                        return;
-                    }
-                }
             }
             catch (Exception e)
             {
