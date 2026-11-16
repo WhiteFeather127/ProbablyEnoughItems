@@ -964,11 +964,48 @@ namespace ItemCatalog.UI
 
             if (_window != null)
             {
+                PinTitleBar(_window);   // 固定标题栏高度（只加高度约束，不动位置尺寸）
                 try { CustomUIBuilder.RebuildLayout(_window.ContentRoot); }
                 catch { }
             }
 
             Render();
+        }
+
+        /// <summary>
+        /// 固定标题栏高度：只设 LayoutElement 的 min/preferred/flexible 三项，
+        /// 不改 anchor / pivot / 位置 / padding。
+        ///
+        /// 高度必须用**自然首选高度**：用 rect.height 会读到被窗口压扁后的值，
+        /// 窗口一小它就更小，越锁越矮（「窗口越小标题栏越矮」就是这个）。
+        /// </summary>
+        private static void PinTitleBar(CustomUIWindow window)
+        {
+            if (window == null) return;
+            var root = window.Rect;
+            var content = window.ContentRoot;
+            if (root == null || content == null || root == content) return;
+
+            try
+            {
+                for (int i = 0; i < root.childCount; i++)
+                {
+                    var child = root.GetChild(i) as RectTransform;
+                    if (child == null || child == content) continue;
+
+                    float want = UnityEngine.UI.LayoutUtility.GetPreferredHeight(child);
+                    if (want < 40f || want > 300f) want = MachineTitleBarH;
+
+                    var le = EnsureLayoutElement(child);
+                    le.minHeight = want;         // 硬下限：窗口再小也不许压到它以下
+                    le.preferredHeight = want;
+                    le.flexibleHeight = 0f;      // 也不吸收多余空间
+                    if (ModEntry.Log != null)
+                        ModEntry.Log.Log("[pin-title] natural=" + want);
+                    break;
+                }
+            }
+            catch (Exception e) { Warn("pin title: " + e.Message); }
         }
 
         /// <summary>
