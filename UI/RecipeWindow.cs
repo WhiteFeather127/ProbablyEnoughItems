@@ -1316,17 +1316,23 @@ namespace ItemCatalog.UI
 
                 float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
 
-                // 机器页：窗口高度直接给满。WindowChrome(64) 比实际标题栏(~118)少 54px，
-                // 按内容算窗口会永久缺这 54px、内容被压扁。只对机器页覆盖，其它页面不动。
-                if (machinePage) height = MaxContentHeight();
+                // 机器页单独算高度：窗口 = 内容总和 + 翻页条 + 标题栏，
+                // 不再钉死内容区（钉死会在面板与翻页之间、翻页下方留下空白）。
+                // 上限放到屏幕可用高度，让原版面板能按 2 倍比例完整显示。
+                const float PagerH = 40f;
+                if (machinePage)
+                {
+                    float screenCap = Screen.height > 0 ? Screen.height - 20f : 1060f;
+                    height = Mathf.Clamp(preferred + PagerH + MachineTitleBarH, WinMinHeight, screenCap);
+                }
+
                 if (machinePage && _window.ContentRoot != null)
                 {
                     var crLayout = EnsureLayoutElement(_window.ContentRoot);
                     crLayout.minHeight = -1f;      // 硬下限会抢标题栏高度，不设
-                    // 内容区高度钉成「窗口上限 − 标题栏」，**不跟随内容首选浮动**。
-                    // 之前写 preferred + 40，内容首选一旦超过窗口能给的空间就会反过来
-                    // 挤压标题栏（标题栏又被压扁）。固定成剩余高度，超出部分由 RectMask2D 裁。
-                    crLayout.preferredHeight = Mathf.Max(1f, MaxContentHeight() - MachineTitleBarH);
+                    // 内容区 = 内容首选 + 翻页条，紧贴内容，不留空白；
+                    // 高度上限受窗口约束，超出由 RectMask2D 裁在内容区内。
+                    crLayout.preferredHeight = Mathf.Max(1f, preferred + PagerH);
                     crLayout.flexibleHeight = 0f;
 
                     CustomUIBuilder.RebuildLayout(_window.ContentRoot);
@@ -2780,11 +2786,12 @@ namespace ItemCatalog.UI
             // 面板可用高度 = 窗口上限(900) - 实际标题栏(约 32) - 顶部行(约 56)
             // - 翻页条(34) - 间距(约 20)。窗口上限不能动（一放宽所有页面的标题栏都会被挤），
             // 所以面板按剩余空间等比缩小，比例可能略小于 2（约 1.85），但能完整显示。
-            // 只影响机器页：面板可用高度按窗口实际能给出的空间算。
+            // 只影响机器页：面板可用高度按**屏幕**能给的空间算（不受 MaxContentHeight 900 限制，
+            // 机器页的窗口高度在本文件 ApplyContentHeight 里单独按内容总和计算）。
             // 标题栏、顶部行、翻页条各占一份，其余给面板。
-            // 全局窗口机制（WindowChrome / WinMaxHeight / MaxContentHeight）一律不动。
+            float screenCap = Screen.height > 0 ? Screen.height - 20f : 1060f;
             float panelMaxH = Mathf.Max(120f,
-                MaxContentHeight() - MachineTitleBarH - 56f - 34f - 20f);
+                screenCap - MachineTitleBarH - 56f - 34f - 20f);
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
