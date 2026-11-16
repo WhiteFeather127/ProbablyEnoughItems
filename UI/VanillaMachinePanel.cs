@@ -108,36 +108,6 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 等比放大原版窗口到目标宽度。只设 localScale，不改 anchor / sizeDelta——
-        /// 物品渲染节点是 grid 的子节点，会跟着父节点一起等比放大，
-        /// 在格子里的相对位置不变（之前错位是 UncheckedAccept 没走 TryAccept，
-        /// 跟缩放无关）。这样面板能填满详情窗口宽度，又不破坏原版布局比例。
-        /// </summary>
-        internal float ScaleToWidth(float targetWidth)
-        {
-            if (_attachedRect == null || targetWidth <= 0f) return 0f;
-            try
-            {
-                // 用原版窗口算好的像素尺寸（Validate 后有效），而不是 handler 的 rect.width
-                // ——handler 是空布局壳，rect.width 常为 0，会让缩放直接跳过（面板就一直很小）。
-                float native = _window != null && _window.widthPixels > 1f
-                    ? _window.widthPixels : _attachedRect.rect.width;
-                float nativeH = _window != null && _window.heightPixels > 1f
-                    ? _window.heightPixels : _attachedRect.rect.height;
-                if (native <= 1f) { Warn("scale: native width <= 1, skip"); return 0f; }
-
-                float scale = Mathf.Clamp(targetWidth / native, 1f, 6f);
-                _attachedRect.localScale = new Vector3(scale, scale, 1f);
-                float scaledHeight = nativeH * scale;
-                if (ModEntry.Log != null)
-                    ModEntry.Log.Log("[vanilla-machine] scale native=" + native + "x" + nativeH
-                                     + " -> " + scale + " height=" + scaledHeight);
-                return scaledHeight;
-            }
-            catch (Exception e) { Warn("scale: " + e.Message); return 0f; }
-        }
-
-        /// <summary>
         /// 布局定稿后往真 inventory 塞样本物品。
         /// 必须走 GraphUtils.TryAccept（不是 inventory.UncheckedAccept）：
         /// 原版入格流程 TryFindOneValidInventorySlot → SlotMarker.TryAcceptOnce 会用
