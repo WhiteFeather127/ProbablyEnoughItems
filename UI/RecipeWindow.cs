@@ -221,6 +221,7 @@ namespace ItemCatalog.UI
 
         /// <summary>机器页当前嵌入的原版机器窗口（真 GameGridInventory + 样本物品）。</summary>
         private static VanillaMachinePanel _vanillaMachine;
+        private static int _vanillaVariant;   // 当前档内轮播到第几条配方
 
         private static int _tagStripSeq;
 
@@ -365,6 +366,7 @@ namespace ItemCatalog.UI
             _tagStrips.Clear();
             _machineStrips.Clear();
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
+            _vanillaVariant = 0;
             _tagStripSeq = 0;
             SourceSeed = null;
             SourceWater = null;
@@ -2697,21 +2699,19 @@ namespace ItemCatalog.UI
             var groups = MachinePanels.RecipesFor(_entry.Id);
             if (groups == null || groups.Length == 0) return;
 
-            // 一页一档（自动分页）：用底部翻页条切纯度档位，
-            // 每页一套原版机器窗口（该档配方的物品），不会把 7 档全挤在一页。
+            // 一页一档（自动分页）：用底部翻页条切纯度档位。
             int gi = Mathf.Clamp(_page, 0, groups.Length - 1);
-            var first = groups[gi];
-            if (first == null || first.Variants == null || first.Variants.Length == 0) return;
-            var recipe = first.Variants[0];
+            var group = groups[gi];
+            if (group == null || group.Variants == null || group.Variants.Length == 0) return;
+
+            if (_vanillaVariant >= group.Variants.Length) _vanillaVariant = 0;
+            var recipe = group.Variants[_vanillaVariant];
             if (recipe == null) return;
 
-            builder.AddLabel(Loc(first.TitleKey, first.TitleFallback), "mach_group");
+            builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
 
-            string moduleId = recipe.Modules != null && recipe.Modules.Length > 0 ? recipe.Modules[0] : null;
-
-            // 留一个占位容器，把原版窗口的内容节点挂进来。
-            // 原版节点是 reparent 进来的、不参与我们的布局计算，
-            // 所以给它一个足够的最小高度，免得窗口按空内容算高把格子裁掉。
+            // 原版窗口内容节点是 reparent 进来的，不参与 CustomUIBuilder 的布局高度计算。
+            // 给占位容器设成拉伸满宽 + 固定高度，让窗口放大并贴齐左右边缘。
             builder.BeginColumn(2f);
             var host = builder.CurrentContainer;
             builder.End();
@@ -2719,21 +2719,35 @@ namespace ItemCatalog.UI
             {
                 var layout = EnsureLayoutElement(host);
                 layout.flexibleHeight = 0f;
-                layout.minHeight = 560f;   // 5 个机器面板竖排 + 间距
+                layout.minHeight = 560f;
+                if (host is RectTransform)
+                {
+                    var hostRect = (RectTransform)host;
+                    hostRect.anchorMin = new Vector2(0f, 1f);
+                    hostRect.anchorMax = new Vector2(1f, 1f);
+                }
             }
 
+            // 第一步：造原版窗口外壳并挂进详情容器（还没放物品）
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaMachine = new VanillaMachinePanel();
 
             bool built = false;
             if (string.Equals(_entry.Id, "furnace", StringComparison.Ordinal))
-                built = _vanillaMachine.BuildFurnace(recipe.Inputs, moduleId, recipe.Outputs);
+                built = _vanillaMachine.BuildFurnaceShell();
 
             if (built)
             {
                 var rect = _vanillaMachine.AttachContentTo(host);
+                // 第二步：让布局先跑一次（inventory 的 inner rect 定稿），再塞物品，
+                // 否则物品渲染节点会定位到格子外面。
+                if (rect != null) CustomUIBuilder.RebuildLayout(rect);
+                _vanillaMachine.ScaleToWidth(WinWidth - 40f);
+                FillVanillaMachine(recipe);
+
                 if (ModEntry.Log != null)
-                    ModEntry.Log.Log("[vanilla-machine] furnace attached rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
+                    ModEntry.Log.Log("[vanilla-machine] furnace v" + _vanillaVariant
+                                     + " rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
             }
             else
             {
@@ -2741,6 +2755,14 @@ namespace ItemCatalog.UI
                 _vanillaMachine.Destroy();
                 _vanillaMachine = null;
             }
+        }
+
+        /// <summary>把当前配方的物品塞进原版窗口的真 inventory（轮播换配方时只换物品，不重建窗口）。</summary>
+        private static void FillVanillaMachine(MachinePanels.Recipe recipe)
+        {
+            if (_vanillaMachine == null || recipe == null) return;
+            string moduleId = recipe.Modules != null && recipe.Modules.Length > 0 ? recipe.Modules[0] : null;
+            _vanillaMachine.Fill(recipe.Inputs, moduleId, recipe.Outputs);
         }
 
         private static void RenderMachineRecipeStrip(MachineRecipeStrip strip)
@@ -2874,25 +2896,20 @@ namespace ItemCatalog.UI
         /// <summary>每秒推进机器配方的轮播索引：配方组间独立，模块数多个时也单独轮。</summary>
         private static void TickMachineRecipes()
         {
-            if (!IsOpen || _machineStrips.Count == 0) return;
+            if (!IsOpen || _vanillaMachine == null || _entry == null) return;
 
-            for (int i = 0; i < _machineStrips.Count; i++)
-            {
-                var strip = _machineStrips[i];
-                if (strip == null || strip.Host == null || strip.Group == null) continue;
+            var groups = MachinePanels.RecipesFor(_entry.Id);
+            if (groups == null || groups.Length == 0) return;
 
-                var variants = strip.Group.Variants;
-                if (variants == null || variants.Length == 0) continue;
+            int gi = Mathf.Clamp(_page, 0, groups.Length - 1);
+            var group = groups[gi];
+            if (group == null || group.Variants == null || group.Variants.Length <= 1) return;
 
-                strip.Variant = (strip.Variant + 1) % variants.Length;
-
-                var recipe = variants[strip.Variant];
-                if (recipe != null && recipe.Modules.Length > 1)
-                    strip.Module = (strip.Module + 1) % recipe.Modules.Length;
-
-                try { RenderMachineRecipeStrip(strip); }
-                catch (Exception e) { Warn("machine recipe: " + e.Message); }
-            }
+            // 同档内轮播：切到下一条配方，只换原版 inventory 里的物品，不重建窗口
+            _vanillaVariant = (_vanillaVariant + 1) % group.Variants.Length;
+            var recipe = group.Variants[_vanillaVariant];
+            try { FillVanillaMachine(recipe); }
+            catch (Exception e) { Warn("machine roll: " + e.Message); }
         }
 
         /// <summary>面板标签：优先游戏自己的 mech_*_label_* 键（跟随游戏语言），取不到用兜底。</summary>
