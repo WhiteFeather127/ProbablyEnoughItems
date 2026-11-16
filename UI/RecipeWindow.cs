@@ -999,17 +999,25 @@ namespace ItemCatalog.UI
                     if (h < 1f) h = UnityEngine.UI.LayoutUtility.GetPreferredHeight(child);
                     if (h < 1f) continue;
 
+                    // 只脱离布局组，**保留 prefab 原本的 anchor/pivot/位置/尺寸**。
+                    // 之前强行设 anchor 贴窗口顶边 + anchoredPosition=0，没算窗口边框内缩，
+                    // 标题栏才跑偏。
                     var le = EnsureLayoutElement(child);
-                    le.ignoreLayout = true;      // 彻底脱离布局组，永不被压缩
-                    child.anchorMin = new Vector2(0f, 1f);
-                    child.anchorMax = new Vector2(1f, 1f);
-                    child.pivot = new Vector2(0.5f, 1f);
-                    child.anchoredPosition = Vector2.zero;
-                    child.sizeDelta = new Vector2(0f, h);
+                    le.ignoreLayout = true;
 
-                    group.padding.top = Mathf.RoundToInt(h);   // 内容区让开标题栏
+                    // 内容区让开：量「窗口顶边 → 标题栏底边」的实际距离（含边框内缩），
+                    // 而不是直接用标题栏自身高度。
+                    float scaleY = Mathf.Abs(root.lossyScale.y) > 0.001f ? root.lossyScale.y : 1f;
+                    var rc = new Vector3[4];
+                    var cc = new Vector3[4];
+                    root.GetWorldCorners(rc);
+                    child.GetWorldCorners(cc);
+                    float inset = (rc[1].y - cc[0].y) / scaleY;   // 左上角 → 左下角
+                    if (inset < 1f || inset > 400f) inset = h;
+
+                    group.padding.top = Mathf.RoundToInt(inset);
                     if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[chrome-lock] titleH=" + h);
+                        ModEntry.Log.Log("[chrome-lock] titleH=" + h + " inset=" + inset);
                     break;   // 只处理标题栏
                 }
             }
