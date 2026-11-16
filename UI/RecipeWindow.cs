@@ -1421,6 +1421,10 @@ namespace ItemCatalog.UI
 
                 // 无论反射成功与否，都保证这一层落到原版纯绿贴图上
                 if (!ReferenceEquals(image.sprite, green)) image.sprite = green;
+                // 原版绿贴图是九宫格（带 border），放大到 64px 时若用 Simple 会把
+                // 中间拉伸、绿边被精灵图盖住；用 Sliced 才能保持边框厚度、绿边露出。
+                if (green.border.x > 0f || green.border.y > 0f)
+                    image.type = UnityEngine.UI.Image.Type.Sliced;
                 image.enabled = true;
                 return true;
             }
@@ -2711,7 +2715,7 @@ namespace ItemCatalog.UI
             builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
             builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
             builder.AddFlexibleSpace();
-            if (_entry != null) RenderGoods(builder, _entry.Id, true, 3180, false, null, 64f);
+            if (_entry != null) RenderGoods(builder, _entry.Id, true, 3180, false, null, 52f);
             builder.End();
 
             // 第一步：造原版窗口外壳（还没挂、没放物品），先拿到它缩放后的真实尺寸
@@ -2741,12 +2745,17 @@ namespace ItemCatalog.UI
             builder.AddSpace(panelH);
             builder.End();
 
-            // 关键：host 在 bodyHost 的 VerticalLayoutGroup 下，childControlWidth=true，
-            // 它的宽度取自己的 preferredWidth。不设的话只有默认 100px，
-            // 面板 anchor(0.5) 居中在 100px 的 host 里 → 中线贴着窗口左边缘。
-            // 设成内容区宽度让 host 撑满，面板才对准窗口正中。
+            // 关键：host 在 bodyHost 的 VerticalLayoutGroup 下，childControlWidth/Height=true，
+            // 宽高都取自己的 LayoutElement。不设宽度只有默认 100px（面板中线会贴左边缘）；
+            // 高度也要显式设成面板高度，否则 host 可能比面板矮、面板下半截盖住下方翻页条。
             if (host != null)
-                EnsureLayoutElement(host).preferredWidth = WinWidth - 40f;
+            {
+                var hostLayout = EnsureLayoutElement(host);
+                hostLayout.preferredWidth = WinWidth - 40f;
+                hostLayout.minHeight = panelH;
+                hostLayout.preferredHeight = panelH;
+                hostLayout.flexibleHeight = 0f;
+            }
 
             // 第二步：把面板挂进占位容器、相对 host 正中心绝对定位，再缩放补偿 Canvas 差异，
             // 布局跑一次后塞物品（否则 inventory inner rect 还是 0，物品会浮到格子外）。

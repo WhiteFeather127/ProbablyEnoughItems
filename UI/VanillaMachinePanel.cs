@@ -118,10 +118,13 @@ namespace ItemCatalog.UI
                 // 不与布局组冲突，也不要销毁布局组（销毁会让 bodyHost 算不出占位的高度）。
                 rect.SetParent(host, false);
                 rect.localScale = Vector3.one;
-                // 正中心锚点 + 零偏移 → 面板在 host（进而窗口内容区）正中心
-                rect.anchorMin = new Vector2(0.5f, 0.5f);
-                rect.anchorMax = new Vector2(0.5f, 0.5f);
-                rect.pivot = new Vector2(0.5f, 0.5f);
+                // 顶边对齐 host 顶边、只向下延伸：
+                // 用正中心锚点时面板上下各展开一半，一旦 host 实际高度比面板矮一点，
+                // 上半部分就会溢出盖住上方的标题行和机器图标的绿底（用户看到的「像被面板挡了」）。
+                // 锚点/pivot 都在顶边中央 + anchoredPosition(0,0)，面板顶边严格贴 host 顶边。
+                rect.anchorMin = new Vector2(0.5f, 1f);
+                rect.anchorMax = new Vector2(0.5f, 1f);
+                rect.pivot = new Vector2(0.5f, 1f);
                 rect.anchoredPosition = Vector2.zero;
                 // 明确设尺寸：handler 是空布局壳，rect.size 常为 0，
                 // 不设 sizeDelta 面板会缩成一点。用 Validate() 算好的像素尺寸。
