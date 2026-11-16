@@ -842,6 +842,25 @@ namespace ItemCatalog.Catalog
                                  + " groups=" + groupCount
                                  + " entries=" + entries
                                  + " ids=" + string.Join(",", all.ToArray()));
+
+                // 每张池的完整物品清单（真实 id）：对账用——
+                // 「某物品反查不到来源」时直接对照这份清单和 _byItem 的键
+                for (int i = 0; i < _tables.Length; i++)
+                {
+                    var t = _tables[i];
+                    if (t == null || t.Items == null || t.Items.Count == 0) continue;
+
+                    var parts = new List<string>(t.Items.Count);
+                    for (int k = 0; k < t.Items.Count; k++)
+                    {
+                        var it = t.Items[k];
+                        if (it == null || string.IsNullOrEmpty(it.Id)) continue;
+                        parts.Add(it.Id + (it.Weight != 1f ? "(" + it.Weight + ")" : ""));
+                    }
+
+                    ModEntry.Log.Log("[loot] pool " + t.TableId + " (" + parts.Count + "): "
+                                     + string.Join(", ", parts.ToArray()));
+                }
             }
         }
 
