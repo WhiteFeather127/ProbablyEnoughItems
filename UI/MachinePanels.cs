@@ -66,31 +66,26 @@ namespace ItemCatalog.UI
                     PR(Slot, "mech_mouse_trap_label_trap", "捕鼠槽", RoleInput) } },
                 { "furnace", new[] {
                     PR(Grid, null, "容器网格", RoleInput),
-                    P(Battery, null, "电池"),
                     PR(Module, "mech_furnace_label_module", "模块", RoleModule),
                     PR(Slot, "mech_furnace_label_input", "投入", RoleInput),
                     PR(Slot, "mech_furnace_label_output", "产出", RoleOutput),
                     P(Note, null, "纸条") } },
                 { "moisture_farm", new[] {
                     P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
                     P(Module, "mech_moisture_farm_label_module", "模块"),
                     P(Slot, "mech_moisture_farm_label_container", "容器"),
                     P(Note, null, "纸条") } },
                 { "purifier", new[] {
                     P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
                     P(Module, "mech_purifier_label_module", "模块"),
                     P(Slot, "mech_purifier_label_container", "容器"),
                     P(Note, null, "纸条") } },
                 { "projector", new[] {
                     P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
                     P(Module, "mech_projector_label_module", "模块"),
                     P(Note, null, "纸条") } },
                 { "printer", new[] {
                     P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
                     P(Module, "mech_printer_label_module", "模块"),
                     P(Slot, "mech_printer_label_input", "输入"),
                     P(Slot, "mech_printer_label_chip", "芯片"),
@@ -98,36 +93,30 @@ namespace ItemCatalog.UI
                     P(Note, null, "纸条") } },
                 { "hydroponic", new[] {
                     P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
                     P(Module, "mech_hydroponic_label_module", "模块"),
                     P(Slot, "mech_hydroponic_label_water", "水"),
                     P(Slot, "mech_hydroponic_label_seed", "种子"),
                     P(Slot, "mech_hydroponic_label_output", "产出"),
                     P(Note, null, "纸条") } },
                 { "heating_plate", new[] {
-                    P(Battery, null, "电池"),
                     P(Module, "mech_heating_plate_label_module", "模块"),
                     P(Slot, "mech_heating_plate_label_container", "容器"),
                     P(Slot, "mech_heating_plate_label_temp", "温度"),
                     P(Slot, "mech_heating_plate_label_control", "控制") } },
                 { "wine_rack", new[] {
                     P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
                     P(Module, "mech_purifier_label_module", "模块"),
                     P(Slot, "mech_evaporator_label_container", "容器"),
                     P(Note, null, "纸条") } },
                 { "recharger", new[] {
-                    P(Battery, null, "电池"),
                     P(Slot, "mech_recharger_label_battery", "电池组") } },
                 { "evaporator", new[] {
-                    P(Battery, null, "电池"),
                     PR(Module, "mech_evaporator_label_module", "模块", RoleModule),
                     PR(Slot, "mech_evaporator_label_container", "容器", RoleInput),
                     PR(Slot, "mech_evaporator_label_distillate", "馏出", RoleOutput),
                     P(Note, null, "纸条") } },
                 { "dna_manipulator", new[] {
                     P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
                     P(Module, null, "模块"),
                     P(Slot, null, "输入磁盘"),
                     P(Slot, null, "种子"),
@@ -136,19 +125,16 @@ namespace ItemCatalog.UI
                     P(Slot, null, "弹出") } },
                 { "desequencer", new[] {
                     P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
                     P(Module, "mech_desequencer_label_module", "模块"),
                     P(Slot, "mech_desequencer_label_chip", "芯片"),
                     P(Slot, "mech_desequencer_label_input", "输入"),
                     P(Slot, "mech_desequencer_label_output", "产出") } },
                 { "deal_maker", new[] {
                     P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
                     P(Module, null, "模块"),
                     P(Slot, null, "控制"),
                     P(Note, null, "纸条") } },
                 { "chem_finisher", new[] {
-                    P(Battery, null, "电池"),
                     P(Module, "mech_chem_finisher_label_module", "模块"),
                     P(Slot, "mech_chem_finisher_label_container", "容器"),
                     P(Slot, "mech_chem_finisher_label_output", "产出"),
@@ -159,31 +145,25 @@ namespace ItemCatalog.UI
                     P(Slot, "mech_cassette_player_label_controls", "控制"),
                     P(Slot, "mech_cassette_player_label_volume", "音量") } },
                 { "dispenser", new[] {
-                    P(Battery, null, "电池"),
                     P(Slot, null, "产出"),
                     P(Slot, null, "控制") } },
                 { "bottle_printer", new[] {
-                    P(Battery, null, "电池"),
                     P(Slot, "mech_bottle_printer_label_output", "产出"),
                     P(Slot, "mech_bottle_printer_label_control", "控制") } },
                 { "blender", new[] {
-                    P(Battery, null, "电池"),
                     P(Module, "mech_blender_label_module", "模块"),
                     P(Slot, "mech_blender_label_input", "输入"),
                     P(Slot, "mech_blender_label_container", "容器"),
                     P(Slot, "mech_blender_label_control", "控制") } },
                 { "alarm", new[] {
                     P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
                     P(Module, "mech_alarm_label_module", "模块"),
                     P(Note, null, "纸条") } },
                 { "vending_machine", new[] {
-                    P(Battery, null, "电池"),
                     P(Slot, "mech_vending_label_inventory", "货道"),
                     P(Slot, "mech_vending_label_control", "控制"),
                     P(Slot, "mech_vending_label_core", "核心") } },
                 { "vending_fountain", new[] {
-                    P(Battery, null, "电池"),
                     P(Slot, "mech_fountain_label_basewater", "基础水"),
                     P(Slot, "mech_fountain_label_hq_water", "优质水"),
                     P(Slot, "mech_fountain_label_pure_water", "纯水"),
