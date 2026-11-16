@@ -219,8 +219,6 @@ namespace ItemCatalog.UI
         private static readonly List<TagStrip> _tagStrips = new List<TagStrip>();
         private static readonly List<MachineRecipeStrip> _machineStrips = new List<MachineRecipeStrip>();
 
-        /// <summary>机器页当前嵌入的原版机器窗口（真 GameGridInventory + 样本物品）。</summary>
-        private static VanillaMachinePanel _vanillaMachine;
         private static int _vanillaVariant;   // 当前档内轮播到第几条配方
 
         private static int _tagStripSeq;
@@ -365,7 +363,6 @@ namespace ItemCatalog.UI
             _tagRollIndex.Clear();   // 换物品后标签轮播从头开始
             _tagStrips.Clear();
             _machineStrips.Clear();
-            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaVariant = 0;
             _tagStripSeq = 0;
             SourceSeed = null;
@@ -961,7 +958,6 @@ namespace ItemCatalog.UI
         private static void OnWindowClosed()
         {
             _highlights.Clear();
-            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _window = null;
             _bodyHost = null;
             CatalogWindow.ResetExternalCells();
@@ -1053,7 +1049,6 @@ namespace ItemCatalog.UI
                 builder.End();
                 CustomUIBuilder.RebuildLayout(_bodyHost);
                 ApplyContentHeight();
-                DumpMachineLayout();
                 SyncHighlights();   // 窗口定稿后再对齐，避免布局重排把格子挪走
             }
             catch (Exception e)
@@ -1308,24 +1303,6 @@ namespace ItemCatalog.UI
                 if (preferred < 1f) preferred = EstimateHeight();
 
                 float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
-
-                // 只有机器页需要特殊处理：原版面板是 ignoreLayout 的绝对定位节点，
-                // 它的高度要显式声明给 ContentRoot，否则内容区撑不开、面板被裁。
-                // 其它页面保持通用逻辑（bodyHost 按内容自适应），不能改动它们的布局。
-                var pageCategory = _categories.Count == 0 ? null : _categories[_category];
-                bool machinePage = pageCategory != null && pageCategory.Kind == CatMachine;
-                if (machinePage && _window.ContentRoot != null)
-                {
-                    var crLayout = EnsureLayoutElement(_window.ContentRoot);
-                    crLayout.minHeight = -1f;      // 硬下限会抢标题栏高度，不设
-                    // 内容首选高度 + 翻页条高度（翻页条在 bodyHost 外面，preferred 里没算它）
-                    crLayout.preferredHeight = Mathf.Max(1f, preferred + 40f);
-                    crLayout.flexibleHeight = 0f;
-
-                    // 声明了高度必须马上重排一次，否则布局组还按旧值分配，
-                    // bodyHost 会一直停在 122px（日志实测）。
-                    CustomUIBuilder.RebuildLayout(_window.ContentRoot);
-                }
 
                 if (Mathf.Abs(height - _lastHeight) > 2f)
                 {
@@ -2753,133 +2730,24 @@ namespace ItemCatalog.UI
             if (_entry != null) RenderGoods(builder, _entry.Id, true, 3180, false, null, 52f);
             builder.End();
 
-            // 第一步：造原版窗口外壳（还没挂、没放物品），先拿到它缩放后的真实尺寸
-            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
-            _vanillaMachine = new VanillaMachinePanel();
-
-            bool built = false;
-            if (string.Equals(_entry.Id, "furnace", StringComparison.Ordinal))
-                built = _vanillaMachine.BuildFurnaceShell();
-
-            if (!built)
-            {
-                if (ModEntry.Log != null) ModEntry.Log.Warning("[vanilla-machine] build failed");
-                _vanillaMachine.Destroy();
-                _vanillaMachine = null;
-                return;
-            }
-
-            // 占位容器：里面放一个 AddSpace(面板高度)，让 bodyHost 的 VerticalLayoutGroup
-            // 把「标题 + 面板高度 + 翻页条」都算进总高——这样窗口高度正好包住面板，
-            // 标题和翻页条不会被挤出窗口（之前面板 ignoreLayout，高度算不进去才被挤）。
-            // 面板可用高度 = 窗口上限(900) - 实际标题栏(约 32) - 顶部行(约 56)
-            // - 翻页条(34) - 间距(约 20)。窗口上限不能动（一放宽所有页面的标题栏都会被挤），
-            // 所以面板按剩余空间等比缩小，比例可能略小于 2（约 1.85），但能完整显示。
-            const float RealTitleBar = 32f;
-            float panelMaxH = Mathf.Max(120f, MaxContentHeight() - RealTitleBar - 56f - 34f - 20f);
-
-            builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
+            // 一套机器面板（当前配方）。轮播时只重画这个容器，不重建整页。
+            // 面板用自绘：格子是游戏原版 Window/machinery/cell 精灵，物品图标叠在上面，
+            // tooltip 走 BindGoods（和图鉴格子同一套原生提示链）。布局完全受控，
+            // 不会像嵌入原版 PixelWindow 那样被游戏的布局组重算挤扁。
+            builder.BeginColumn(2f);
             var host = builder.CurrentContainer;
-            // 用已挂进窗口的 _bodyHost 算 Canvas 比例（host 刚建、可能还没进布局流），
-            // 保证 AddSpace 占的高度和面板最终缩放后的高度一致。
-            float panelH = Mathf.Max(1f, _vanillaMachine.ScaledSize(_bodyHost, panelMaxH).y);
-            builder.AddSpace(panelH);
             builder.End();
 
-            // 关键：host 在 bodyHost 的 VerticalLayoutGroup 下，childControlWidth/Height=true，
-            // 宽高都取自己的 LayoutElement。不设宽度只有默认 100px（面板中线会贴左边缘）；
-            // 高度也要显式设成面板高度，否则 host 可能比面板矮、面板下半截盖住下方翻页条。
-            if (host != null)
+            var strip = new MachineRecipeStrip
             {
-                var hostLayout = EnsureLayoutElement(host);
-                hostLayout.preferredWidth = WinWidth - 40f;
-                hostLayout.minHeight = panelH;
-                hostLayout.preferredHeight = panelH;
-                hostLayout.flexibleHeight = 0f;
-            }
-
-            // 第二步：把面板挂进占位容器、相对 host 正中心绝对定位，再缩放补偿 Canvas 差异，
-            // 布局跑一次后塞物品（否则 inventory inner rect 还是 0，物品会浮到格子外）。
-            var rect = _vanillaMachine.AttachContentTo(host);
-            if (rect != null) CustomUIBuilder.RebuildLayout(rect);
-            _vanillaMachine.MatchGameCanvasScale(host, panelMaxH);
-            FillVanillaMachine(recipe);
-
-            if (ModEntry.Log != null)
-                ModEntry.Log.Log("[vanilla-machine] furnace v" + _vanillaVariant
-                                 + " panelH=" + panelH
-                                 + " rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
-        }
-
-        /// <summary>
-        /// 布局定稿后打印机器页三段的真实世界矩形，用来定位「面板位置靠上 / 遮挡 / 下方留空」。
-        /// 只在机器页且面板存在时输出，其它页无开销。
-        /// </summary>
-        private static void DumpMachineLayout()
-        {
-            if (_vanillaMachine == null || ModEntry.Log == null) return;
-            var panel = _vanillaMachine.AttachedRect;
-            if (panel == null) return;
-            var host = panel.parent as RectTransform;
-
-            try
-            {
-                var root = _window == null ? null : _window.Rect;
-                var cr = _window == null ? null : _window.ContentRoot;
-                ModEntry.Log.Log("[mach-layout] win=" + WorldRect(root)
-                                 + " cr=" + WorldRect(cr)
-                                 + " crLe=" + LayoutInfo(cr)
-                                 + " body=" + WorldRect(_bodyHost)
-                                 + " bodyLe=" + LayoutInfo(_bodyHost)
-                                 + " bodyParent=" + (_bodyHost.parent == null ? "null" : _bodyHost.parent.name)
-                                 + " bodyParentGroups=" + GroupInfo(_bodyHost.parent as RectTransform)
-                                 + " host=" + WorldRect(host)
-                                 + " panel=" + WorldRect(panel)
-                                 + " preferred=" + UnityEngine.UI.LayoutUtility.GetPreferredHeight(_bodyHost));
-            }
-            catch (Exception e) { Warn("dump layout: " + e.Message); }
-        }
-
-        private static string WorldRect(RectTransform rect)
-        {
-            if (rect == null) return "null";
-            var corners = new Vector3[4];
-            rect.GetWorldCorners(corners);
-            return string.Format("(x{0:F0}..{1:F0} y{2:F0}..{3:F0})",
-                corners[0].x, corners[2].x, corners[0].y, corners[2].y);
-        }
-
-        /// <summary>LayoutElement 的关键值，用来确认高度声明有没有落到位。</summary>
-        private static string LayoutInfo(RectTransform rect)
-        {
-            if (rect == null) return "null";
-            var le = rect.GetComponent<UnityEngine.UI.LayoutElement>();
-            if (le == null) return "noLE";
-            return string.Format("(min{0:F0} pref{1:F0} flex{2:F1})",
-                le.minHeight, le.preferredHeight, le.flexibleHeight);
-        }
-
-        /// <summary>父级容器上挂了哪些布局组、是否控制子级高度。</summary>
-        private static string GroupInfo(RectTransform rect)
-        {
-            if (rect == null) return "null";
-            var v = rect.GetComponent<UnityEngine.UI.VerticalLayoutGroup>();
-            var h = rect.GetComponent<UnityEngine.UI.HorizontalLayoutGroup>();
-            var g = rect.GetComponent<UnityEngine.UI.GridLayoutGroup>();
-            var sb = new System.Text.StringBuilder();
-            if (v != null) sb.Append("VLG(ctrlH=").Append(v.childControlHeight).Append(",ctrlW=").Append(v.childControlWidth).Append(")");
-            if (h != null) sb.Append(" HLG");
-            if (g != null) sb.Append(" Grid");
-            if (sb.Length == 0) sb.Append("none");
-            return sb.ToString();
-        }
-
-        /// <summary>把当前配方的物品塞进原版窗口的真 inventory（轮播换配方时只换物品，不重建窗口）。</summary>
-        private static void FillVanillaMachine(MachinePanels.Recipe recipe)
-        {
-            if (_vanillaMachine == null || recipe == null) return;
-            string moduleId = recipe.Modules != null && recipe.Modules.Length > 0 ? recipe.Modules[0] : null;
-            _vanillaMachine.Fill(recipe.Inputs, moduleId, recipe.Outputs);
+                Host = host,
+                Group = group,
+                Variant = _vanillaVariant,
+                Module = 0,
+                Base = 3200
+            };
+            _machineStrips.Add(strip);
+            RenderMachineRecipeStrip(strip);
         }
 
         private static void RenderMachineRecipeStrip(MachineRecipeStrip strip)
@@ -2926,6 +2794,9 @@ namespace ItemCatalog.UI
             {
                 var panel = panels[p];
                 if (panel == null) continue;
+
+                // 电池 / 纸条槽按用户要求不显示（它们不参与配方）
+                if (panel.Kind == MachinePanels.Battery || panel.Kind == MachinePanels.Note) continue;
 
                 string label = MachinePanelLabel(panel);
 
@@ -2976,6 +2847,9 @@ namespace ItemCatalog.UI
             CatalogWindow.FitIcon(sprite, side, out w, out h);
             builder.AddImage(sprite, w, h, "mach_item" + elementId);
 
+            // 原生 tooltip（悬停物品名/说明）+ 左键跳查，和图鉴格子同一套
+            BindGoods(builder, id, false);
+
             // 物品图标下面垫一层原版机器格子底框（和空槽同一张 cell 精灵）
             PutCellFrame(builder, side);
         }
@@ -3013,20 +2887,27 @@ namespace ItemCatalog.UI
         /// <summary>每秒推进机器配方的轮播索引：配方组间独立，模块数多个时也单独轮。</summary>
         private static void TickMachineRecipes()
         {
-            if (!IsOpen || _vanillaMachine == null || _entry == null) return;
+            if (!IsOpen || _machineStrips.Count == 0) return;
 
-            var groups = MachinePanels.RecipesFor(_entry.Id);
-            if (groups == null || groups.Length == 0) return;
+            for (int i = 0; i < _machineStrips.Count; i++)
+            {
+                var strip = _machineStrips[i];
+                if (strip == null || strip.Host == null || strip.Group == null) continue;
 
-            int gi = Mathf.Clamp(_page, 0, groups.Length - 1);
-            var group = groups[gi];
-            if (group == null || group.Variants == null || group.Variants.Length <= 1) return;
+                var variants = strip.Group.Variants;
+                if (variants == null || variants.Length == 0) continue;
 
-            // 同档内轮播：切到下一条配方，只换原版 inventory 里的物品，不重建窗口
-            _vanillaVariant = (_vanillaVariant + 1) % group.Variants.Length;
-            var recipe = group.Variants[_vanillaVariant];
-            try { FillVanillaMachine(recipe); }
-            catch (Exception e) { Warn("machine roll: " + e.Message); }
+                // 同一纯度内轮播配方（按组里的顺序，一条一条来）
+                strip.Variant = (strip.Variant + 1) % variants.Length;
+
+                // 模块也跟着轮播：每条配方的模块列表按顺序循环
+                var recipe = variants[strip.Variant];
+                if (recipe != null && recipe.Modules != null && recipe.Modules.Length > 1)
+                    strip.Module = (strip.Module + 1) % recipe.Modules.Length;
+
+                try { RenderMachineRecipeStrip(strip); }
+                catch (Exception e) { Warn("machine roll: " + e.Message); }
+            }
         }
 
         /// <summary>面板标签：优先游戏自己的 mech_*_label_* 键（跟随游戏语言），取不到用兜底。</summary>
@@ -3082,6 +2963,10 @@ namespace ItemCatalog.UI
                 return;
             }
 
+            // 物品按「可放格子的连续序号」填：只数形状里的 '1'，从左到右、从上到下
+            // 依次占据格子。不考虑配方表里物品原本的位置/顺序，按最优顺序紧凑摆放。
+            int cellSeq = 0;
+
             for (int r = 0; r * MachinePanels.ShapeCols < shape.Length; r++)
             {
                 builder.BeginRow(2f, UnityEngine.TextAnchor.MiddleCenter);
@@ -3091,7 +2976,8 @@ namespace ItemCatalog.UI
                     int idx = r * MachinePanels.ShapeCols + c;
                     if (idx < shape.Length && shape[idx] == '1')
                     {
-                        string itemId = itemFor == null ? null : itemFor(idx);
+                        string itemId = itemFor == null ? null : itemFor(cellSeq);
+                        cellSeq++;
                         var sprite = string.IsNullOrEmpty(itemId) ? null
                             : (CatalogWindow.IconFor(itemId) ?? CatalogWindow.CompositeIconFor(itemId));
                         if (sprite != null)
@@ -3099,7 +2985,8 @@ namespace ItemCatalog.UI
                             float w, h;
                             CatalogWindow.FitIcon(sprite, side, out w, out h);
                             builder.AddImage(sprite, w, h, "mach_cellitem_" + idBase + "_" + idx);
-                            PutCellFrame(builder, side);   // 物品图标下面垫原版格子底框
+                            BindGoods(builder, itemId, false);   // 原生 tooltip
+                            PutCellFrame(builder, side);         // 物品图标下面垫原版格子底框
                         }
                         else builder.AddImage(frame, side, side, "mach_cell_" + r + "_" + c);
                     }
@@ -3148,15 +3035,15 @@ namespace ItemCatalog.UI
             return _machineSlotSprite;
         }
 
-        /// <summary>格子的边长：优先用原版精灵的像素大小（SetNativeSize），拿不到退回旧值。</summary>
+        /// <summary>
+        /// 机器格子边长：原版 cell 精灵原生约 18px，在详情窗口里太小，
+        /// 统一放大到 44px（精灵拉伸，物品图标按同尺寸居中摆放）。
+        /// </summary>
+        private const float MachineCellSize = 44f;
+
         private static float MachineCellSide(float fallback)
         {
-            var sprite = MachineSlotSprite();
-            if (sprite == null) return fallback;
-
-            float w = sprite.rect.width / Mathf.Max(1f, sprite.pixelsPerUnit);
-            float h = sprite.rect.height / Mathf.Max(1f, sprite.pixelsPerUnit);
-            return Mathf.Max(8f, Mathf.Max(w, h));
+            return MachineCellSize;
         }
 
         private static void RenderRecipe(CustomUIBuilder builder, RecipeInfo recipe)
