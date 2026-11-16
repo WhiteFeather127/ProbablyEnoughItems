@@ -1418,7 +1418,11 @@ namespace ItemCatalog.UI
                     if (machinePage)
                     {
                         crLayout.minHeight = -1f;
-                        crLayout.preferredHeight = Mathf.Max(1f, preferred);
+                        // 窗口高度 = 标题栏preferred + ContentRoot.preferred（布局组自己算，
+                        // SetSize 会被覆盖）。而框架的标题栏 preferredHeight 比它实际渲染
+                        // 占用小约 20px（padding 没算进去），所以这里补一点，
+                        // 让窗口整体够高、标题栏不被压。
+                        crLayout.preferredHeight = Mathf.Max(1f, preferred + 40f);
                         crLayout.flexibleHeight = 0f;
                     }
                     else
