@@ -27,6 +27,32 @@ namespace ItemCatalog.UI
 
         internal RectTransform AttachedRect { get { return _attachedRect; } }
 
+        /// <summary>原版面板经 Canvas scale 补偿后的显示尺寸（造完壳就能算，用来给 AddSpace 占位）。</summary>
+        internal Vector2 ScaledSize(RectTransform host)
+        {
+            float ratio = CanvasRatio(host);
+            float w = (_window != null && _window.widthPixels > 1f) ? _window.widthPixels : 160f;
+            float h = (_window != null && _window.heightPixels > 1f) ? _window.heightPixels : 401f;
+            return new Vector2(w * ratio, h * ratio);
+        }
+
+        private float CanvasRatio(RectTransform host)
+        {
+            try
+            {
+                var ourCanvas = host != null ? host.GetComponentInParent<Canvas>() : null;
+                Canvas gameCanvas = null;
+                var handler = RenderHandler.current;
+                if (handler != null) gameCanvas = handler.windowUICanvas;
+                float ours = ourCanvas != null ? ourCanvas.scaleFactor : 1f;
+                float game = gameCanvas != null ? gameCanvas.scaleFactor : 1f;
+                if (ours <= 0.001f || game <= 0.001f) return 1f;
+                float ratio = game / ours;
+                return (ratio < 0.2f || ratio > 6f) ? 1f : ratio;
+            }
+            catch { return 1f; }
+        }
+
         internal bool IsAlive
         {
             get
@@ -88,17 +114,8 @@ namespace ItemCatalog.UI
                 var rect = node != null ? node.rectTransform : _window.rectTransform;
                 if (rect == null) return null;
 
-                // BeginColumn 给 host 挂了 VerticalLayoutGroup，会强制接管所有子节点的
-                // 尺寸和位置（childControlWidth/Height=true），我们设的 anchor/height 全被覆盖。
-                // 这个 host 里只放这一块原版面板，不需要布局组——直接移除，
-                // 之后 anchor/anchoredPosition/sizeDelta 才完全由我们自己控制。
-                var group = host.GetComponent<UnityEngine.UI.VerticalLayoutGroup>();
-                if (group != null)
-                {
-                    group.enabled = false;   // 先停用，当帧就不再参与布局
-                    UnityEngine.Object.Destroy(group);
-                }
-
+                // host 里的 AddSpace 负责撑开布局高度，面板本身 ignoreLayout + 绝对居中，
+                // 不与布局组冲突，也不要销毁布局组（销毁会让 bodyHost 算不出占位的高度）。
                 rect.SetParent(host, false);
                 rect.localScale = Vector3.one;
                 // 正中心锚点 + 零偏移 → 面板在 host（进而窗口内容区）正中心
@@ -166,13 +183,9 @@ namespace ItemCatalog.UI
                     ? _window.heightPixels : _attachedRect.rect.height;
                 float scaledHeight = nativeH * ratio;
 
-                // host 的布局组已移除，ApplyContentHeight 靠 host 自己的 LayoutElement
-                // preferredHeight 量高度。设成缩放后的面板视觉高度，窗口正好包住面板。
-                var hostLe = host.GetComponent<UnityEngine.UI.LayoutElement>();
-                if (hostLe == null) hostLe = host.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
-                hostLe.minWidth = hostLe.preferredWidth = nativeW * ratio;
-                hostLe.minHeight = hostLe.preferredHeight = scaledHeight;
-                hostLe.flexibleHeight = 0f;
+                // host 的高度改由 RenderMachinePage 里的 AddSpace(scaledH) 正式占位，
+                // 让 bodyHost 的 VerticalLayoutGroup 能算进标题/面板/翻页三者的高度。
+                // 这里不再设 host 的 LayoutElement，避免同一高度被两处控制。
 
                 if (ModEntry.Log != null)
                     ModEntry.Log.Log("[vanilla-machine] canvas ours=" + ours + " game=" + game

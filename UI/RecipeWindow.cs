@@ -2710,14 +2710,7 @@ namespace ItemCatalog.UI
 
             builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
 
-            // 原版窗口内容节点是 reparent 进来的，不参与 CustomUIBuilder 的布局高度计算，
-            // 给占位容器一个最小高度即可（原版面板自己的尺寸保留，不拉伸）。
-            // MiddleCenter：让 VerticalLayoutGroup 把里面的原版面板居中（水平+垂直）
-            builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
-            var host = builder.CurrentContainer;
-            builder.End();
-
-            // 第一步：造原版窗口外壳并挂进详情容器（还没放物品）
+            // 第一步：造原版窗口外壳（还没挂、没放物品），先拿到它缩放后的真实尺寸
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaMachine = new VanillaMachinePanel();
 
@@ -2725,29 +2718,36 @@ namespace ItemCatalog.UI
             if (string.Equals(_entry.Id, "furnace", StringComparison.Ordinal))
                 built = _vanillaMachine.BuildFurnaceShell();
 
-            if (built)
-            {
-                var rect = _vanillaMachine.AttachContentTo(host);
-                // 第二步：让布局先跑一次（inventory 的 inner rect 定稿），再塞物品，
-                // 否则物品渲染节点会定位到格子外面。
-                if (rect != null) CustomUIBuilder.RebuildLayout(rect);
-                // 两个 Canvas 的 CanvasScaler 不同，按 scaleFactor 比例补偿，
-                // 让面板显示尺寸和游戏里正常机器窗口一致（不拍脑袋填倍数）。
-                _vanillaMachine.MatchGameCanvasScale(host);
-                // host 高度由面板自己的 LayoutElement(preferredHeight=面板高度) 撑起，
-                // ApplyContentHeight 再按 host 首选高度撑窗口——窗口正好贴合面板。
-                FillVanillaMachine(recipe);
-
-                if (ModEntry.Log != null)
-                    ModEntry.Log.Log("[vanilla-machine] furnace v" + _vanillaVariant
-                                     + " rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
-            }
-            else
+            if (!built)
             {
                 if (ModEntry.Log != null) ModEntry.Log.Warning("[vanilla-machine] build failed");
                 _vanillaMachine.Destroy();
                 _vanillaMachine = null;
+                return;
             }
+
+            // 占位容器：里面放一个 AddSpace(面板高度)，让 bodyHost 的 VerticalLayoutGroup
+            // 把「标题 + 面板高度 + 翻页条」都算进总高——这样窗口高度正好包住面板，
+            // 标题和翻页条不会被挤出窗口（之前面板 ignoreLayout，高度算不进去才被挤）。
+            builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
+            var host = builder.CurrentContainer;
+            // 用已挂进窗口的 _bodyHost 算 Canvas 比例（host 刚建、可能还没进布局流），
+            // 保证 AddSpace 占的高度和面板最终缩放后的高度一致。
+            float panelH = Mathf.Max(1f, _vanillaMachine.ScaledSize(_bodyHost).y);
+            builder.AddSpace(panelH);
+            builder.End();
+
+            // 第二步：把面板挂进占位容器、相对 host 正中心绝对定位，再缩放补偿 Canvas 差异，
+            // 布局跑一次后塞物品（否则 inventory inner rect 还是 0，物品会浮到格子外）。
+            var rect = _vanillaMachine.AttachContentTo(host);
+            if (rect != null) CustomUIBuilder.RebuildLayout(rect);
+            _vanillaMachine.MatchGameCanvasScale(host);
+            FillVanillaMachine(recipe);
+
+            if (ModEntry.Log != null)
+                ModEntry.Log.Log("[vanilla-machine] furnace v" + _vanillaVariant
+                                 + " panelH=" + panelH
+                                 + " rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
         }
 
         /// <summary>把当前配方的物品塞进原版窗口的真 inventory（轮播换配方时只换物品，不重建窗口）。</summary>
