@@ -964,49 +964,11 @@ namespace ItemCatalog.UI
 
             if (_window != null)
             {
-                PinTitleBar(_window);   // 标题栏固定大小，之后内容再多也压不动它
                 try { CustomUIBuilder.RebuildLayout(_window.ContentRoot); }
                 catch { }
             }
 
             Render();
-        }
-
-        /// <summary>
-        /// 固定窗口标题栏高度：只加 LayoutElement 的硬性 minHeight + 关闭弹性，
-        /// **不改 anchor / pivot / 位置 / padding**（上一版改这些把窗口布局搞坏了）。
-        /// 布局组因此不能再把它压小，窗口变小时标题栏保持原高度。
-        /// </summary>
-        private static void PinTitleBar(CustomUIWindow window)
-        {
-            if (window == null) return;
-            var root = window.Rect;
-            var content = window.ContentRoot;
-            if (root == null || content == null || root == content) return;
-
-            try
-            {
-                for (int i = 0; i < root.childCount; i++)
-                {
-                    var child = root.GetChild(i) as RectTransform;
-                    if (child == null || child == content) continue;
-
-                    // 用固定值锁标题栏，不用「当前 rect.height」实测：
-                    // 首次调用时窗口还是最小高度，量到的值会被后续放大，形成
-                    // 「窗口越大→标题栏越大→窗口更大」的死循环（日志实测窗口涨到 1583）。
-                    float h = child.rect.height;
-                    if (h < 40f || h > 200f) h = MachineTitleBarH;   // 只接受合理范围
-
-                    var le = EnsureLayoutElement(child);
-                    le.minHeight = h;          // 硬下限：不许被压小
-                    le.preferredHeight = h;
-                    le.flexibleHeight = 0f;    // 也不许被拉大
-                    if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[pin-title] h=" + h);
-                    break;
-                }
-            }
-            catch (Exception e) { Warn("pin title: " + e.Message); }
         }
 
         /// <summary>窗口被游戏关掉（Esc / 点 X）时，别留下悬空提示框和拖拽登记。</summary>
