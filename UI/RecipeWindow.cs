@@ -1311,11 +1311,11 @@ namespace ItemCatalog.UI
 
                 float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
 
-                // 布局链：窗口root(VLG) → ContentRoot → _bodyHost(VLG) → 内容。
-                // ContentRoot 自己是普通节点、没有布局组，所以窗口 root 的布局组
-                // 只能读它的 LayoutElement.preferredHeight；不声明就按初始 rect(122) 算，
-                // 内容区永远撑不开（日志实测 body=122）。这里把内容首选高度声明到 ContentRoot，
-                // 窗口与内容区会一起被撑开；标题栏仍由布局组固定在上方。
+                // 布局链：窗口root(VLG) → ContentRoot → Content(VLG) → _bodyHost → 内容。
+                // 实测 ContentRoot 已经是 968、bodyHost 的 preferred 也是 968，
+                // 但 Content 的 VLG 只给 bodyHost 分配 122（布局组按旧值算、没跟着重排）。
+                // 直接把 Content 的子级高度控制关掉，让 bodyHost 拉伸铺满 ContentRoot，
+                // 不再依赖布局组推算——这样 968 的空间才能真正落到内容区上。
                 float innerHeight = Mathf.Max(1f, preferred);
                 var contentRoot = _window.ContentRoot;
                 if (contentRoot != null)
@@ -1324,6 +1324,27 @@ namespace ItemCatalog.UI
                     crLayout.minHeight = innerHeight;
                     crLayout.preferredHeight = innerHeight;
                     crLayout.flexibleHeight = 0f;
+                }
+
+                if (_bodyHost != null)
+                {
+                    var bodyParent = _bodyHost.parent as RectTransform;
+                    if (bodyParent != null)
+                    {
+                        var parentGroup = bodyParent.GetComponent<UnityEngine.UI.VerticalLayoutGroup>();
+                        if (parentGroup != null)
+                        {
+                            parentGroup.childControlHeight = false;   // 高度由我们直接铺满
+                            parentGroup.childForceExpandHeight = false;
+                        }
+                    }
+
+                    // 拉伸铺满父级：上下左右全贴边，不再由布局组分配高度
+                    _bodyHost.anchorMin = Vector2.zero;
+                    _bodyHost.anchorMax = Vector2.one;
+                    _bodyHost.pivot = new Vector2(0.5f, 0.5f);
+                    _bodyHost.offsetMin = Vector2.zero;
+                    _bodyHost.offsetMax = Vector2.zero;
                 }
 
                 if (Mathf.Abs(height - _lastHeight) > 2f)
