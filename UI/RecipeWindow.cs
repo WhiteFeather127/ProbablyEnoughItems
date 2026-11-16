@@ -961,11 +961,57 @@ namespace ItemCatalog.UI
 
             if (_window != null)
             {
+                // 标题栏固定高度、内容流式：先锁标题栏再排版，之后内容区再高也压不到它
+                LockWindowChrome(_window);
                 try { CustomUIBuilder.RebuildLayout(_window.ContentRoot); }
                 catch { }
             }
 
             Render();
+        }
+
+        /// <summary>
+        /// 锁定窗口标题栏：窗口 root 挂着 VerticalLayoutGroup，空间不足时它会压缩**所有**
+        /// 子级（连标题栏一起压扁，关闭按钮变形）。这里把 contentRoot 之外的直接子级
+        /// （标题栏）脱离布局组、锚定在窗口顶边并保持自身高度，同时给布局组加等高的
+        /// top padding——内容区从标题栏下方开始流式排列，永远不会挤压标题栏。
+        /// </summary>
+        private static void LockWindowChrome(CustomUIWindow window)
+        {
+            if (window == null) return;
+            var root = window.Rect;
+            var content = window.ContentRoot;
+            if (root == null || content == null || root == content) return;
+
+            try
+            {
+                var group = root.GetComponent<UnityEngine.UI.VerticalLayoutGroup>();
+                if (group == null) return;
+
+                for (int i = 0; i < root.childCount; i++)
+                {
+                    var child = root.GetChild(i) as RectTransform;
+                    if (child == null || child == content) continue;
+
+                    float h = child.rect.height;
+                    if (h < 1f) h = UnityEngine.UI.LayoutUtility.GetPreferredHeight(child);
+                    if (h < 1f) continue;
+
+                    var le = EnsureLayoutElement(child);
+                    le.ignoreLayout = true;      // 彻底脱离布局组，永不被压缩
+                    child.anchorMin = new Vector2(0f, 1f);
+                    child.anchorMax = new Vector2(1f, 1f);
+                    child.pivot = new Vector2(0.5f, 1f);
+                    child.anchoredPosition = Vector2.zero;
+                    child.sizeDelta = new Vector2(0f, h);
+
+                    group.padding.top = Mathf.RoundToInt(h);   // 内容区让开标题栏
+                    if (ModEntry.Log != null)
+                        ModEntry.Log.Log("[chrome-lock] titleH=" + h);
+                    break;   // 只处理标题栏
+                }
+            }
+            catch (Exception e) { Warn("lock chrome: " + e.Message); }
         }
 
         /// <summary>窗口被游戏关掉（Esc / 点 X）时，别留下悬空提示框和拖拽登记。</summary>
