@@ -991,23 +991,20 @@ namespace ItemCatalog.UI
                 float sy = Mathf.Abs(win.lossyScale.y) > 0.001f ? win.lossyScale.y : 1f;
 
                 var wc = new Vector3[4];
+                var bc = new Vector3[4];
                 win.GetWorldCorners(wc);
-                float topY = wc[1].y;   // 窗口顶边（世界）
+                _bodyHost.GetWorldCorners(bc);
 
-                float minY = float.MaxValue;
-                for (int i = 0; i < _bodyHost.childCount; i++)
-                {
-                    var rt = _bodyHost.GetChild(i) as RectTransform;
-                    if (rt == null || !rt.gameObject.activeInHierarchy) continue;
+                // 窗口顶边 → bodyHost 顶边：标题栏 + ContentRoot/Content 各层 padding
+                float topGap = (wc[1].y - bc[1].y) / sy;
 
-                    var c = new Vector3[4];
-                    rt.GetWorldCorners(c);
-                    if (c[0].y < minY) minY = c[0].y;   // 左下角
-                }
+                // 内容高度用 preferred（首选值，稳定）：用 bodyHost 实际高度会形成
+                // 「窗口变大 → bodyHost 被拉伸 → 底边更低 → 窗口再变大」的循环。
+                float pref = UnityEngine.UI.LayoutUtility.GetPreferredHeight(_bodyHost);
 
-                if (minY > topY) return 0f;
-                float need = (topY - minY) / sy;
-                return (need > 100f && need < 4000f) ? need : 0f;
+                if (topGap < 4f || topGap > 400f) return 0f;
+                if (pref < 50f || pref > 4000f) return 0f;
+                return pref + topGap;
             }
             catch { return 0f; }
         }
