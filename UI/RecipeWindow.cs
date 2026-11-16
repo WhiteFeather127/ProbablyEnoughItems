@@ -229,7 +229,7 @@ namespace ItemCatalog.UI
         private static int _vanillaVariant;   // 当前档内轮播到第几条配方
 
         // 机器页自适应高度用的实测值（布局跑完才有，只增不减）
-        private static float _chromeLocked;     // 标题栏锁定的高度（窗口创建时读一次，高度预算与约束共用）
+        private static float _chromeMeasured;   // 实测「窗口顶边→bodyHost顶边」，即标题栏+各层 padding
         private static float _measureChrome;    // 标题栏实测高度 = 窗口高 − 内容区高
         private static float _measurePagerH;    // 翻页条实测高度
         private static int _measurePass;        // 收敛轮次，防止反复重画
@@ -383,7 +383,7 @@ namespace ItemCatalog.UI
             _measureChrome = 0f;   // 换物品后重新实测（同一窗口内可复用，但换了窗口就重来）
             _measurePagerH = 0f;
             _measurePass = 0;
-            _chromeLocked = 0f;    // 新窗口重新锁定标题栏高度
+            _chromeMeasured = 0f;   // 换物品后重新实测标题栏+padding
             _tagStripSeq = 0;
             SourceSeed = null;
             SourceWater = null;
@@ -1016,18 +1016,6 @@ namespace ItemCatalog.UI
         ///
         /// 高度取「关闭按钮实测高度 + 上下留白」，保证按钮完整且不会过高。
         /// </summary>
-        /// <summary>
-        /// 标题栏的**自然首选高度**（不受当前被压缩状态影响）。
-        /// 不能用「窗口高 − 内容区高」当预算：那个差值本身就已经是压缩后的结果，
-        /// 拿它算窗口会形成「压扁→差值变小→窗口更矮→更压扁」的死循环。
-        /// </summary>
-        private static float NaturalChrome(CustomUIWindow window)
-        {
-            // 直接用 PinTitleBar 锁定时缓存的值，保证「窗口高度预算」和
-            // 「标题栏实际锁定的高度」永远是同一个数，不会一边大一边小。
-            if (_chromeLocked > 4f) return _chromeLocked;
-            return MachineTitleBarH;
-        }
 
         /// <summary>窗口被游戏关掉（Esc / 点 X）时，别留下悬空提示框和拖拽登记。</summary>
         private static void OnWindowClosed()
@@ -1392,8 +1380,12 @@ namespace ItemCatalog.UI
                 // 所以它已经包含翻页条高度——之前再加一次 pagerH，每次都会多出一段空白。
                 if (machinePage)
                 {
-                    // 兜底值：内容 + 预算（仅在框架没能自己撑开时使用）
-                    height = Mathf.Max(WinMinHeight, preferred + MachineTitleBarH);
+                    // 两阶段精确测量，不猜常量：
+                    // 首轮给足空间（+220），让标题栏以**自然高度**排布——此时量到的
+                    // 「窗口顶边 → bodyHost 顶边」就是真实的标题栏+padding 总量；
+                    // 第二轮用这个实测值精确设置窗口，标题栏既不压、也不多留空白。
+                    float gap = _chromeMeasured > 4f ? _chromeMeasured : 220f;
+                    height = Mathf.Max(WinMinHeight, preferred + gap);
                     if (Screen.height > 0)
                         height = Mathf.Min(height, Screen.height - 10f);
                 }
@@ -1439,27 +1431,38 @@ namespace ItemCatalog.UI
                     // 分配子级高度的是窗口 root 上的布局组，必须重排 root。
                     CustomUIBuilder.RebuildLayout(_window.Rect);
 
-                    // 更优雅的一步：让**框架自己**把窗口撑开。
-                    // 窗口 root 的布局组本来就知道标题栏有多高，只要 ContentRoot 的
-                    // preferredHeight 声明好，它算出来的高度就是「标题栏 + 内容」，
-                    // 不需要我们猜任何常量。测一下它是否真的撑开了：撑开就采纳，
-                    // 没撑开才退回下面的 SetSize 兜底。
-                    if (machinePage)
+                    // 实测「窗口顶边 → bodyHost 顶边」= 标题栏 + 各层 padding 的真实总量。
+                    // 必须在**首轮给足空间**（gap 用 220）时测量，这样标题栏是自然高度，
+                    // 量出来的值才准；测到后重画一轮，窗口就会精确贴合。
+                    if (machinePage && _machineTopRow != null)
                     {
-                        // 阈值取「内容 + 125」：低于这个值说明标题栏还是被压了，别采纳。
-                        float autoH = _window.Rect.rect.height;
-                        if (autoH >= preferred + 125f && autoH <= Screen.height)
+                        try
                         {
-                            _lastHeight = autoH;   // 标记为已定稿，跳过 SetSize
-                            if (ModEntry.Log != null)
-                                ModEntry.Log.Log("[mach-win] framework height=" + autoH
-                                                 + " preferred=" + preferred);
-                            return;
-                        }
+                            float sy3 = Mathf.Abs(_window.Rect.lossyScale.y) > 0.001f
+                                ? _window.Rect.lossyScale.y : 1f;
+                            var wc3 = new Vector3[4];
+                            var bc3 = new Vector3[4];
+                            _window.Rect.GetWorldCorners(wc3);
+                            _bodyHost.GetWorldCorners(bc3);
+                            float gap = (wc3[1].y - bc3[1].y) / sy3;
 
-                        if (ModEntry.Log != null)
-                            ModEntry.Log.Log("[mach-win] framework height=" + autoH
-                                             + " too small, fallback to SetSize");
+                            if (gap > 20f && gap < 300f
+                                && Mathf.Abs(gap - _chromeMeasured) > 2f)
+                            {
+                                _chromeMeasured = gap;
+                                if (ModEntry.Log != null)
+                                    ModEntry.Log.Log("[mach-win] measured gap=" + gap
+                                                     + " preferred=" + preferred);
+                                Render();
+                                return;
+                            }
+
+                            if (ModEntry.Log != null)
+                                ModEntry.Log.Log("[mach-win] gap settled=" + gap
+                                                 + " preferred=" + preferred
+                                                 + " height=" + _window.Rect.rect.height);
+                        }
+                        catch { }
                     }
                 }
 
