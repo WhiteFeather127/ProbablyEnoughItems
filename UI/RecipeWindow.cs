@@ -1310,6 +1310,19 @@ namespace ItemCatalog.UI
                 if (preferred < 1f) preferred = EstimateHeight();
 
                 float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
+
+                // 窗口 root 挂着 VerticalLayoutGroup（childControlHeight=true），
+                // 它会把 SetSize 设的 sizeDelta 按子级 preferredHeight 重算覆盖掉，
+                // 导致窗口永远停在初始最小高度（日志实测 body 只有 122px）→ 内容被裁。
+                // 关掉窗口 root 的子级高度控制，让 sizeDelta 真正说了算；
+                // 标题栏位置由它在窗口内的锚点固定，不受影响。
+                var root = _window.Rect;
+                if (root != null)
+                {
+                    var rootGroup = root.GetComponent<UnityEngine.UI.VerticalLayoutGroup>();
+                    if (rootGroup != null) rootGroup.childControlHeight = false;
+                }
+
                 if (Mathf.Abs(height - _lastHeight) > 2f)
                 {
                     // 固定窗口顶边（标题栏）再改高度：窗口 pivot 在正中，
@@ -2805,7 +2818,8 @@ namespace ItemCatalog.UI
 
             try
             {
-                ModEntry.Log.Log("[mach-layout] body=" + WorldRect(_bodyHost)
+                ModEntry.Log.Log("[mach-layout] win=" + WorldRect(_window == null ? null : _window.Rect)
+                                 + " body=" + WorldRect(_bodyHost)
                                  + " host=" + WorldRect(host)
                                  + " panel=" + WorldRect(panel)
                                  + " scale=" + panel.localScale.x
