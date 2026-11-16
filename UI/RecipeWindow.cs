@@ -1311,16 +1311,19 @@ namespace ItemCatalog.UI
 
                 float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
 
-                // 窗口 root 挂着 VerticalLayoutGroup（childControlHeight=true），
-                // 它会把 SetSize 设的 sizeDelta 按子级 preferredHeight 重算覆盖掉，
-                // 导致窗口永远停在初始最小高度（日志实测 body 只有 122px）→ 内容被裁。
-                // 关掉窗口 root 的子级高度控制，让 sizeDelta 真正说了算；
-                // 标题栏位置由它在窗口内的锚点固定，不受影响。
-                var root = _window.Rect;
-                if (root != null)
+                // 布局链：窗口root(VLG) → ContentRoot → _bodyHost(VLG) → 内容。
+                // ContentRoot 自己是普通节点、没有布局组，所以窗口 root 的布局组
+                // 只能读它的 LayoutElement.preferredHeight；不声明就按初始 rect(122) 算，
+                // 内容区永远撑不开（日志实测 body=122）。这里把内容首选高度声明到 ContentRoot，
+                // 窗口与内容区会一起被撑开；标题栏仍由布局组固定在上方。
+                float innerHeight = Mathf.Max(1f, preferred);
+                var contentRoot = _window.ContentRoot;
+                if (contentRoot != null)
                 {
-                    var rootGroup = root.GetComponent<UnityEngine.UI.VerticalLayoutGroup>();
-                    if (rootGroup != null) rootGroup.childControlHeight = false;
+                    var crLayout = EnsureLayoutElement(contentRoot);
+                    crLayout.minHeight = innerHeight;
+                    crLayout.preferredHeight = innerHeight;
+                    crLayout.flexibleHeight = 0f;
                 }
 
                 if (Mathf.Abs(height - _lastHeight) > 2f)
