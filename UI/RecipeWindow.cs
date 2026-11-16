@@ -998,9 +998,14 @@ namespace ItemCatalog.UI
                     float wasFlex = le.flexibleHeight;
                     float w = child.rect.width;
 
-                    // 宽度必须一起锁：加了 LayoutElement 后 preferredWidth 默认 -1，
-                    // 布局组会 fallback 到父级满宽，标题栏就被拉得比自身背景宽、
-                    // 左右各露出空白。锁成它原本的宽度即可。
+                    // 高度用**它自己的实测值**，不要写常量：常量若比真实高度大，
+                    // 布局就比视觉高、下方多出一条空白（用户看到的正是这个）。
+                    // 只接受合理范围，避免窗口还没布局时读到 0 或被压扁的异常值。
+                    float h = child.rect.height;
+                    if (h < 40f || h > 220f) h = MachineTitleBarH;
+
+                    // 宽度同样锁成原值：加了 LayoutElement 后 preferredWidth 默认 -1，
+                    // 布局组会 fallback 到父级满宽，左右会露空白。
                     if (w > 1f)
                     {
                         le.minWidth = w;
@@ -1008,11 +1013,11 @@ namespace ItemCatalog.UI
                         le.flexibleWidth = 0f;
                     }
 
-                    le.minHeight = MachineTitleBarH;
-                    le.preferredHeight = MachineTitleBarH;
+                    le.minHeight = h;
+                    le.preferredHeight = h;
                     le.flexibleHeight = 0f;      // 不再吸收多余空间
                     if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[pin-title] fixedH=" + MachineTitleBarH
+                        ModEntry.Log.Log("[pin-title] keepH=" + h
                                          + " keepW=" + w + " wasFlex=" + wasFlex);
                     break;
                 }
@@ -2917,12 +2922,30 @@ namespace ItemCatalog.UI
             // 布局跑一次后塞物品（否则 inventory inner rect 还是 0，物品会浮到格子外）。
             var rect = _vanillaMachine.AttachContentTo(host);
             if (rect != null) CustomUIBuilder.RebuildLayout(rect);
-            _vanillaMachine.MatchGameCanvasScale(host, panelMaxH);
+
+            // 用**实测内容高度**（不是 rect 高度）修正占位与 host：
+            // rect 含底部留白，按它给高度会让内容下方空一段、翻页条被推远。
+            float visualH = _vanillaMachine.MatchGameCanvasScale(host, panelMaxH);
+            if (visualH > 10f && host != null)
+            {
+                var hostLe = EnsureLayoutElement(host);
+                hostLe.minHeight = visualH;
+                hostLe.preferredHeight = visualH;
+
+                if (spaceEl != null && spaceEl.Rect != null)
+                {
+                    var spaceLe = spaceEl.Rect.GetComponent<UnityEngine.UI.LayoutElement>();
+                    if (spaceLe == null) spaceLe = spaceEl.Rect.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
+                    spaceLe.minHeight = visualH;
+                    spaceLe.preferredHeight = visualH;
+                }
+            }
+
             FillVanillaMachine(recipe);
 
             if (ModEntry.Log != null)
                 ModEntry.Log.Log("[vanilla-machine] furnace v" + _vanillaVariant
-                                 + " panelH=" + panelH
+                                 + " panelH=" + panelH + " visualH=" + visualH
                                  + " rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
         }
 

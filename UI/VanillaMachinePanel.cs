@@ -115,6 +115,40 @@ namespace ItemCatalog.UI
             }
         }
 
+        /// <summary>
+        /// 实测面板里**内容**的真实高度（世界包围盒）。
+        /// 面板的 heightPixels 含底部留白（面板行 padding / yPadding），
+        /// 按 rect 高度布局会让内容只占上半部分，多出来的空白就落在面板与翻页条之间。
+        /// </summary>
+        internal float MeasureContentHeight()
+        {
+            if (_attachedRect == null) return 0f;
+            try
+            {
+                float scaleY = Mathf.Abs(_attachedRect.lossyScale.y) > 0.001f
+                    ? _attachedRect.lossyScale.y : 1f;
+
+                float minY = float.MaxValue, maxY = float.MinValue;
+                var all = _attachedRect.GetComponentsInChildren<RectTransform>(true);
+                for (int i = 0; i < all.Length; i++)
+                {
+                    var rt = all[i];
+                    if (rt == null || rt == _attachedRect) continue;
+
+                    var c = new Vector3[4];
+                    rt.GetWorldCorners(c);
+                    if (c[0].y < minY) minY = c[0].y;
+                    if (c[1].y > maxY) maxY = c[1].y;
+                }
+
+                if (minY > maxY) return 0f;
+                float measured = (maxY - minY) / scaleY;
+                if (measured < 10f || measured > 4000f) return 0f;
+                return measured;
+            }
+            catch { return 0f; }
+        }
+
         /// <summary>把原版窗口内容挂到指定容器（窗口框/标题栏不要，只嵌面板行）。</summary>
         internal RectTransform AttachContentTo(RectTransform host)
         {
@@ -182,19 +216,22 @@ namespace ItemCatalog.UI
                 // 只改缩放，anchor/pivot 已在 AttachContentTo 设成正中心，这里不碰
                 _attachedRect.localScale = new Vector3(ratio, ratio, 1f);
 
-                // 用 Validate() 算好的 widthPixels/heightPixels 作为面板真实尺寸——
-                // _attachedRect（childElement.handler）是空布局壳，rect.size 常为 0，
-                // 之前用它算高度 → host≈0 → 窗口特别矮。
+                // 真实高度优先用**实测内容包围盒**：heightPixels 含底部留白，
+                // 按它布局会让内容只占上半部分、多出来的空白落在面板与翻页条之间。
                 float nativeW = _window != null && _window.widthPixels > 1f
                     ? _window.widthPixels : _attachedRect.rect.width;
-                float nativeH = _window != null && _window.heightPixels > 1f
+                float boxH = _window != null && _window.heightPixels > 1f
                     ? _window.heightPixels : _attachedRect.rect.height;
+                float measuredH = MeasureContentHeight();
+                bool useMeasured = measuredH > 10f && measuredH < boxH;
+                float nativeH = useMeasured ? measuredH : boxH;
                 float scaledHeight = nativeH * ratio;
 
                 if (ModEntry.Log != null)
                     ModEntry.Log.Log("[vanilla-machine] ratio=" + ratio
-                                     + " maxH=" + maxHeight
-                                     + " native=" + nativeW + "x" + nativeH
+                                     + " box=" + nativeW + "x" + boxH
+                                     + " content=" + measuredH
+                                     + " used=" + nativeH
                                      + " scaledH=" + scaledHeight);
                 return scaledHeight;
             }
