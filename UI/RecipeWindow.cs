@@ -2900,10 +2900,7 @@ namespace ItemCatalog.UI
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
-            // 用已挂进窗口的 _bodyHost 算 Canvas 比例（host 刚建、可能还没进布局流），
-            // 保证 AddSpace 占的高度和面板最终缩放后的高度一致。
             float panelH = Mathf.Max(1f, _vanillaMachine.ScaledSize(_bodyHost, panelMaxH).y);
-            builder.AddSpace(panelH);
             builder.End();
 
             // 关键：host 在 bodyHost 的 VerticalLayoutGroup 下，childControlWidth/Height=true，
@@ -2928,17 +2925,12 @@ namespace ItemCatalog.UI
             float visualH = _vanillaMachine.MatchGameCanvasScale(host, panelMaxH);
             if (visualH > 10f && host != null)
             {
+                // host 高度严格等于面板**实测视觉高度**：之前用 rect 高度(782)，
+                // 面板实际只有 700 左右，中间 80 多就成了「面板与翻页条之间的空白」。
                 var hostLe = EnsureLayoutElement(host);
                 hostLe.minHeight = visualH;
                 hostLe.preferredHeight = visualH;
-
-                if (spaceEl != null && spaceEl.Rect != null)
-                {
-                    var spaceLe = spaceEl.Rect.GetComponent<UnityEngine.UI.LayoutElement>();
-                    if (spaceLe == null) spaceLe = spaceEl.Rect.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
-                    spaceLe.minHeight = visualH;
-                    spaceLe.preferredHeight = visualH;
-                }
+                hostLe.flexibleHeight = 0f;
             }
 
             FillVanillaMachine(recipe);
