@@ -1363,9 +1363,8 @@ namespace ItemCatalog.UI
 
                 float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
 
-                // 机器页：窗口高度 = 内容首选 + 翻页条 + 标题栏，三者都用**实测值**
-                // （_measureChrome / _measurePagerH 在布局后量出来，见下方测量段）。
-                // 首轮还没有实测值时用保守初值，第二轮就换成实测，不留空白也不挤压。
+                // 机器页：窗口高度 = 内容实际高度 + 翻页条 + 标题栏，全部用**实测值**。
+                // 不做上限收敛（上限会让窗口被拉高、下方留白），只保留最小高度防止过扁。
                 if (machinePage)
                 {
                     float chromeUse = _measureChrome > 4f ? _measureChrome : MachineTitleBarH;
@@ -2868,15 +2867,10 @@ namespace ItemCatalog.UI
             // 面板可用高度 = 窗口上限(900) - 实际标题栏(约 32) - 顶部行(约 56)
             // - 翻页条(34) - 间距(约 20)。窗口上限不能动（一放宽所有页面的标题栏都会被挤），
             // 所以面板按剩余空间等比缩小，比例可能略小于 2（约 1.85），但能完整显示。
-            // 面板可用高度 = 屏幕可用高 − 标题栏 − 顶部行 − 翻页条。
-            // 标题栏/翻页条优先用**实测值**（ApplyContentHeight 里量出来），
-            // 首轮还没有才退回常量，之后按实测自适应。
-            float screenCap = Screen.height > 0 ? Screen.height - 20f : 1060f;
-            float chromeUse = _measureChrome > 4f ? _measureChrome : MachineTitleBarH;
-            float pagerUse = _measurePagerH > 1f ? _measurePagerH : 34f;
-            float topUse = _machineTopRow != null && _machineTopRow.rect.height > 1f
-                ? _machineTopRow.rect.height : 56f;
-            float panelMaxH = Mathf.Max(120f, screenCap - chromeUse - topUse - pagerUse - 20f);
+            // 面板高度 = 它自己的**实际高度**（Canvas 比例算出来的真实尺寸），
+            // 不拿屏幕空间去封顶——封顶会让窗口高度被迫凑到上限、下方留白。
+            // 传 0 表示不封顶，ScaledSize/MatchGameCanvasScale 内部走纯 Canvas 比例。
+            const float panelMaxH = 0f;
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
