@@ -115,9 +115,9 @@ namespace ItemCatalog.UI
         /// 取两个 Canvas 的 scaleFactor 比例，等比补偿到内容节点上（只改 localScale，
         /// 物品是 grid 子节点会一起缩放，格子内相对位置不变）。
         /// </summary>
-        internal void MatchGameCanvasScale(RectTransform host)
+        internal float MatchGameCanvasScale(RectTransform host)
         {
-            if (_attachedRect == null || host == null) return;
+            if (_attachedRect == null || host == null) return 0f;
             try
             {
                 // 详情窗口所在的 Canvas（沿父级找，overlay 的根）
@@ -129,18 +129,29 @@ namespace ItemCatalog.UI
 
                 float ours = ourCanvas != null ? ourCanvas.scaleFactor : 1f;
                 float game = gameCanvas != null ? gameCanvas.scaleFactor : 1f;
-                if (ours <= 0.001f || game <= 0.001f) return;
+                if (ours <= 0.001f || game <= 0.001f) return 0f;
 
                 float ratio = game / ours;
                 // 比例异常（比如某 Canvas 还没初始化，scaleFactor=0/极大）就别缩放
                 if (ratio < 0.2f || ratio > 6f) ratio = 1f;
                 _attachedRect.localScale = new Vector3(ratio, ratio, 1f);
 
+                // 水平居中：锚点/pivot 都在顶边中央，X 偏移 0
+                _attachedRect.anchorMin = new Vector2(0.5f, 1f);
+                _attachedRect.anchorMax = new Vector2(0.5f, 1f);
+                _attachedRect.pivot = new Vector2(0.5f, 1f);
+                _attachedRect.anchoredPosition = new Vector2(0f, 0f);
+
+                // 缩放后的实际高度（sizeDelta 是本地尺寸，显示高度 = 本地 × localScale）
+                float scaledHeight = _attachedRect.rect.height * ratio;
+
                 if (ModEntry.Log != null)
                     ModEntry.Log.Log("[vanilla-machine] canvas scale ours=" + ours
-                                     + " game=" + game + " ratio=" + ratio);
+                                     + " game=" + game + " ratio=" + ratio
+                                     + " height=" + scaledHeight);
+                return scaledHeight;
             }
-            catch (Exception e) { Warn("canvas scale: " + e.Message); }
+            catch (Exception e) { Warn("canvas scale: " + e.Message); return 0f; }
         }
 
         /// <summary>
