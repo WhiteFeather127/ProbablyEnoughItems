@@ -116,15 +116,18 @@ namespace ItemCatalog.UI
 
                 // host 里的 AddSpace 负责撑开布局高度，面板本身 ignoreLayout + 绝对居中，
                 // 不与布局组冲突，也不要销毁布局组（销毁会让 bodyHost 算不出占位的高度）。
+                // 兜底：host 加 RectMask2D，面板超出 host 矩形的部分直接裁掉，
+                // 绝不会盖住上方的标题行 / 下方的翻页条（之前溢出遮挡就是没裁剪）。
+                var mask = host.GetComponent<UnityEngine.UI.RectMask2D>();
+                if (mask == null) mask = host.gameObject.AddComponent<UnityEngine.UI.RectMask2D>();
+
                 rect.SetParent(host, false);
                 rect.localScale = Vector3.one;
-                // 顶边对齐 host 顶边、只向下延伸：
-                // 用正中心锚点时面板上下各展开一半，一旦 host 实际高度比面板矮一点，
-                // 上半部分就会溢出盖住上方的标题行和机器图标的绿底（用户看到的「像被面板挡了」）。
-                // 锚点/pivot 都在顶边中央 + anchoredPosition(0,0)，面板顶边严格贴 host 顶边。
-                rect.anchorMin = new Vector2(0.5f, 1f);
-                rect.anchorMax = new Vector2(0.5f, 1f);
-                rect.pivot = new Vector2(0.5f, 1f);
+                // 正中心锚点：host 高度已显式设成面板缩放后的高度，面板上下正好填满；
+                // 配合 host 上的 RectMask2D，即使有毫米级误差也只会被裁、不会遮挡上下内容。
+                rect.anchorMin = new Vector2(0.5f, 0.5f);
+                rect.anchorMax = new Vector2(0.5f, 0.5f);
+                rect.pivot = new Vector2(0.5f, 0.5f);
                 rect.anchoredPosition = Vector2.zero;
                 // 明确设尺寸：handler 是空布局壳，rect.size 常为 0，
                 // 不设 sizeDelta 面板会缩成一点。用 Validate() 算好的像素尺寸。

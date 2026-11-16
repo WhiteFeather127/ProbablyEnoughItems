@@ -1053,6 +1053,7 @@ namespace ItemCatalog.UI
                 builder.End();
                 CustomUIBuilder.RebuildLayout(_bodyHost);
                 ApplyContentHeight();
+                DumpMachineLayout();
                 SyncHighlights();   // 窗口定稿后再对齐，避免布局重排把格子挪走
             }
             catch (Exception e)
@@ -2768,6 +2769,37 @@ namespace ItemCatalog.UI
                 ModEntry.Log.Log("[vanilla-machine] furnace v" + _vanillaVariant
                                  + " panelH=" + panelH
                                  + " rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
+        }
+
+        /// <summary>
+        /// 布局定稿后打印机器页三段的真实世界矩形，用来定位「面板位置靠上 / 遮挡 / 下方留空」。
+        /// 只在机器页且面板存在时输出，其它页无开销。
+        /// </summary>
+        private static void DumpMachineLayout()
+        {
+            if (_vanillaMachine == null || ModEntry.Log == null) return;
+            var panel = _vanillaMachine.AttachedRect;
+            if (panel == null) return;
+            var host = panel.parent as RectTransform;
+
+            try
+            {
+                ModEntry.Log.Log("[mach-layout] body=" + WorldRect(_bodyHost)
+                                 + " host=" + WorldRect(host)
+                                 + " panel=" + WorldRect(panel)
+                                 + " scale=" + panel.localScale.x
+                                 + " sizeDelta=" + panel.sizeDelta);
+            }
+            catch (Exception e) { Warn("dump layout: " + e.Message); }
+        }
+
+        private static string WorldRect(RectTransform rect)
+        {
+            if (rect == null) return "null";
+            var corners = new Vector3[4];
+            rect.GetWorldCorners(corners);
+            return string.Format("(x{0:F0}..{1:F0} y{2:F0}..{3:F0})",
+                corners[0].x, corners[2].x, corners[0].y, corners[2].y);
         }
 
         /// <summary>把当前配方的物品塞进原版窗口的真 inventory（轮播换配方时只换物品，不重建窗口）。</summary>
