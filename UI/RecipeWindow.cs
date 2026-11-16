@@ -2735,9 +2735,13 @@ namespace ItemCatalog.UI
                 var rect = _vanillaMachine.AttachContentTo(host);
                 // 第二步：让布局先跑一次（inventory 的 inner rect 定稿），再塞物品，
                 // 否则物品渲染节点会定位到格子外面。
-                // 不缩放窗口——保留游戏原版面板尺寸（由 UISettings.gridSize 决定），
-                // 缩放会破坏格子里物品的坐标，也和游戏里正常机器窗口大小不一致。
                 if (rect != null) CustomUIBuilder.RebuildLayout(rect);
+
+                // 等比放大到填满详情窗口宽度（只改 localScale，物品节点跟着放大，
+                // 格子内相对位置不变——之前的错位是入格没走 TryAccept 导致的）。
+                float scaledH = _vanillaMachine.ScaleToWidth(WinWidth - 40f);
+                if (host != null && scaledH > 0f)
+                    EnsureLayoutElement(host).minHeight = scaledH + 24f;   // 等比放大后的高度，别被裁
                 FillVanillaMachine(recipe);
 
                 if (ModEntry.Log != null)
