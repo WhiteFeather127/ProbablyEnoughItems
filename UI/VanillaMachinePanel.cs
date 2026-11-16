@@ -61,6 +61,13 @@ namespace ItemCatalog.UI
 
                 _window = new PixelWindow(false, null, WindowStyle.Machinery);
                 _window.Attach(row);
+                // 游戏正常窗口在 Show() 里会 Validate()，由 childElement 的像素尺寸
+                // 算出 widthPixels/heightPixels 并定稿所有面板坐标。
+                // 我们直接抠内容挂进详情窗口，必须手动调一次，否则尺寸/坐标未定稿。
+                _window.Validate();
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] shell size="
+                                     + _window.widthPixels + "x" + _window.heightPixels);
                 return _window != null;
             }
             catch (Exception e)
@@ -111,13 +118,19 @@ namespace ItemCatalog.UI
             if (_attachedRect == null || targetWidth <= 0f) return 0f;
             try
             {
-                float native = _attachedRect.rect.width;
-                if (native <= 1f) return 0f;
-                float scale = Mathf.Clamp(targetWidth / native, 1f, 4f);
+                // 用原版窗口算好的像素尺寸（Validate 后有效），而不是 handler 的 rect.width
+                // ——handler 是空布局壳，rect.width 常为 0，会让缩放直接跳过（面板就一直很小）。
+                float native = _window != null && _window.widthPixels > 1f
+                    ? _window.widthPixels : _attachedRect.rect.width;
+                float nativeH = _window != null && _window.heightPixels > 1f
+                    ? _window.heightPixels : _attachedRect.rect.height;
+                if (native <= 1f) { Warn("scale: native width <= 1, skip"); return 0f; }
+
+                float scale = Mathf.Clamp(targetWidth / native, 1f, 6f);
                 _attachedRect.localScale = new Vector3(scale, scale, 1f);
-                float scaledHeight = _attachedRect.rect.height * scale;
+                float scaledHeight = nativeH * scale;
                 if (ModEntry.Log != null)
-                    ModEntry.Log.Log("[vanilla-machine] scale native=" + native
+                    ModEntry.Log.Log("[vanilla-machine] scale native=" + native + "x" + nativeH
                                      + " -> " + scale + " height=" + scaledHeight);
                 return scaledHeight;
             }
