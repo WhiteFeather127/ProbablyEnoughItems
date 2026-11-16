@@ -975,6 +975,44 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
+        /// 从**窗口顶边**量到「最后一个控件的底边」的距离——窗口高度就用它。
+        /// 不估算 preferred/chrome，纯看实际排布出来的最低点：
+        /// 窗口底部正好贴在最后一个控件下面，既不留空白也不会把它裁掉。
+        /// 只遍历 _bodyHost 的直接子级（大类行 / 类型标签 / 内容列 / 翻页条），
+        /// 它们都在布局流里、不会溢出；面板所在的 host 高度已被限制，不会撑破内容列。
+        /// </summary>
+        private static float MeasureBodyBottom()
+        {
+            var win = _window == null ? null : _window.Rect;
+            if (win == null || _bodyHost == null) return 0f;
+
+            try
+            {
+                float sy = Mathf.Abs(win.lossyScale.y) > 0.001f ? win.lossyScale.y : 1f;
+
+                var wc = new Vector3[4];
+                win.GetWorldCorners(wc);
+                float topY = wc[1].y;   // 窗口顶边（世界）
+
+                float minY = float.MaxValue;
+                for (int i = 0; i < _bodyHost.childCount; i++)
+                {
+                    var rt = _bodyHost.GetChild(i) as RectTransform;
+                    if (rt == null || !rt.gameObject.activeInHierarchy) continue;
+
+                    var c = new Vector3[4];
+                    rt.GetWorldCorners(c);
+                    if (c[0].y < minY) minY = c[0].y;   // 左下角
+                }
+
+                if (minY > topY) return 0f;
+                float need = (topY - minY) / sy;
+                return (need > 100f && need < 4000f) ? need : 0f;
+            }
+            catch { return 0f; }
+        }
+
+        /// <summary>
         /// 量关闭按钮的真实高度：标题栏高度以它为基准，
         /// 这样按钮永远完整显示、也不会因为布局组压缩而被压扁。
         /// 排除内容区里的按钮（翻页 / 分类切换等）。
@@ -1438,17 +1476,25 @@ namespace ItemCatalog.UI
                 // 所以它已经包含翻页条高度——之前再加一次 pagerH，每次都会多出一段空白。
                 if (machinePage)
                 {
-                    // 用标题栏的**自然首选高度**，不是被压缩后的实测差值——
-                    // 后者会自洽地一直偏小、标题栏永远压扁。
-                    float chromeUse = NaturalChrome(_window);
-                    height = Mathf.Max(WinMinHeight, preferred + chromeUse);
+                    // 窗口高度 = 窗口顶边 到「最后一个控件底边」的距离（纯实测）。
+                    float need = MeasureBodyBottom();
+                    if (need > 100f)
+                    {
+                        height = need + 6f;   // 给底边留一点点余量
+                    }
+                    else
+                    {
+                        // 首轮布局还没成型时兜底
+                        height = Mathf.Max(WinMinHeight, preferred + NaturalChrome(_window));
+                    }
+
                     // 物理边界：窗口不能超出屏幕。
                     if (Screen.height > 0)
                         height = Mathf.Min(height, Screen.height - 10f);
 
                     if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[mach-win] preferred=" + preferred
-                                         + " chromeNatural=" + chromeUse + " height=" + height);
+                        ModEntry.Log.Log("[mach-win] bottomNeed=" + need
+                                         + " preferred=" + preferred + " height=" + height);
                 }
 
                 // 顶部行（配方名 + 右上角机器图标）固定高度：
