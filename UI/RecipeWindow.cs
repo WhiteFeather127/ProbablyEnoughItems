@@ -2710,8 +2710,8 @@ namespace ItemCatalog.UI
 
             builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
 
-            // 原版窗口内容节点是 reparent 进来的，不参与 CustomUIBuilder 的布局高度计算。
-            // 给占位容器设成拉伸满宽 + 固定高度，让窗口放大并贴齐左右边缘。
+            // 原版窗口内容节点是 reparent 进来的，不参与 CustomUIBuilder 的布局高度计算，
+            // 给占位容器一个最小高度即可（原版面板自己的尺寸保留，不拉伸）。
             builder.BeginColumn(2f);
             var host = builder.CurrentContainer;
             builder.End();
@@ -2719,13 +2719,7 @@ namespace ItemCatalog.UI
             {
                 var layout = EnsureLayoutElement(host);
                 layout.flexibleHeight = 0f;
-                layout.minHeight = 560f;
-                if (host is RectTransform)
-                {
-                    var hostRect = (RectTransform)host;
-                    hostRect.anchorMin = new Vector2(0f, 1f);
-                    hostRect.anchorMax = new Vector2(1f, 1f);
-                }
+                layout.minHeight = 360f;   // 3 个原版面板竖排的近似高度
             }
 
             // 第一步：造原版窗口外壳并挂进详情容器（还没放物品）
@@ -2741,8 +2735,9 @@ namespace ItemCatalog.UI
                 var rect = _vanillaMachine.AttachContentTo(host);
                 // 第二步：让布局先跑一次（inventory 的 inner rect 定稿），再塞物品，
                 // 否则物品渲染节点会定位到格子外面。
+                // 不缩放窗口——保留游戏原版面板尺寸（由 UISettings.gridSize 决定），
+                // 缩放会破坏格子里物品的坐标，也和游戏里正常机器窗口大小不一致。
                 if (rect != null) CustomUIBuilder.RebuildLayout(rect);
-                _vanillaMachine.ScaleToWidth(WinWidth - 40f);
                 FillVanillaMachine(recipe);
 
                 if (ModEntry.Log != null)

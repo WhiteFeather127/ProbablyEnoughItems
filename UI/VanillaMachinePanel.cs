@@ -81,10 +81,13 @@ namespace ItemCatalog.UI
                 var rect = node != null ? node.rectTransform : _window.rectTransform;
                 if (rect == null) return null;
 
+                // 保留游戏原版的窗口尺寸（widthPixels 由 UISettings.gridSize × 格数算出），
+                // 不拉伸、不缩放——缩放会破坏格子里物品的坐标。
+                // 只把锚点设成顶部居中，让原版面板在详情窗口里居中显示。
                 rect.SetParent(host, false);
                 rect.localScale = Vector3.one;
-                rect.anchorMin = new Vector2(0f, 1f);
-                rect.anchorMax = new Vector2(1f, 1f);
+                rect.anchorMin = new Vector2(0.5f, 1f);
+                rect.anchorMax = new Vector2(0.5f, 1f);
                 rect.pivot = new Vector2(0.5f, 1f);
                 rect.anchoredPosition = Vector2.zero;
                 _attachedRect = rect;
@@ -95,26 +98,6 @@ namespace ItemCatalog.UI
                 Warn("attach: " + e.Message);
                 return null;
             }
-        }
-
-        /// <summary>把原版窗口内容等比放大到指定宽度并左右贴边（原版固定宽约 130px，太窄）。</summary>
-        internal void ScaleToWidth(float width)
-        {
-            if (_attachedRect == null || width <= 0f) return;
-            try
-            {
-                float native = _attachedRect.rect.width;
-                if (native <= 1f) return;
-                float scale = width / native;
-                if (scale < 1f) scale = 1f;   // 只放大，不缩小
-                _attachedRect.localScale = new Vector3(scale, scale, 1f);
-
-                // 缩放后 pivot 在顶部中央，居中贴齐左右边缘
-                _attachedRect.anchorMin = new Vector2(0.5f, 1f);
-                _attachedRect.anchorMax = new Vector2(0.5f, 1f);
-                _attachedRect.anchoredPosition = new Vector2(0f, _attachedRect.anchoredPosition.y);
-            }
-            catch (Exception e) { Warn("scale: " + e.Message); }
         }
 
         /// <summary>
