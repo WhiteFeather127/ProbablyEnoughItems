@@ -225,6 +225,13 @@ namespace ItemCatalog.UI
         private static VanillaMachinePanel _vanillaMachine;
         private static int _vanillaVariant;   // 当前档内轮播到第几条配方
 
+        // ── 机器页动态布局（不做常量估算，全部用实测尺寸）──
+        private static RectTransform _machineTopRow;    // 顶部行（配方名 + 机器图标）
+        private static RectTransform _machinePagerRow;  // 底部翻页条
+        private static float _measuredChrome;           // 实测标题栏高度（窗口高 − 内容区高）
+        private static float _machinePanelMaxH;         // 动态算出的面板可用高度
+        private static int _machineLayoutPass;          // 已收敛轮次，防止反复重画
+
         private static int _tagStripSeq;
 
         /// <summary>查不到出处的掉落池：别的来源都没有时才兜底列成「掉落池」大类。</summary>
@@ -369,6 +376,8 @@ namespace ItemCatalog.UI
             _machineStrips.Clear();
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaVariant = 0;
+            _machinePanelMaxH = 0f;   // 换物品后重新实测
+            _machineLayoutPass = 0;
             _tagStripSeq = 0;
             SourceSeed = null;
             SourceWater = null;
@@ -1269,6 +1278,7 @@ namespace ItemCatalog.UI
         {
             builder.BeginRow(6f);
             var pagerRow = builder.CurrentContainer;
+            _machinePagerRow = pagerRow;   // 机器页动态布局要用它的实测高度
             builder.AddFlexibleSpace();
             builder.AddButton("<", delegate { TurnPage(-1); Render(); }, "src_pp");
             if (builder.Last != null) builder.Last.SetInteractable(_page > 0);
@@ -1309,7 +1319,10 @@ namespace ItemCatalog.UI
                 float preferred = UnityEngine.UI.LayoutUtility.GetPreferredHeight(_bodyHost);
                 if (preferred < 1f) preferred = EstimateHeight();
 
-                float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
+                // 窗口高度 = 内容首选 + 标题栏。标题栏优先用**实测值**（上一轮量到的
+                // 窗口高−内容区高），首轮还没有实测才退回常量兜底。
+                float chromeNow = _measuredChrome > 10f ? _measuredChrome : WindowChrome;
+                float height = Mathf.Clamp(preferred + chromeNow, WinMinHeight, MaxContentHeight());
 
                 // 只有机器页需要特殊处理：原版面板是 ignoreLayout 的绝对定位节点，
                 // 它的高度要显式声明给 ContentRoot，否则内容区撑不开、面板被裁。
@@ -1371,6 +1384,49 @@ namespace ItemCatalog.UI
                         _lastColumnsUsed = GridColumns();
                         Render();
                         return;
+                    }
+                }
+
+                // ── 机器页动态布局：全部读实测尺寸，不做常量估算 ──
+                // 实测标题栏 = 窗口高 − 内容区高；面板可用高度 = 窗口上限 − 标题栏
+                // − 顶部行实测高 − 翻页条实测高 − 间距。算出来和当前值差得多就重画一轮，
+                // 最多 3 轮（通常第二轮就收敛），避免反复重排。
+                var pageCat = _categories.Count == 0 ? null : _categories[_category];
+                if (pageCat != null && pageCat.Kind == CatMachine
+                    && _machineTopRow != null && _machinePagerRow != null
+                    && _window.Rect != null && _window.ContentRoot != null
+                    && _machineLayoutPass < 3)
+                {
+                    float winH = _window.Rect.rect.height;
+                    float crH = _window.ContentRoot.rect.height;
+                    float chrome = winH - crH;
+                    float topH = _machineTopRow.rect.height;
+                    float pagerH = _machinePagerRow.rect.height;
+
+                    if (chrome > 4f && topH > 1f && pagerH > 1f)
+                    {
+                        _measuredChrome = chrome;
+                        float avail = MaxContentHeight() - chrome - topH - pagerH - 16f;
+                        avail = Mathf.Max(160f, avail);
+
+                        // 差异超过 6px 才重画，避免抖动
+                        if (Mathf.Abs(avail - _machinePanelMaxH) > 6f)
+                        {
+                            _machinePanelMaxH = avail;
+                            _machineLayoutPass++;
+                            if (ModEntry.Log != null)
+                                ModEntry.Log.Log("[mach-fit] win=" + winH + " cr=" + crH
+                                                 + " chrome=" + chrome + " top=" + topH
+                                                 + " pager=" + pagerH + " avail=" + avail
+                                                 + " pass=" + _machineLayoutPass);
+                            Render();
+                            return;
+                        }
+
+                        if (ModEntry.Log != null && _machineLayoutPass == 0)
+                            ModEntry.Log.Log("[mach-fit] settled chrome=" + chrome
+                                             + " top=" + topH + " pager=" + pagerH
+                                             + " avail=" + avail);
                     }
                 }
             }
@@ -2750,6 +2806,7 @@ namespace ItemCatalog.UI
 
             // 顶部一行：配方名称在前、机器图标在后（放大），同行显示。
             builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
+            _machineTopRow = builder.CurrentContainer;
             builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
             builder.AddFlexibleSpace();
             if (_entry != null) RenderGoods(builder, _entry.Id, true, 3180, false, null, 52f);
@@ -2777,11 +2834,12 @@ namespace ItemCatalog.UI
             // 面板可用高度 = 窗口上限(900) - 实际标题栏(约 32) - 顶部行(约 56)
             // - 翻页条(34) - 间距(约 20)。窗口上限不能动（一放宽所有页面的标题栏都会被挤），
             // 所以面板按剩余空间等比缩小，比例可能略小于 2（约 1.85），但能完整显示。
-            // 标题栏实测远大于 WindowChrome(64)：窗口 900 里标题栏+边距约占 120，
-            // 之前按 32 算导致内容总高超出可用空间，布局组只能压缩顶部行和标题栏
-            // （「机器的直接压没了」「标题被压扁」都是这个）。
-            const float RealTitleBar = 120f;
-            float panelMaxH = Mathf.Max(120f, MaxContentHeight() - RealTitleBar - 56f - 34f - 20f);
+            // 面板可用高度：优先用上一轮**实测**出的值（ApplyContentHeight 里用
+            // 窗口高−内容区高 得到真实标题栏，再减去顶部行/翻页条的实测高度）。
+            // 首轮还没有实测值，用一个保守初值，随后一轮即可收敛。
+            float panelMaxH = _machinePanelMaxH > 100f
+                ? _machinePanelMaxH
+                : Mathf.Max(200f, MaxContentHeight() * 0.6f);
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
