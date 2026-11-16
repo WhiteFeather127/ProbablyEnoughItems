@@ -1306,6 +1306,7 @@ namespace ItemCatalog.UI
             _page = 0;
             _measureChrome = 0f;   // 换页重新实测，别沿用上一页的标题栏/翻页条尺寸
             _measurePass = 0;
+            _chromeMeasured = 0f;  // 标题栏间距也重新量（否则每次切回机器页都会再减一点）
             Render();
         }
 
@@ -1384,9 +1385,9 @@ namespace ItemCatalog.UI
                     // 首轮给足空间（+220），让标题栏以**自然高度**排布——此时量到的
                     // 「窗口顶边 → bodyHost 顶边」就是真实的标题栏+padding 总量；
                     // 第二轮用这个实测值精确设置窗口，标题栏既不压、也不多留空白。
-                    // 首轮用接近真实的估算起步（避免窗口高度大幅跳变），
-                    // 之后用实测值；两者只差几像素，视觉上无感。
-                    float gap = _chromeMeasured > 4f ? _chromeMeasured : MachineTitleBarH;
+                    // 首轮给得比真实值略大（160）：保证标题栏以自然高度排布，
+                    // 这样第一次量到的 gap 才是真值。之后固定用实测值。
+                    float gap = _chromeMeasured > 4f ? _chromeMeasured : 160f;
                     height = Mathf.Max(WinMinHeight, preferred + gap);
                     if (Screen.height > 0)
                         height = Mathf.Min(height, Screen.height - 10f);
@@ -1448,8 +1449,9 @@ namespace ItemCatalog.UI
                             _bodyHost.GetWorldCorners(bc3);
                             float gap = (wc3[1].y - bc3[1].y) / sy3;
 
-                            if (gap > 20f && gap < 300f
-                                && Mathf.Abs(gap - _chromeMeasured) > 2f)
+                            // 只接受**变大**的修正：标题栏一旦被压，量到的 gap 就会变小，
+                            // 若允许变小就会「越量越小 → 窗口越矮 → 标题栏越扁」地递减。
+                            if (gap > 20f && gap < 300f && gap > _chromeMeasured + 2f)
                             {
                                 _chromeMeasured = gap;
 
