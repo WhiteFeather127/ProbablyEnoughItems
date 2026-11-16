@@ -25,9 +25,10 @@ namespace ItemCatalog.UI
         private const float WinMinHeight = 240f;
         private const float WinMaxHeight = 900f;
 
-        // 窗口标题栏（含边框）的实际高度：WindowChrome(64) 只覆盖了内容区上下留白，
-        // 不含标题栏本身。机器页做高度预算时用这个值，避免内容顶掉标题栏。
-        private const float MachineTitleBarH = 118f;
+        // 机器页高度预算里的「标题栏 + 各层 padding」总量。
+        // 实测窗口顶边到 bodyHost 顶边约 130，用 118 会少给 12~20px、标题栏被压。
+        // 取 140 留一点余量：宁可下方多几像素，也不让标题栏被压缩。
+        private const float MachineTitleBarH = 140f;
         private const float WindowChrome = 64f;   // 标题栏 + 内容区上下留白
         private const float IconSide = 40f;
 
@@ -1391,25 +1392,19 @@ namespace ItemCatalog.UI
                 // 所以它已经包含翻页条高度——之前再加一次 pagerH，每次都会多出一段空白。
                 if (machinePage)
                 {
-                    // 窗口高度 = 窗口顶边 到「最后一个控件底边」的距离（纯实测）。
-                    float need = MeasureBodyBottom();
-                    if (need > 100f)
-                    {
-                        height = need + 6f;   // 给底边留一点点余量
-                    }
-                    else
-                    {
-                        // 首轮布局还没成型时兜底
-                        height = Mathf.Max(WinMinHeight, preferred + NaturalChrome(_window));
-                    }
+                    // 窗口高度 = 内容首选高度 + 标题栏预算（含各层 padding）。
+                    // 不用「实测顶边差」：标题栏被压时测出的差值也跟着变小，
+                    // 拿它算窗口会形成「压扁→差值变小→窗口更矮→更压扁」的循环。
+                    height = Mathf.Max(WinMinHeight, preferred + MachineTitleBarH);
 
                     // 物理边界：窗口不能超出屏幕。
                     if (Screen.height > 0)
                         height = Mathf.Min(height, Screen.height - 10f);
 
                     if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[mach-win] bottomNeed=" + need
-                                         + " preferred=" + preferred + " height=" + height);
+                        ModEntry.Log.Log("[mach-win] preferred=" + preferred
+                                         + " titleBarBudget=" + MachineTitleBarH
+                                         + " height=" + height);
                 }
 
                 // 顶部行（配方名 + 右上角机器图标）固定高度：
