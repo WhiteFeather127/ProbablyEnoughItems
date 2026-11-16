@@ -2672,6 +2672,16 @@ namespace ItemCatalog.UI
         /// </summary>
         private static void RenderMachinePage(CustomUIBuilder builder, List<RecipeInfo> recipes)
         {
+            // 右上角放这台机器自己的物品格：图标、名字、悬停提示、左右键查来源/用途
+            // 全部走图鉴那套标准格子（RenderGoods），不另造一套展示
+            if (_entry != null)
+            {
+                builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
+                builder.AddFlexibleSpace();
+                RenderGoods(builder, _entry.Id, true, 3180, false);
+                builder.End();
+            }
+
             var panels = MachinePanels.For(_entry.Id);
             if (panels != null && panels.Length > 0)
             {
