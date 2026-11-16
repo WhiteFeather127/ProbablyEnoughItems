@@ -1247,6 +1247,11 @@ namespace ItemCatalog.UI
         private static int PageCount(Category category)
         {
             if (category == null) return 1;
+            if (category.Kind == CatMachine)
+            {
+                var groups = MachinePanels.RecipesFor(_entry == null ? null : _entry.Id);
+                return groups == null ? 1 : Math.Max(1, groups.Length);
+            }
             if (category.Sources != null) return Math.Max(1, _sourcePages.Count);
             if (category.Recipes != null) return Math.Max(1, category.Recipes.Count);
             if (category.Uses != null) return Math.Max(1, category.Uses.Count);
@@ -2692,19 +2697,30 @@ namespace ItemCatalog.UI
             var groups = MachinePanels.RecipesFor(_entry.Id);
             if (groups == null || groups.Length == 0) return;
 
-            // 第一条配方（默认展示的那一档）：用游戏自己的控件造原版机器窗口，
-            // 格子 / 物品图标 / 提示 / 拖拽全是原生的，不是自绘。
-            var first = groups[0];
+            // 一页一档（自动分页）：用底部翻页条切纯度档位，
+            // 每页一套原版机器窗口（该档配方的物品），不会把 7 档全挤在一页。
+            int gi = Mathf.Clamp(_page, 0, groups.Length - 1);
+            var first = groups[gi];
             if (first == null || first.Variants == null || first.Variants.Length == 0) return;
             var recipe = first.Variants[0];
             if (recipe == null) return;
 
+            builder.AddLabel(Loc(first.TitleKey, first.TitleFallback), "mach_group");
+
             string moduleId = recipe.Modules != null && recipe.Modules.Length > 0 ? recipe.Modules[0] : null;
 
-            // 留一个占位容器，把原版窗口的内容节点挂进来
+            // 留一个占位容器，把原版窗口的内容节点挂进来。
+            // 原版节点是 reparent 进来的、不参与我们的布局计算，
+            // 所以给它一个足够的最小高度，免得窗口按空内容算高把格子裁掉。
             builder.BeginColumn(2f);
             var host = builder.CurrentContainer;
             builder.End();
+            if (host != null)
+            {
+                var layout = EnsureLayoutElement(host);
+                layout.flexibleHeight = 0f;
+                layout.minHeight = 560f;   // 5 个机器面板竖排 + 间距
+            }
 
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaMachine = new VanillaMachinePanel();
@@ -2724,16 +2740,6 @@ namespace ItemCatalog.UI
                 if (ModEntry.Log != null) ModEntry.Log.Warning("[vanilla-machine] build failed");
                 _vanillaMachine.Destroy();
                 _vanillaMachine = null;
-            }
-
-            // 纯度分档说明仍用自绘列表（轮播）：告诉玩家同一台机器还能出哪些档
-            for (int i = 0; i < groups.Length; i++)
-            {
-                var group = groups[i];
-                if (group == null || group.Variants == null || group.Variants.Length == 0) continue;
-
-                if (i > 0) builder.AddSeparator("mach_sep", 6);
-                builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
             }
         }
 

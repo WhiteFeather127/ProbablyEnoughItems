@@ -61,7 +61,14 @@ namespace ItemCatalog.UI
                     MachineHelper.NotePanel(note)
                 };
 
-                _window = MachineHelper.CreateMachineryWindow(false, panels);
+                // 照 MachineHelper.CreateMachineryWindow 的 IL 自己拼，
+                // 但把面板行 SetColumns(1) 强制竖排——原版横排在窄详情窗口里
+                // 会被挤成一坨、标题字叠在一起。
+                var row = new MachineryPanelRow(panels);
+                row.SetColumns(1);
+
+                _window = new PixelWindow(false, null, WindowStyle.Machinery);
+                _window.Attach(row);
                 return _window != null;
             }
             catch (Exception e)
