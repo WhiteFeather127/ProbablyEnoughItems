@@ -825,6 +825,31 @@ namespace ItemCatalog.Catalog
             }
             tables.Add(scavTable);
 
+            // ===== 统一性保证：反查索引从正查数据直接推导，映射与显示不能分离 =====
+            // AGENTS.md 规则：站点页（正查并集）上出现的**每个**物品 id，必须能从
+            // 该物品的来源页反查回这个站点。这一遍把「tables × items」重放一遍：
+            // 组表里直接塞的物品 id、手工池、占位展开、任何未来新增的池来源，
+            // 不管从哪条路进的池子，反查登记都在这里兜底补齐——
+            // 两边数据同源，构造上不可能再出现「页面上有、物品页查不到」。
+            for (int i = 0; i < tables.Count; i++)
+            {
+                var t = tables[i];
+                if (t == null || t.Items == null) continue;
+
+                for (int k = 0; k < t.Items.Count; k++)
+                {
+                    var it = t.Items[k];
+                    if (it == null || string.IsNullOrEmpty(it.Id)) continue;
+
+                    RegisterHit(map, it.Id, t);
+
+                    // 别名 id（变体后缀 / 满装盒 / 改名瓶）的本体同样保证可达
+                    string baseId = BaseItemId(it.Id);
+                    if (!string.IsNullOrEmpty(baseId) && baseId != it.Id)
+                        RegisterHit(map, baseId, t);
+                }
+            }
+
             _tables = tables.ToArray();
 
             _byItem.Clear();
