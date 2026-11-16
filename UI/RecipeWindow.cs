@@ -23,7 +23,9 @@ namespace ItemCatalog.UI
         private const string WinId = "recipe:win";
         private const float WinWidth = 600f;
         private const float WinMinHeight = 240f;
-        private const float WinMaxHeight = 900f;
+        // 顶边固定后窗口可以往下长，放宽上限让原版机器面板（缩放后约 802px）能完整放下；
+        // 仍受 Screen.height-80 约束，不会长出屏幕。
+        private const float WinMaxHeight = 1100f;
         private const float WindowChrome = 64f;   // 标题栏 + 内容区上下留白
         private const float IconSide = 40f;
 
@@ -1307,18 +1309,33 @@ namespace ItemCatalog.UI
                 float preferred = UnityEngine.UI.LayoutUtility.GetPreferredHeight(_bodyHost);
                 if (preferred < 1f) preferred = EstimateHeight();
 
-                // 原版机器面板等比补偿后约 802px + 标题/翻页/chrome ≈ 930px，
-                // 超过 WinMaxHeight(900) 会把翻页条截断挤到面板上。机器页单独放宽到
-                // 屏幕可用高度（仍留 80px），其它分类页维持原上限。
-                float cap = MaxContentHeight();
-                var cur = _categories.Count == 0 ? null : _categories[_category];
-                if (cur != null && cur.Kind == CatMachine && Screen.height > 0)
-                    cap = Mathf.Max(cap, Screen.height - 80f);
-                float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, cap);
+                float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
                 if (Mathf.Abs(height - _lastHeight) > 2f)
                 {
+                    // 固定窗口顶边（标题栏）再改高度：窗口 pivot 在正中，
+                    // 直接 SetSize 会上下各扩一半，把标题栏和关闭按钮顶出屏幕/压扁。
+                    // 记录扩张前的顶边世界 Y，改完后把窗口整体移回去。
+                    var rt = _window.Rect;
+                    float topBefore = 0f;
+                    bool keepTop = rt != null;
+                    if (keepTop)
+                    {
+                        var corners = new Vector3[4];
+                        rt.GetWorldCorners(corners);
+                        topBefore = corners[1].y;   // 左上角
+                    }
+
                     _window.SetSize(WinWidth, height);
                     _lastHeight = height;
+
+                    if (keepTop)
+                    {
+                        var after = new Vector3[4];
+                        rt.GetWorldCorners(after);
+                        float dy = topBefore - after[1].y;
+                        if (Mathf.Abs(dy) > 0.01f)
+                            rt.position = new Vector3(rt.position.x, rt.position.y + dy, rt.position.z);
+                    }
 
                     // 窗口变了尺寸，让内容根再排一次，避免内容按旧尺寸算
                     CustomUIBuilder.RebuildLayout(_window.ContentRoot);
@@ -2738,11 +2755,15 @@ namespace ItemCatalog.UI
             // 占位容器：里面放一个 AddSpace(面板高度)，让 bodyHost 的 VerticalLayoutGroup
             // 把「标题 + 面板高度 + 翻页条」都算进总高——这样窗口高度正好包住面板，
             // 标题和翻页条不会被挤出窗口（之前面板 ignoreLayout，高度算不进去才被挤）。
+            // 面板可用高度 = 窗口能给出的最大高度 - chrome - 标题行(约 56) - 翻页条(34) - 间距(约 20)。
+            // 标题栏固定、窗口向下扩展，但内容仍不能超过窗口上限。
+            float panelMaxH = Mathf.Max(120f, MaxContentHeight() - WindowChrome - 56f - 34f - 20f);
+
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
             // 用已挂进窗口的 _bodyHost 算 Canvas 比例（host 刚建、可能还没进布局流），
             // 保证 AddSpace 占的高度和面板最终缩放后的高度一致。
-            float panelH = Mathf.Max(1f, _vanillaMachine.ScaledSize(_bodyHost).y);
+            float panelH = Mathf.Max(1f, _vanillaMachine.ScaledSize(_bodyHost, panelMaxH).y);
             builder.AddSpace(panelH);
             builder.End();
 
@@ -2762,7 +2783,7 @@ namespace ItemCatalog.UI
             // 布局跑一次后塞物品（否则 inventory inner rect 还是 0，物品会浮到格子外）。
             var rect = _vanillaMachine.AttachContentTo(host);
             if (rect != null) CustomUIBuilder.RebuildLayout(rect);
-            _vanillaMachine.MatchGameCanvasScale(host);
+            _vanillaMachine.MatchGameCanvasScale(host, panelMaxH);
             FillVanillaMachine(recipe);
 
             if (ModEntry.Log != null)

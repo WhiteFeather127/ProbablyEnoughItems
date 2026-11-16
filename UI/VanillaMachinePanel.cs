@@ -27,16 +27,20 @@ namespace ItemCatalog.UI
 
         internal RectTransform AttachedRect { get { return _attachedRect; } }
 
-        /// <summary>原版面板经 Canvas scale 补偿后的显示尺寸（造完壳就能算，用来给 AddSpace 占位）。</summary>
-        internal Vector2 ScaledSize(RectTransform host)
+        /// <summary>
+        /// 原版面板经 Canvas scale 补偿后的显示尺寸（造完壳就能算，用来给 AddSpace 占位）。
+        /// maxHeight &gt; 0 时按可用高度封顶：窗口装不下的比例要往回收，
+        /// 否则 802px 的面板会把机器样式窗口撑高、挤扁标题栏和关闭按钮。
+        /// </summary>
+        internal Vector2 ScaledSize(RectTransform host, float maxHeight = 0f)
         {
-            float ratio = CanvasRatio(host);
+            float ratio = CanvasRatio(host, maxHeight);
             float w = (_window != null && _window.widthPixels > 1f) ? _window.widthPixels : 160f;
             float h = (_window != null && _window.heightPixels > 1f) ? _window.heightPixels : 401f;
             return new Vector2(w * ratio, h * ratio);
         }
 
-        private float CanvasRatio(RectTransform host)
+        private float CanvasRatio(RectTransform host, float maxHeight = 0f)
         {
             try
             {
@@ -48,7 +52,15 @@ namespace ItemCatalog.UI
                 float game = gameCanvas != null ? gameCanvas.scaleFactor : 1f;
                 if (ours <= 0.001f || game <= 0.001f) return 1f;
                 float ratio = game / ours;
-                return (ratio < 0.2f || ratio > 6f) ? 1f : ratio;
+                if (ratio < 0.2f || ratio > 6f) ratio = 1f;
+
+                // 按可用高度封顶：面板缩放后不能高过窗口能给出的空间
+                if (maxHeight > 0f && _window != null && _window.heightPixels > 1f)
+                {
+                    float limit = maxHeight / _window.heightPixels;
+                    if (limit > 0.2f && limit < ratio) ratio = limit;
+                }
+                return ratio;
             }
             catch { return 1f; }
         }
@@ -158,25 +170,15 @@ namespace ItemCatalog.UI
         /// 取两个 Canvas 的 scaleFactor 比例，等比补偿到内容节点上（只改 localScale，
         /// 物品是 grid 子节点会一起缩放，格子内相对位置不变）。
         /// </summary>
-        internal float MatchGameCanvasScale(RectTransform host)
+        internal float MatchGameCanvasScale(RectTransform host, float maxHeight = 0f)
         {
             if (_attachedRect == null || host == null) return 0f;
             try
             {
-                // 详情窗口所在的 Canvas（沿父级找，overlay 的根）
-                var ourCanvas = host.GetComponentInParent<Canvas>();
-                // 游戏正常窗口所在的 Canvas
-                Canvas gameCanvas = null;
-                var handler = RenderHandler.current;
-                if (handler != null) gameCanvas = handler.windowUICanvas;
+                // 比例走 CanvasRatio：Canvas 差异补偿 + 可用高度封顶（maxHeight>0 时），
+                // 保证面板缩放后不会高过窗口能给出的空间、把标题栏挤扁。
+                float ratio = CanvasRatio(host, maxHeight);
 
-                float ours = ourCanvas != null ? ourCanvas.scaleFactor : 1f;
-                float game = gameCanvas != null ? gameCanvas.scaleFactor : 1f;
-                if (ours <= 0.001f || game <= 0.001f) return 0f;
-
-                float ratio = game / ours;
-                // 比例异常（比如某 Canvas 还没初始化，scaleFactor=0/极大）就别缩放
-                if (ratio < 0.2f || ratio > 6f) ratio = 1f;
                 // 只改缩放，anchor/pivot 已在 AttachContentTo 设成正中心，这里不碰
                 _attachedRect.localScale = new Vector3(ratio, ratio, 1f);
 
@@ -189,15 +191,10 @@ namespace ItemCatalog.UI
                     ? _window.heightPixels : _attachedRect.rect.height;
                 float scaledHeight = nativeH * ratio;
 
-                // host 的高度改由 RenderMachinePage 里的 AddSpace(scaledH) 正式占位，
-                // 让 bodyHost 的 VerticalLayoutGroup 能算进标题/面板/翻页三者的高度。
-                // 这里不再设 host 的 LayoutElement，避免同一高度被两处控制。
-
                 if (ModEntry.Log != null)
-                    ModEntry.Log.Log("[vanilla-machine] canvas ours=" + ours + " game=" + game
-                                     + " ratio=" + ratio + " native=" + nativeW + "x" + nativeH
-                                     + " rect=" + _attachedRect.rect.size
-                                     + " host=" + host.rect.size
+                    ModEntry.Log.Log("[vanilla-machine] ratio=" + ratio
+                                     + " maxH=" + maxHeight
+                                     + " native=" + nativeW + "x" + nativeH
                                      + " scaledH=" + scaledHeight);
                 return scaledHeight;
             }
