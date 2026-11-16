@@ -2805,9 +2805,43 @@ namespace ItemCatalog.UI
                 return;
             }
 
+            float side = MachineCellSide(24f);
             float w, h;
-            CatalogWindow.FitIcon(sprite, 24f, out w, out h);
+            CatalogWindow.FitIcon(sprite, side, out w, out h);
             builder.AddImage(sprite, w, h, "mach_item" + elementId);
+
+            // 物品图标下面垫一层原版机器格子底框（和空槽同一张 cell 精灵）
+            PutCellFrame(builder, side);
+        }
+
+        /// <summary>
+        /// 在刚画的物品格下面垫一层原版格子底框：挂到同一个父级、排在图标之前绘制，
+        /// ignoreLayout 不参与布局，靠 _highlights 跟随图标格对齐。
+        /// </summary>
+        private static void PutCellFrame(CustomUIBuilder builder, float side)
+        {
+            var frame = MachineSlotSprite();
+            var cell = builder.Last != null ? builder.Last.Rect : null;
+            if (frame == null || cell == null || cell.parent == null) return;
+
+            try
+            {
+                var go = new GameObject("machFrame", typeof(RectTransform), typeof(UnityEngine.UI.Image));
+                go.transform.SetParent(cell.parent, false);
+                go.transform.SetSiblingIndex(cell.GetSiblingIndex());
+
+                var image = go.GetComponent<UnityEngine.UI.Image>();
+                image.sprite = frame;
+                image.raycastTarget = false;
+                var rect = (RectTransform)go.transform;
+                rect.sizeDelta = new Vector2(side, side);
+
+                var ignore = go.AddComponent<UnityEngine.UI.LayoutElement>();
+                ignore.ignoreLayout = true;
+
+                _highlights.Add(new KeyValuePair<RectTransform, RectTransform>(rect, cell));
+            }
+            catch (Exception e) { Warn("machine cell frame: " + e.Message); }
         }
 
         /// <summary>每秒推进机器配方的轮播索引：配方组间独立，模块数多个时也单独轮。</summary>
@@ -2867,6 +2901,7 @@ namespace ItemCatalog.UI
         {
             string shape = MachinePanels.ContainerShape;
             var frame = MachineSlotSprite();
+            float side = MachineCellSide(18f);
 
             // 布局还没就绪拿不到描边图时，退回字符画（等宽方块 + 全角空格对齐）
             if (frame == null)
@@ -2901,13 +2936,14 @@ namespace ItemCatalog.UI
                         if (sprite != null)
                         {
                             float w, h;
-                            CatalogWindow.FitIcon(sprite, 18f, out w, out h);
+                            CatalogWindow.FitIcon(sprite, side, out w, out h);
                             builder.AddImage(sprite, w, h, "mach_cellitem_" + idBase + "_" + idx);
+                            PutCellFrame(builder, side);   // 物品图标下面垫原版格子底框
                         }
-                        else builder.AddImage(frame, 18f, 18f, "mach_cell_" + r + "_" + c);
+                        else builder.AddImage(frame, side, side, "mach_cell_" + r + "_" + c);
                     }
                     else
-                        builder.AddSpace(18f);
+                        builder.AddSpace(side);
                 }
 
                 builder.End();
@@ -2918,25 +2954,48 @@ namespace ItemCatalog.UI
         private static void DrawSlot(CustomUIBuilder builder)
         {
             var frame = MachineSlotSprite();
-            if (frame != null) builder.AddImage(frame, 24f, 24f, "mach_slot");
+            if (frame != null)
+            {
+                float side = MachineCellSide(24f);
+                builder.AddImage(frame, side, side, "mach_slot");
+            }
             else builder.AddLabel("▢", "mach_slot_text");
         }
 
         /// <summary>
-        /// 格框图：直接用游戏 RenderHandler 的血条描边（本来就是给 UI 框用的）。
-        /// 拿不到返回 null，调用方走字符画兜底。
+        /// 机器格子精灵：直接用游戏原版的那一张——
+        /// <c>GameGridInventory.SetMachineryStyle</c> 里写死了
+        /// <c>SetBackgroundSprite("Window/machinery", "cell")</c>。
+        /// 之前用血条描边凑合，和原版窗口里的格子完全不是一个样子。
+        /// 拿不到才退回描边，再不行走字符画兜底。
         /// </summary>
         private static Sprite _machineSlotSprite;
+        private static bool _machineSlotTried;
 
         private static Sprite MachineSlotSprite()
         {
+            if (_machineSlotTried) return _machineSlotSprite;
+            _machineSlotTried = true;
+
+            // 原版机器格子（SetMachineryStyle 的实参）
+            try { _machineSlotSprite = RenderHandler.TryLoadFromAtlas("Window/machinery", "cell"); }
+            catch { }
             if (_machineSlotSprite != null) return _machineSlotSprite;
 
             var handler = RenderHandler.current;
-            if (handler == null) return null;
-
-            _machineSlotSprite = handler.healthBarOutline;
+            if (handler != null) _machineSlotSprite = handler.healthBarOutline;
             return _machineSlotSprite;
+        }
+
+        /// <summary>格子的边长：优先用原版精灵的像素大小（SetNativeSize），拿不到退回旧值。</summary>
+        private static float MachineCellSide(float fallback)
+        {
+            var sprite = MachineSlotSprite();
+            if (sprite == null) return fallback;
+
+            float w = sprite.rect.width / Mathf.Max(1f, sprite.pixelsPerUnit);
+            float h = sprite.rect.height / Mathf.Max(1f, sprite.pixelsPerUnit);
+            return Mathf.Max(8f, Mathf.Max(w, h));
         }
 
         private static void RenderRecipe(CustomUIBuilder builder, RecipeInfo recipe)
