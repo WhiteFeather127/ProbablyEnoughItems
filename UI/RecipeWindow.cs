@@ -1278,7 +1278,20 @@ namespace ItemCatalog.UI
             if (category.Sources != null) return Math.Max(1, _sourcePages.Count);
             if (category.Recipes != null) return Math.Max(1, category.Recipes.Count);
             if (category.Uses != null) return Math.Max(1, category.Uses.Count);
-            if (category.Loot != null) return Math.Max(1, category.Loot.Count);
+            if (category.Loot != null)
+            {
+                // 掉落表按「装得满一页就翻页」计算：每张表占 ceil(物品数 / 每页格数) 页。
+                // 之前是「一表一页」，物品多的箱子会把网格排到窗口外面。
+                int per = Mathf.Max(1, ItemsPerPage);
+                int pages = 0;
+                for (int i = 0; i < category.Loot.Count; i++)
+                {
+                    var t = category.Loot[i];
+                    int n = (t == null || t.Items == null) ? 0 : t.Items.Count;
+                    pages += Mathf.Max(1, Mathf.CeilToInt(n / (float)per));
+                }
+                return Math.Max(1, pages);
+            }
             return 1;
         }
 
@@ -2311,7 +2324,27 @@ namespace ItemCatalog.UI
         /// </summary>
         private static void RenderLootBody(CustomUIBuilder builder, List<LootTableInfo> loot, string site)
         {
-            var table = loot[_page];
+            // 把 _page 映射到「第几张表 + 表内第几段」：一张表物品多时会占多页
+            int per = Mathf.Max(1, ItemsPerPage);
+            int tableIdx = -1, segStart = 0;
+            int acc = 0;
+            for (int i = 0; i < loot.Count; i++)
+            {
+                var t0 = loot[i];
+                int n0 = (t0 == null || t0.Items == null) ? 0 : t0.Items.Count;
+                int pages = Mathf.Max(1, Mathf.CeilToInt(n0 / (float)per));
+                if (_page < acc + pages)
+                {
+                    tableIdx = i;
+                    segStart = (_page - acc) * per;
+                    break;
+                }
+                acc += pages;
+            }
+
+            if (tableIdx < 0) { tableIdx = loot.Count - 1; segStart = 0; }
+
+            var table = loot[tableIdx];
             if (table == null) return;
 
             // 这张表对应的箱子：站点给了 item:<箱子> 就用它（来源反查）；
@@ -2338,7 +2371,7 @@ namespace ItemCatalog.UI
                 builder.AddLabel(Loc("loot_opens", "可能开出"), "loot_opens");
             }
 
-            RenderLootItems(builder, table);
+            RenderLootItems(builder, table, segStart, per);
         }
 
         /// <summary>
@@ -2468,21 +2501,27 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>把一张战利品表的全部产出铺成图鉴格子。</summary>
-        private static void RenderLootItems(CustomUIBuilder builder, LootTableInfo table)
+        private static void RenderLootItems(CustomUIBuilder builder, LootTableInfo table,
+                                            int segStart = 0, int per = 0)
         {
             var items = table == null ? null : table.Items;
             if (items == null || items.Count == 0) return;
 
+            // 只画本页那一段：装满一页的格数就翻到下一页，不再把整表铺出窗口
+            int start = Mathf.Clamp(segStart, 0, items.Count);
+            int end = per > 0 ? Mathf.Min(start + per, items.Count) : items.Count;
+
             var gridHost = builder.CurrentContainer;
             builder.BeginGrid(GridColumns(), GridCellWidth(), CellHeight, CellSpacing);
 
-            for (int i = 0; i < items.Count; i++)
+            int slot = 0;
+            for (int i = start; i < end; i++)
             {
                 var item = items[i];
                 if (item == null || string.IsNullOrEmpty(item.Id)) continue;
 
                 bool match = _entry != null && string.Equals(item.Id, _entry.Id, StringComparison.Ordinal);
-                RenderGoods(builder, item.Id, match, i, false);
+                RenderGoods(builder, item.Id, match, slot++, false);
             }
 
             builder.End();
