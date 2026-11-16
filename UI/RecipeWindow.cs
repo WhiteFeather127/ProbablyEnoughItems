@@ -1572,6 +1572,29 @@ namespace ItemCatalog.UI
                     }
                 }
 
+                // 诊断：所有页面都打一次布局实测，用来对比「普通页面为什么自适应没问题」。
+                if (ModEntry.Log != null && _window.Rect != null && _window.ContentRoot != null)
+                {
+                    try
+                    {
+                        float sy2 = Mathf.Abs(_window.Rect.lossyScale.y) > 0.001f
+                            ? _window.Rect.lossyScale.y : 1f;
+                        var w2 = new Vector3[4];
+                        var b2 = new Vector3[4];
+                        _window.Rect.GetWorldCorners(w2);
+                        _bodyHost.GetWorldCorners(b2);
+                        float wH = _window.Rect.rect.height;
+                        float cH = _window.ContentRoot.rect.height;
+                        ModEntry.Log.Log("[page-layout] page=" + (machinePage ? "machine" : "other")
+                                         + " win=" + wH + " cr=" + cH
+                                         + " winMinusCr=" + (wH - cH)
+                                         + " topGap=" + ((w2[1].y - b2[1].y) / sy2)
+                                         + " preferred=" + preferred
+                                         + " chromeConst=" + WindowChrome);
+                    }
+                    catch { }
+                }
+
                 // ── 机器页：把标题栏、翻页条的真实高度量出来，喂给下一轮高度计算 ──
                 // 这样窗口高度 = 内容 + 翻页条 + 标题栏 全部来自实测，不再靠常量推算；
                 // 差异明显才重画一轮（最多 2 轮），之后稳定不再重排。
