@@ -1306,7 +1306,14 @@ namespace ItemCatalog.UI
                 float preferred = UnityEngine.UI.LayoutUtility.GetPreferredHeight(_bodyHost);
                 if (preferred < 1f) preferred = EstimateHeight();
 
-                float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
+                // 原版机器面板等比补偿后约 802px + 标题/翻页/chrome ≈ 930px，
+                // 超过 WinMaxHeight(900) 会把翻页条截断挤到面板上。机器页单独放宽到
+                // 屏幕可用高度（仍留 80px），其它分类页维持原上限。
+                float cap = MaxContentHeight();
+                var cur = _categories.Count == 0 ? null : _categories[_category];
+                if (cur != null && cur.Kind == CatMachine && Screen.height > 0)
+                    cap = Mathf.Max(cap, Screen.height - 80f);
+                float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, cap);
                 if (Mathf.Abs(height - _lastHeight) > 2f)
                 {
                     _window.SetSize(WinWidth, height);
@@ -1772,7 +1779,7 @@ namespace ItemCatalog.UI
         /// 左键看来源 / 右键看去处、开启拿取后可拖出）。
         /// 没有精灵图时用 AddButton 兜底，保证文字格子也能点、也能悬停。
         /// </summary>
-        private static void RenderGoods(CustomUIBuilder builder, string id, bool match, int index, bool emptyOnly, List<Sprite> rotate = null)
+        private static void RenderGoods(CustomUIBuilder builder, string id, bool match, int index, bool emptyOnly, List<Sprite> rotate = null, float sideOverride = 0f)
         {
             // 占位 id（random_performance_module 这类）直接换成同族的**默认模块**：
             // 池子里塞的是占位，游戏生成时才掷骰；图鉴展示不做随机实例，
@@ -1834,7 +1841,7 @@ namespace ItemCatalog.UI
             if (!hasButton)
             {
                 float w, h;
-                CatalogWindow.FitIcon(sprite, IconSide, out w, out h);
+                CatalogWindow.FitIcon(sprite, sideOverride > 0f ? sideOverride : IconSide, out w, out h);
                 builder.AddImage(sprite, w, h, elementId);
 
                 // 标签源的轮播优先于容器的水种轮播（同一个格子不会两者都有）
@@ -2688,14 +2695,6 @@ namespace ItemCatalog.UI
         /// </summary>
         private static void RenderMachinePage(CustomUIBuilder builder, List<RecipeInfo> recipes)
         {
-            if (_entry != null)
-            {
-                builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
-                builder.AddFlexibleSpace();
-                RenderGoods(builder, _entry.Id, true, 3180, false);
-                builder.End();
-            }
-
             var groups = MachinePanels.RecipesFor(_entry.Id);
             if (groups == null || groups.Length == 0) return;
 
@@ -2708,7 +2707,12 @@ namespace ItemCatalog.UI
             var recipe = group.Variants[_vanillaVariant];
             if (recipe == null) return;
 
+            // 顶部一行：配方名称在前、机器图标在后（放大），同行显示。
+            builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
             builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
+            builder.AddFlexibleSpace();
+            if (_entry != null) RenderGoods(builder, _entry.Id, true, 3180, false, null, 64f);
+            builder.End();
 
             // 第一步：造原版窗口外壳（还没挂、没放物品），先拿到它缩放后的真实尺寸
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
