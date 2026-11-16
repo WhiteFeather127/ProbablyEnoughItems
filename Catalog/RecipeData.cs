@@ -125,6 +125,9 @@ namespace ItemCatalog.Catalog
         /// <summary>空扫描后的重试时间点（unscaled）。</summary>
         private static float _retryAt;
 
+        /// <summary>本次扫描中访问物品字段抛异常的次数（实例被销毁的信号）。</summary>
+        private static int _scanThrows;
+
         /// <summary>建索引。重复调用只会重建一次（Generation 变化时由调用方清空 Built）。</summary>
         internal static void Build()
         {
@@ -148,6 +151,7 @@ namespace ItemCatalog.Catalog
             _byMaterialTag.Clear();
             _entryById.Clear();
             _byMachine.Clear();
+            _scanThrows = 0;
 
             MachineCount = 0;
             UnresolvedOutputs = 0;
@@ -162,9 +166,21 @@ namespace ItemCatalog.Catalog
                 if (entry == null || entry.Item == null) continue;
                 if (entryByIdMissing(entry)) _entryById[entry.Id] = entry;
 
+                // 读档会重建 DirectoryMaster 的物品实例：条目里缓存的 GameItem
+                // 可能已被游戏销毁（Unity 对象销毁后访问字段抛 MissingReference，
+                // 被下面的 catch 吞成 null——表现为全部机器凭空消失）。
+                // 扫描时按 id 重新解析，保证拿到的是当前活着的实例。
+                GameItem scanItem = entry.Item;
+                try
+                {
+                    var fresh = DirectoryMaster.Item(entry.Id);
+                    if (fresh != null) scanItem = fresh;
+                }
+                catch { }
+
                 RecipeManager manager;
-                try { manager = entry.Item.recipeManager; }
-                catch { manager = null; }
+                try { manager = scanItem.recipeManager; }
+                catch { _scanThrows++; manager = null; }
                 if (manager == null) continue;
 
                 List<CraftingRecipe> recipes;
@@ -225,9 +241,9 @@ namespace ItemCatalog.Catalog
 
                 ModEntry.Log.Log(string.Format(
                     "[recipes] machines={0} recipes={1} outputs={2} unresolved={3} ({4} ms)"
-                    + " [all={5} withItem={6} withManager={7}]",
+                    + " [all={5} withItem={6} withManager={7} scanThrows={8}]",
                     MachineCount, All.Count, _byOutput.Count, UnresolvedOutputs, watch.ElapsedMilliseconds,
-                    items.Count, withItem, withManager));
+                    items.Count, withItem, withManager, _scanThrows));
             }
         }
 
