@@ -219,6 +219,10 @@ namespace ItemCatalog.UI
         private static readonly List<TagStrip> _tagStrips = new List<TagStrip>();
         private static readonly List<MachineRecipeStrip> _machineStrips = new List<MachineRecipeStrip>();
 
+        /// <summary>机器页当前嵌入的原版机器窗口（真 GameGridInventory + 样本物品）。</summary>
+        private static VanillaMachinePanel _vanillaMachine;
+        private static int _vanillaVariant;   // 当前档内轮播到第几条配方
+
         private static int _tagStripSeq;
 
         /// <summary>查不到出处的掉落池：别的来源都没有时才兜底列成「掉落池」大类。</summary>
@@ -361,6 +365,8 @@ namespace ItemCatalog.UI
             _tagRollIndex.Clear();   // 换物品后标签轮播从头开始
             _tagStrips.Clear();
             _machineStrips.Clear();
+            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
+            _vanillaVariant = 0;
             _tagStripSeq = 0;
             SourceSeed = null;
             SourceWater = null;
@@ -955,6 +961,7 @@ namespace ItemCatalog.UI
         private static void OnWindowClosed()
         {
             _highlights.Clear();
+            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _window = null;
             _bodyHost = null;
             CatalogWindow.ResetExternalCells();
@@ -980,7 +987,6 @@ namespace ItemCatalog.UI
                 _highlights.Clear();          // 旧绿底随容器一起销毁
                 _cellAnims.Clear();           // 旧格子的 Image 已销毁，不能留着继续改
                 _tagStrips.Clear();           // 标签格这一轮重新收集
-                _machineStrips.Clear();       // 机器配方这一轮重新收集（翻页/重画不累积）
                 _tagStripSeq = 0;
                 CatalogWindow.ResetExternalCells();   // 旧格子的提示框 / 拖拽登记一起失效
                 var builder = new CustomUIBuilder(manager, _window, _bodyHost);
@@ -2691,33 +2697,72 @@ namespace ItemCatalog.UI
             }
 
             var groups = MachinePanels.RecipesFor(_entry.Id);
-            if (groups == null || groups.Length == 0)
-            {
-                DrawMachinePanel(builder, MachinePanels.For(_entry.Id), null, null, null, 0);
-                return;
-            }
+            if (groups == null || groups.Length == 0) return;
 
-            // 一页一档：底部翻页条切纯度档位，避免 7 套机器格子全铺开挤扁重叠。
+            // 一页一档（自动分页）：用底部翻页条切纯度档位。
             int gi = Mathf.Clamp(_page, 0, groups.Length - 1);
             var group = groups[gi];
             if (group == null || group.Variants == null || group.Variants.Length == 0) return;
 
+            if (_vanillaVariant >= group.Variants.Length) _vanillaVariant = 0;
+            var recipe = group.Variants[_vanillaVariant];
+            if (recipe == null) return;
+
             builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
 
+            // 原版窗口内容节点是 reparent 进来的，不参与 CustomUIBuilder 的布局高度计算。
+            // 给占位容器设成拉伸满宽 + 固定高度，让窗口放大并贴齐左右边缘。
             builder.BeginColumn(2f);
             var host = builder.CurrentContainer;
             builder.End();
-
-            var strip = new MachineRecipeStrip
+            if (host != null)
             {
-                Host = host,
-                Group = group,
-                Variant = 0,
-                Module = 0,
-                Base = 3200
-            };
-            _machineStrips.Add(strip);
-            RenderMachineRecipeStrip(strip);
+                var layout = EnsureLayoutElement(host);
+                layout.flexibleHeight = 0f;
+                layout.minHeight = 560f;
+                if (host is RectTransform)
+                {
+                    var hostRect = (RectTransform)host;
+                    hostRect.anchorMin = new Vector2(0f, 1f);
+                    hostRect.anchorMax = new Vector2(1f, 1f);
+                }
+            }
+
+            // 第一步：造原版窗口外壳并挂进详情容器（还没放物品）
+            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
+            _vanillaMachine = new VanillaMachinePanel();
+
+            bool built = false;
+            if (string.Equals(_entry.Id, "furnace", StringComparison.Ordinal))
+                built = _vanillaMachine.BuildFurnaceShell();
+
+            if (built)
+            {
+                var rect = _vanillaMachine.AttachContentTo(host);
+                // 第二步：让布局先跑一次（inventory 的 inner rect 定稿），再塞物品，
+                // 否则物品渲染节点会定位到格子外面。
+                if (rect != null) CustomUIBuilder.RebuildLayout(rect);
+                _vanillaMachine.ScaleToWidth(WinWidth - 40f);
+                FillVanillaMachine(recipe);
+
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] furnace v" + _vanillaVariant
+                                     + " rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
+            }
+            else
+            {
+                if (ModEntry.Log != null) ModEntry.Log.Warning("[vanilla-machine] build failed");
+                _vanillaMachine.Destroy();
+                _vanillaMachine = null;
+            }
+        }
+
+        /// <summary>把当前配方的物品塞进原版窗口的真 inventory（轮播换配方时只换物品，不重建窗口）。</summary>
+        private static void FillVanillaMachine(MachinePanels.Recipe recipe)
+        {
+            if (_vanillaMachine == null || recipe == null) return;
+            string moduleId = recipe.Modules != null && recipe.Modules.Length > 0 ? recipe.Modules[0] : null;
+            _vanillaMachine.Fill(recipe.Inputs, moduleId, recipe.Outputs);
         }
 
         private static void RenderMachineRecipeStrip(MachineRecipeStrip strip)
@@ -2809,13 +2854,10 @@ namespace ItemCatalog.UI
                 return;
             }
 
-            float side = 56f;   // 单槽格子尺寸，和 DrawSlot 一致
+            float side = MachineCellSide(24f);
             float w, h;
             CatalogWindow.FitIcon(sprite, side, out w, out h);
             builder.AddImage(sprite, w, h, "mach_item" + elementId);
-
-            // 挂原生 tooltip（悬停物品名/说明）+ 左键跳查，和图鉴格子同一套
-            BindGoods(builder, id, false);
 
             // 物品图标下面垫一层原版机器格子底框（和空槽同一张 cell 精灵）
             PutCellFrame(builder, side);
@@ -2854,25 +2896,20 @@ namespace ItemCatalog.UI
         /// <summary>每秒推进机器配方的轮播索引：配方组间独立，模块数多个时也单独轮。</summary>
         private static void TickMachineRecipes()
         {
-            if (!IsOpen || _machineStrips.Count == 0) return;
+            if (!IsOpen || _vanillaMachine == null || _entry == null) return;
 
-            for (int i = 0; i < _machineStrips.Count; i++)
-            {
-                var strip = _machineStrips[i];
-                if (strip == null || strip.Host == null || strip.Group == null) continue;
+            var groups = MachinePanels.RecipesFor(_entry.Id);
+            if (groups == null || groups.Length == 0) return;
 
-                var variants = strip.Group.Variants;
-                if (variants == null || variants.Length == 0) continue;
+            int gi = Mathf.Clamp(_page, 0, groups.Length - 1);
+            var group = groups[gi];
+            if (group == null || group.Variants == null || group.Variants.Length <= 1) return;
 
-                strip.Variant = (strip.Variant + 1) % variants.Length;
-
-                var recipe = variants[strip.Variant];
-                if (recipe != null && recipe.Modules.Length > 1)
-                    strip.Module = (strip.Module + 1) % recipe.Modules.Length;
-
-                try { RenderMachineRecipeStrip(strip); }
-                catch (Exception e) { Warn("machine recipe: " + e.Message); }
-            }
+            // 同档内轮播：切到下一条配方，只换原版 inventory 里的物品，不重建窗口
+            _vanillaVariant = (_vanillaVariant + 1) % group.Variants.Length;
+            var recipe = group.Variants[_vanillaVariant];
+            try { FillVanillaMachine(recipe); }
+            catch (Exception e) { Warn("machine roll: " + e.Message); }
         }
 
         /// <summary>面板标签：优先游戏自己的 mech_*_label_* 键（跟随游戏语言），取不到用兜底。</summary>
@@ -2928,11 +2965,6 @@ namespace ItemCatalog.UI
                 return;
             }
 
-            // 物品按「可放格子的连续序号」填（只数形状里的 '1'），
-            // 不用网格行列索引——否则形状中间有 '0' 时会跳号，
-            // 物品落到看似「没有格子的地方」。
-            int cellSeq = 0;
-
             for (int r = 0; r * MachinePanels.ShapeCols < shape.Length; r++)
             {
                 builder.BeginRow(2f, UnityEngine.TextAnchor.MiddleCenter);
@@ -2942,8 +2974,7 @@ namespace ItemCatalog.UI
                     int idx = r * MachinePanels.ShapeCols + c;
                     if (idx < shape.Length && shape[idx] == '1')
                     {
-                        string itemId = itemFor == null ? null : itemFor(cellSeq);
-                        cellSeq++;
+                        string itemId = itemFor == null ? null : itemFor(idx);
                         var sprite = string.IsNullOrEmpty(itemId) ? null
                             : (CatalogWindow.IconFor(itemId) ?? CatalogWindow.CompositeIconFor(itemId));
                         if (sprite != null)
@@ -2963,11 +2994,15 @@ namespace ItemCatalog.UI
             }
         }
 
-        /// <summary>单格功能槽：一个格框（固定 56px，不跟网格铺满，否则单个槽会撑得过大）。</summary>
+        /// <summary>单格功能槽：一个格框。</summary>
         private static void DrawSlot(CustomUIBuilder builder)
         {
             var frame = MachineSlotSprite();
-            if (frame != null) builder.AddImage(frame, 56f, 56f, "mach_slot");
+            if (frame != null)
+            {
+                float side = MachineCellSide(24f);
+                builder.AddImage(frame, side, side, "mach_slot");
+            }
             else builder.AddLabel("▢", "mach_slot_text");
         }
 
@@ -2996,14 +3031,15 @@ namespace ItemCatalog.UI
             return _machineSlotSprite;
         }
 
-        /// <summary>
-        /// 机器格子边长：网格按内容区宽度平分铺满（7 列贴齐左右边缘），
-        /// 单个功能槽略小一点。原版 cell 精灵拉伸到这个尺寸，物品图标居中摆放。
-        /// </summary>
+        /// <summary>格子的边长：优先用原版精灵的像素大小（SetNativeSize），拿不到退回旧值。</summary>
         private static float MachineCellSide(float fallback)
         {
-            // 网格：内容区宽度 ÷ 列数，7 列正好铺满窗口左右边缘
-            return Mathf.Max(44f, (WinWidth - 36f - 2f) / MachinePanels.ShapeCols - 2f);
+            var sprite = MachineSlotSprite();
+            if (sprite == null) return fallback;
+
+            float w = sprite.rect.width / Mathf.Max(1f, sprite.pixelsPerUnit);
+            float h = sprite.rect.height / Mathf.Max(1f, sprite.pixelsPerUnit);
+            return Mathf.Max(8f, Mathf.Max(w, h));
         }
 
         private static void RenderRecipe(CustomUIBuilder builder, RecipeInfo recipe)
