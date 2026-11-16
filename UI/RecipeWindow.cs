@@ -129,6 +129,13 @@ namespace ItemCatalog.UI
         {
             internal int Kind;
             internal List<SourceInfo> Sources;
+
+            /// <summary>
+            /// 客人（双向）里的收购方：谁**收**这件物品。与 <see cref="Sources"/>
+            /// （卖给他 / 能摆上桌）分开存，页面上每个客人的收购清单单独成页。
+            /// </summary>
+            internal List<SourceInfo> Wanted;
+
             internal List<RecipeInfo> Recipes;
             internal List<UseInfo> Uses;
             internal List<LootTableInfo> Loot;
@@ -153,6 +160,10 @@ namespace ItemCatalog.UI
         {
             internal SourceInfo Source;
             internal List<GoodsCell> Cells;
+
+            /// <summary>true = 这一页是这位客人的收购清单（「他在收」），不画货单。</summary>
+            internal bool Buys;
+
             internal int Count { get { return Cells == null ? 0 : Cells.Count; } }
         }
 
@@ -673,7 +684,8 @@ namespace ItemCatalog.UI
             // 来源方向：谁卖给我（客人合并 / 地点各自成类——配给站、杰克逊博士）
             var sources = SourceIndex.For(_entry.Id);
 
-            AddSourceCategory(CatClient, sources);
+            // 客人（双向）：卖给他（能摆上桌）+ 收购这件的客人，同一个「客人」大类。
+            AddClientCategory(sources, SourceIndex.WantedBy(_entry.Id, _entry.Item));
             AddSourceCategory(CatLocation, sources);
 
             // 他自己是机器 → 机器界面（电池 / 模块 / 功能槽 / 容器网格）+ 自己的产出配方。
@@ -767,6 +779,41 @@ namespace ItemCatalog.UI
         /// 页内翻页切换，一页一个客人（名字写在页内那行）。
         /// 地点只有几个，各自成类更直观：标题直接是地点名（杰克逊博士的店）。
         /// </summary>
+        /// <summary>
+        /// 客人（双向）：把「卖给他」（货单里有这件，能摆上桌）与「收这件」
+        /// （收购清单命中）合并成同一个「客人」大类。收购方追加在卖家之后
+        /// ——他的收购清单在他的页里单独一页（「他在收」），货单页照旧。
+        /// </summary>
+        private static void AddClientCategory(List<SourceInfo> sources, List<SourceInfo> wanted)
+        {
+            var clients = new List<SourceInfo>();
+            for (int i = 0; i < sources.Count; i++)
+            {
+                var one = sources[i];
+                if (one == null || one.Kind != SourceKind.Client) continue;
+                clients.Add(one);
+            }
+
+            // 收购方：卖家里没有的补在后面（同一客人既卖又收时，一页清单里两面都有）
+            var buyers = new List<SourceInfo>();
+            if (wanted != null)
+            {
+                for (int i = 0; i < wanted.Count; i++)
+                {
+                    var one = wanted[i];
+                    if (one == null || one.Kind != SourceKind.Client) continue;
+                    if (clients.Contains(one)) continue;
+                    clients.Add(one);
+                    buyers.Add(one);
+                }
+            }
+
+            if (clients.Count == 0) return;
+
+            var category = new Category { Kind = CatClient, Sources = clients, Wanted = buyers };
+            _categories.Add(category);
+        }
+
         private static void AddSourceCategory(int kind, List<SourceInfo> sources)
         {
             SourceKind target = kind == CatClient ? SourceKind.Client : SourceKind.Location;
@@ -1246,13 +1293,18 @@ namespace ItemCatalog.UI
                 if (source == null) continue;
 
                 var items = source.Items;
+                bool isBuyer = category.Wanted != null && category.Wanted.Contains(source);
                 if (items == null || items.Length == 0)
                 {
-                    _sourcePages.Add(new SourcePage
+                    // 没有货单：只收购的客人不挂空页（收购清单页在后面追加）
+                    if (!isBuyer)
                     {
-                        Source = source,
-                        Cells = new List<GoodsCell>()
-                    });
+                        _sourcePages.Add(new SourcePage
+                        {
+                            Source = source,
+                            Cells = new List<GoodsCell>()
+                        });
+                    }
                     continue;
                 }
 
@@ -1280,6 +1332,18 @@ namespace ItemCatalog.UI
                     {
                         Source = source,
                         Cells = cells.GetRange(start, count)
+                    });
+                }
+
+                // 客人（双向）：他**收**这件 → 货单页之后追加一页收购清单
+                //（「他在收」），与来源方向在同一大类里互查。
+                if (category.Wanted != null && category.Wanted.Contains(source))
+                {
+                    _sourcePages.Add(new SourcePage
+                    {
+                        Source = source,
+                        Cells = new List<GoodsCell>(),
+                        Buys = true
                     });
                 }
             }
@@ -1390,6 +1454,78 @@ namespace ItemCatalog.UI
                     gridLayout.minHeight = CellHeight;
                 }
             }
+
+            // 客人（双向）的收购页：这一页只画「他在收」——
+            // 收购标签（WATER/FOOD 这类整类目标）+ 专收的具体物品
+            if (page.Buys)
+            {
+                builder.AddLabel(Loc("src_buys", "他在收"), "src_buys");
+                RenderBuys(builder, source, false);
+            }
+        }
+
+        /// <summary>
+        /// 「他在收」区块。数据来自 `clients.csv` 第 10/11 列，
+        /// 是从各客人 `willAcceptItem` 谓词的 IL 里抄出来的
+        /// （`IsTag("WATER")` / `IsID("bottled_water_premium")`）：
+        ///   · 种类：只显示标签名（WATER、FOOD…），不展开成具体物品；
+        ///   · 特殊物品：和货单格子一样，有图标、能点击、能悬停。
+        /// </summary>
+        private static void RenderBuys(CustomUIBuilder builder, SourceInfo source, bool withHeader = true)
+        {
+            if (source == null) return;
+
+            var tags = source.BuysTags;
+            var items = source.BuysItems;
+
+            bool hasTags = tags != null && tags.Length > 0;
+            bool hasItems = items != null && items.Length > 0;
+
+            if (!hasTags && !hasItems) return;
+
+            if (withHeader) builder.AddHeader(ModEntry.T("src_clients"), "src_buys");
+
+            if (hasTags)
+            {
+                // 标签格要排除已经单独列出的具体物品，否则同一个瓶子会画两遍：
+                // 囤水者既收任意 WATER、又专收 bottled_water_premium，
+                // 不排除的话「他在收」下面会出现两格一模一样的水。
+                HashSet<string> exclude = null;
+                if (hasItems)
+                {
+                    exclude = new HashSet<string>(StringComparer.Ordinal);
+                    for (int k = 0; k < items.Length; k++)
+                        if (!string.IsNullOrEmpty(items[k])) exclude.Add(items[k]);
+                }
+
+                // 每个收购标签给一格「这一类」的物品：当前物品属于该类就固定显示它，
+                // 否则轮播该类全部物品。
+                //
+                // 标签格和「具体物品」共用同一张网格：以前两者各建一个 grid，
+                // 结果被排成上下两行。现在物品跟着标签一起交给 RenderTagStrip，
+                // 由它在同一行里接着画。
+                builder.BeginColumn(2f);
+                var buyStripHost = builder.CurrentContainer;
+                builder.End();
+
+                var buyStrip = new TagStrip
+                {
+                    Host = buyStripHost,
+                    Tags = tags,
+                    Items = items,
+                    Base = 800 + _tagStripSeq * 8,
+                    CurrentId = _entry == null ? null : _entry.Id,
+                    Exclude = exclude
+                };
+                _tagStripSeq++;
+                _tagStrips.Add(buyStrip);
+                RenderTagStrip(buyStrip);
+                return;
+            }
+
+            if (!hasItems) return;
+
+            RenderItemGrid(builder, items, 500);
         }
 
 
