@@ -232,11 +232,15 @@ namespace ItemCatalog.UI
                 bool useMeasured = measuredH > 10f && measuredH < boxH;
                 float nativeH = useMeasured ? measuredH : boxH;
 
-                // 内容在 rect 里不一定居中（面板行有 padding），直接顶边/居中对齐都会
-                // 出现「靠上被裁」或「底部留空」。这里量内容包围盒，把面板整体平移，
-                // 让内容中心与容器中心重合，再据此给容器高度。
+                // ① 先把 rect 高度压到实测内容高度：rect 比内容高时，
+                //    rect × ratio 会大于容器高度、向下溢出被 RectMask2D 裁（面板被遮）。
+                // ② 再把面板整体平移，让内容包围盒中心与容器中心重合
+                //    （面板行有 padding，内容在 rect 里并不居中）。
                 if (useMeasured)
                 {
+                    var sd = _attachedRect.sizeDelta;
+                    _attachedRect.sizeDelta = new Vector2(sd.x, measuredH);
+
                     float minY, maxY;
                     if (MeasureContentBounds(out minY, out maxY) && maxY > minY)
                     {

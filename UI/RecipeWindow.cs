@@ -971,6 +971,34 @@ namespace ItemCatalog.UI
             Render();
         }
 
+        /// <summary>
+        /// 标题栏的**自然首选高度**（不受当前被压缩状态影响）。
+        /// 不能用「窗口高 − 内容区高」当预算：那个差值本身就已经是压缩后的结果，
+        /// 拿它算窗口会形成「压扁→差值变小→窗口更矮→更压扁」的死循环。
+        /// </summary>
+        private static float NaturalChrome(CustomUIWindow window)
+        {
+            if (window == null) return MachineTitleBarH;
+            var root = window.Rect;
+            var content = window.ContentRoot;
+            if (root == null || content == null || root == content) return MachineTitleBarH;
+
+            try
+            {
+                for (int i = 0; i < root.childCount; i++)
+                {
+                    var child = root.GetChild(i) as RectTransform;
+                    if (child == null || child == content) continue;
+
+                    float want = UnityEngine.UI.LayoutUtility.GetPreferredHeight(child);
+                    if (want >= 40f && want <= 300f) return want;
+                    break;
+                }
+            }
+            catch { }
+            return MachineTitleBarH;
+        }
+
         /// <summary>窗口被游戏关掉（Esc / 点 X）时，别留下悬空提示框和拖拽登记。</summary>
         private static void OnWindowClosed()
         {
@@ -1334,11 +1362,36 @@ namespace ItemCatalog.UI
                 // 所以它已经包含翻页条高度——之前再加一次 pagerH，每次都会多出一段空白。
                 if (machinePage)
                 {
-                    float chromeUse = _measureChrome > 4f ? _measureChrome : MachineTitleBarH;
+                    // 用标题栏的**自然首选高度**，不是被压缩后的实测差值——
+                    // 后者会自洽地一直偏小、标题栏永远压扁。
+                    float chromeUse = NaturalChrome(_window);
                     height = Mathf.Max(WinMinHeight, preferred + chromeUse);
-                    // 物理边界：窗口不能超出屏幕（之前实测值被污染时涨到 1583）。
+                    // 物理边界：窗口不能超出屏幕。
                     if (Screen.height > 0)
                         height = Mathf.Min(height, Screen.height - 10f);
+
+                    if (ModEntry.Log != null)
+                        ModEntry.Log.Log("[mach-win] preferred=" + preferred
+                                         + " chromeNatural=" + chromeUse + " height=" + height);
+                }
+
+                // 顶部行（配方名 + 右上角机器图标）固定高度：
+                // 不给它声明高度的话，布局组会按剩余空间压缩/拉伸它，
+                // 机器图标的显示尺寸就随内容多少而变。
+                if (machinePage && _machineTopRow != null)
+                {
+                    float topWant = 60f;
+                    try
+                    {
+                        float p = UnityEngine.UI.LayoutUtility.GetPreferredHeight(_machineTopRow);
+                        if (p >= 40f && p <= 160f) topWant = p;
+                    }
+                    catch { }
+
+                    var topLe = EnsureLayoutElement(_machineTopRow);
+                    topLe.minHeight = topWant;
+                    topLe.preferredHeight = topWant;
+                    topLe.flexibleHeight = 0f;
                 }
 
                 if (machinePage && _window.ContentRoot != null)
