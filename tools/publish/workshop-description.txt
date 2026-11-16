@@ -32,24 +32,59 @@ It gathers all 27 item directories in the game, along with entries injected by o
 [*]Each side is a list of categories, switched with the [b]< Category >[/b] buttons at the top
 [/list]
 
-[h2]Source categories[/h2]
-[list]
-[*][b]Sold by[/b]: one page per customer, opening with the faction and the portrait, then every item that customer can put on the table
-[*][b]Shop locations[/b]: stores and vending spots stocking the item
-[*][b]Machine[/b]: the machine's own interface restored — battery, module and function slots plus the container grid — with its output recipes below
-[*][b]Crafting[/b]: the recipe that produces it, with materials and tools
-[*][b]Use[/b]: merged use relations — above the [b]Products[/b] divider the grid shows what goes in, below it what comes out
-[*][b]Loot pools[/b]: containers, tables and rolls that can drop it; every pool of one location is merged into a single page
-[/list]
-
-[h2]Use categories[/h2]
-[list]
-[*][b]Machine[/b]: the same machine pages, from the consumption side
-[*][b]Wanted[/b]: customers buying the item, one page per customer, same layout as the source pages
-[*][b]Crafting material[/b]: recipes that consume it
-[*][b]Use[/b]: the merged use relations, same as the source side
-[*][b]Open[/b]: what this container or key card opens
-[/list]
+[h2]Category types[/h2]
+[table]
+[tr]
+[th]Category[/th]
+[th]Side[/th]
+[th]Content[/th]
+[/tr]
+[tr]
+[td]Sold by[/td]
+[td]Source[/td]
+[td]One page per customer — faction, portrait, then everything they can put on the table[/td]
+[/tr]
+[tr]
+[td]Shop locations[/td]
+[td]Source[/td]
+[td]Stores and vending spots stocking the item[/td]
+[/tr]
+[tr]
+[td]Machine[/td]
+[td]Both[/td]
+[td]The machine's own interface restored — battery, module and function slots plus the container grid — with its output recipes below; the use window shows the same page from the consumption side[/td]
+[/tr]
+[tr]
+[td]Crafting[/td]
+[td]Source[/td]
+[td]The recipe that produces it, with materials and tools[/td]
+[/tr]
+[tr]
+[td]Use[/td]
+[td]Both[/td]
+[td]Merged use relations — above the [b]Products[/b] divider the grid shows what goes in, below it what comes out[/td]
+[/tr]
+[tr]
+[td]Loot pools[/td]
+[td]Source[/td]
+[td]Containers, locations and rolls that can yield it; every pool of one location is merged into a single page[/td]
+[/tr]
+[tr]
+[td]Wanted[/td]
+[td]Use[/td]
+[td]Customers buying the item, one page per customer, same layout as the source pages[/td]
+[/tr]
+[tr]
+[td]Crafting material[/td]
+[td]Use[/td]
+[td]Recipes that consume it[/td]
+[/tr]
+[tr]
+[td]Open[/td]
+[td]Use[/td]
+[td]What this container or key card opens[/td]
+[/tr]
+[/table]
 
 [h2]States[/h2]
 [list]
@@ -112,24 +147,59 @@ Verified against game version 0.46D.
 [*]两侧都是分类列表，用顶部 [b]「< 分类 >」[/b] 按钮切换
 [/list]
 
-[h2]来源分类[/h2]
-[list]
-[*][b]客人的货[/b]：一个客人一页，以阵营与客人立绘开篇，随后列出他可能摆上桌的全部物品
-[*][b]地点商店[/b]：卖这件物品的店铺与售货点
-[*][b]机器[/b]：还原机器自身的界面 —— 电池、模块与功能槽、容器网格 —— 下方是它的产出配方
-[*][b]合成[/b]：产出这件物品的配方，含材料与工具
-[*][b]使用[/b]：合并的使用关系 —— 「产物」分界线上方是投入，下方是产出
-[*][b]掉落池[/b]：能开出这件物品的容器、掉落表与随机池；同一地点的全部池子合并成一页
-[/list]
-
-[h2]用途分类[/h2]
-[list]
-[*][b]机器[/b]：同样的机器页，从消耗侧查看
-[*][b]求购[/b]：收购这件物品的客人，一个客人一页，版式与来源页一致
-[*][b]合成材料[/b]：把这件东西当材料用掉的配方
-[*][b]使用[/b]：与来源侧相同的使用关系
-[*][b]开启[/b]：这箱子或这张卡能开出什么
-[/list]
+[h2]分类类型[/h2]
+[table]
+[tr]
+[th]类别[/th]
+[th]方向[/th]
+[th]内容[/th]
+[/tr]
+[tr]
+[td]客人的货[/td]
+[td]来源[/td]
+[td]一个客人一页 —— 阵营、客人立绘，随后是他可能摆上桌的全部物品[/td]
+[/tr]
+[tr]
+[td]地点商店[/td]
+[td]来源[/td]
+[td]卖这件物品的店铺与售货点[/td]
+[/tr]
+[tr]
+[td]机器[/td]
+[td]双向[/td]
+[td]还原机器自身的界面 —— 电池、模块与功能槽、容器网格 —— 下方是产出配方；用途窗口从消耗侧看同一页[/td]
+[/tr]
+[tr]
+[td]合成[/td]
+[td]来源[/td]
+[td]产出这件物品的配方，含材料与工具[/td]
+[/tr]
+[tr]
+[td]使用[/td]
+[td]双向[/td]
+[td]合并的使用关系 —— 「产物」分界线上方是投入，下方是产出[/td]
+[/tr]
+[tr]
+[td]掉落池[/td]
+[td]来源[/td]
+[td]能开出这件物品的容器、地点与随机池；同一地点的全部池子合并成一页[/td]
+[/tr]
+[tr]
+[td]求购[/td]
+[td]用途[/td]
+[td]收购这件物品的客人，一个客人一页，版式与来源页一致[/td]
+[/tr]
+[tr]
+[td]合成材料[/td]
+[td]用途[/td]
+[td]把这件东西当材料用掉的配方[/td]
+[/tr]
+[tr]
+[td]开启[/td]
+[td]用途[/td]
+[td]这箱子或这张卡能开出什么[/td]
+[/tr]
+[/table]
 
 [h2]状态[/h2]
 [list]
