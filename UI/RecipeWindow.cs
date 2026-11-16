@@ -1294,6 +1294,8 @@ namespace ItemCatalog.UI
 
             _category = next;
             _page = 0;
+            _measureChrome = 0f;   // 换页重新实测，别沿用上一页的标题栏/翻页条尺寸
+            _measurePass = 0;
             Render();
         }
 
@@ -1363,20 +1365,20 @@ namespace ItemCatalog.UI
 
                 float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
 
-                // 机器页：窗口高度 = 内容实际高度 + 翻页条 + 标题栏，全部用**实测值**。
-                // 不做上限收敛（上限会让窗口被拉高、下方留白），只保留最小高度防止过扁。
+                // 机器页：窗口高度 = 内容实际高度 + 标题栏。
+                // 注意 preferred 取自 _bodyHost，而**翻页条就在 bodyHost 里面**，
+                // 所以它已经包含翻页条高度——之前再加一次 pagerH，每次都会多出一段空白。
                 if (machinePage)
                 {
                     float chromeUse = _measureChrome > 4f ? _measureChrome : MachineTitleBarH;
-                    float pagerUse = _measurePagerH > 1f ? _measurePagerH : 34f;
-                    height = Mathf.Max(WinMinHeight, preferred + pagerUse + chromeUse);
+                    height = Mathf.Max(WinMinHeight, preferred + chromeUse);
                 }
 
                 if (machinePage && _window.ContentRoot != null)
                 {
                     var crLayout = EnsureLayoutElement(_window.ContentRoot);
                     crLayout.minHeight = -1f;
-                    crLayout.preferredHeight = Mathf.Max(1f, preferred + (_measurePagerH > 1f ? _measurePagerH : 34f));
+                    crLayout.preferredHeight = Mathf.Max(1f, preferred);
                     crLayout.flexibleHeight = 0f;
                     CustomUIBuilder.RebuildLayout(_window.ContentRoot);
                 }
