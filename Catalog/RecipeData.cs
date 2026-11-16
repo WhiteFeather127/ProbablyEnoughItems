@@ -122,10 +122,25 @@ namespace ItemCatalog.Catalog
 
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
+        /// <summary>空扫描后的重试时间点（unscaled）。</summary>
+        private static float _retryAt;
+
         /// <summary>建索引。重复调用只会重建一次（Generation 变化时由调用方清空 Built）。</summary>
         internal static void Build()
         {
             if (Built) return;
+            if (UnityEngine.Time.unscaledTime < _retryAt) return;
+
+            // 目录还没就绪（All 为空）时绝不缓存结果：任何来源层都可能通过
+            // BaseItemId → FindEntry 提前触发本次构建，此时缓存 0 条配方
+            // 会把合成/机器页全部锁死。不设 Built，等目录就绪后重扫。
+            if (CatalogDataBuilder.All.Count == 0)
+            {
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[recipes] catalog not ready, deferred");
+                _retryAt = UnityEngine.Time.unscaledTime + 10f;
+                return;
+            }
 
             All.Clear();
             _byOutput.Clear();
@@ -174,14 +189,54 @@ namespace ItemCatalog.Catalog
             }
 
             watch.Stop();
+
+            // 游戏的 recipeManager 只由 CraftingHelper.InitCraftingTable /
+            // InitCraftingBlueprint / InitVendingTable 挂上——**进存档之后**才存在。
+            // 主菜单暖机时扫到 0 台机器是正常状态，绝不能缓存：
+            // 不设 Built，10 秒冷却后由下一次 FindEntry/查询自动重扫，
+            // 进存档后第一次查询就会拿到完整配方。
+            if (MachineCount == 0)
+            {
+                _retryAt = UnityEngine.Time.unscaledTime + 10f;
+
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log(string.Format(
+                        "[recipes] no machines yet (recipeManager attaches after save load), deferred"
+                        + " [all={0} withItem={1}] retry in 10s", items.Count, CountWithItem(items)));
+                return;
+            }
+
             Built = true;
 
             if (ModEntry.Log != null)
             {
+                // 诊断三件套：目录条目数 / 带 GameItem 的 / 带 recipeManager 的——
+                // machines=0 时一眼看出断在哪一层
+                int withItem = 0, withManager = 0;
+                for (int i = 0; i < items.Count; i++)
+                {
+                    var e = items[i];
+                    if (e == null || e.Item == null) continue;
+                    withItem++;
+                    RecipeManager m = null;
+                    try { m = e.Item.recipeManager; } catch { }
+                    if (m != null) withManager++;
+                }
+
                 ModEntry.Log.Log(string.Format(
-                    "[recipes] machines={0} recipes={1} outputs={2} unresolved={3} ({4} ms)",
-                    MachineCount, All.Count, _byOutput.Count, UnresolvedOutputs, watch.ElapsedMilliseconds));
+                    "[recipes] machines={0} recipes={1} outputs={2} unresolved={3} ({4} ms)"
+                    + " [all={5} withItem={6} withManager={7}]",
+                    MachineCount, All.Count, _byOutput.Count, UnresolvedOutputs, watch.ElapsedMilliseconds,
+                    items.Count, withItem, withManager));
             }
+        }
+
+        private static int CountWithItem(System.Collections.Generic.List<ItemEntry> items)
+        {
+            int n = 0;
+            for (int i = 0; i < items.Count; i++)
+                if (items[i] != null && items[i].Item != null) n++;
+            return n;
         }
 
         private static bool entryByIdMissing(ItemEntry entry)
