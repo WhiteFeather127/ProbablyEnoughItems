@@ -1583,11 +1583,10 @@ namespace ItemCatalog.UI
                 }
             }
 
-            // 客人（双向）的收购页：这一页只画「他在收」——
+            // 客人（双向）的收购页：这一页只画收购清单——
             // 收购标签（WATER/FOOD 这类整类目标）+ 专收的具体物品
             if (page.Buys)
             {
-                builder.AddLabel(Loc("src_buys", "他在收"), "src_buys");
                 RenderBuys(builder, source, false);
             }
         }
