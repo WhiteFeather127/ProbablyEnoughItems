@@ -1392,19 +1392,10 @@ namespace ItemCatalog.UI
                 // 所以它已经包含翻页条高度——之前再加一次 pagerH，每次都会多出一段空白。
                 if (machinePage)
                 {
-                    // 窗口高度 = 内容首选高度 + 标题栏预算（含各层 padding）。
-                    // 不用「实测顶边差」：标题栏被压时测出的差值也跟着变小，
-                    // 拿它算窗口会形成「压扁→差值变小→窗口更矮→更压扁」的循环。
+                    // 兜底值：内容 + 预算（仅在框架没能自己撑开时使用）
                     height = Mathf.Max(WinMinHeight, preferred + MachineTitleBarH);
-
-                    // 物理边界：窗口不能超出屏幕。
                     if (Screen.height > 0)
                         height = Mathf.Min(height, Screen.height - 10f);
-
-                    if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[mach-win] preferred=" + preferred
-                                         + " titleBarBudget=" + MachineTitleBarH
-                                         + " height=" + height);
                 }
 
                 // 顶部行（配方名 + 右上角机器图标）固定高度：
@@ -1447,6 +1438,29 @@ namespace ItemCatalog.UI
 
                     // 分配子级高度的是窗口 root 上的布局组，必须重排 root。
                     CustomUIBuilder.RebuildLayout(_window.Rect);
+
+                    // 更优雅的一步：让**框架自己**把窗口撑开。
+                    // 窗口 root 的布局组本来就知道标题栏有多高，只要 ContentRoot 的
+                    // preferredHeight 声明好，它算出来的高度就是「标题栏 + 内容」，
+                    // 不需要我们猜任何常量。测一下它是否真的撑开了：撑开就采纳，
+                    // 没撑开才退回下面的 SetSize 兜底。
+                    if (machinePage)
+                    {
+                        // 阈值取「内容 + 125」：低于这个值说明标题栏还是被压了，别采纳。
+                        float autoH = _window.Rect.rect.height;
+                        if (autoH >= preferred + 125f && autoH <= Screen.height)
+                        {
+                            _lastHeight = autoH;   // 标记为已定稿，跳过 SetSize
+                            if (ModEntry.Log != null)
+                                ModEntry.Log.Log("[mach-win] framework height=" + autoH
+                                                 + " preferred=" + preferred);
+                            return;
+                        }
+
+                        if (ModEntry.Log != null)
+                            ModEntry.Log.Log("[mach-win] framework height=" + autoH
+                                             + " too small, fallback to SetSize");
+                    }
                 }
 
                 if (Mathf.Abs(height - _lastHeight) > 2f)
