@@ -943,14 +943,12 @@ namespace ItemCatalog.UI
 
             try
             {
-                // 照图鉴的写法：不调 UseMachineryStyle。
-                // 机器样式会让窗口按内容重算尺寸（PixelWindow.MachineryValidate 用 childElement
-                // 的像素尺寸覆盖 widthPixels/heightPixels），标题栏高度因此不可控。
                 builder = CustomUIManager.Window(WinId,
                     _entry == null ? ModEntry.T("rec_title") : _entry.DisplayName, "paper")
                     .SetDraggable(true)
                     .SetSize(WinWidth, WinMinHeight)
                     .Center()
+                    .UseMachineryStyle(true)
                     .OnClose(OnWindowClosed);
             }
             catch (Exception e)
