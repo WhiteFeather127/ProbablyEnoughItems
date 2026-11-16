@@ -1422,7 +1422,11 @@ namespace ItemCatalog.UI
                         // SetSize 会被覆盖）。而框架的标题栏 preferredHeight 比它实际渲染
                         // 占用小约 20px（padding 没算进去），所以这里补一点，
                         // 让窗口整体够高、标题栏不被压。
-                        crLayout.preferredHeight = Mathf.Max(1f, preferred + 40f);
+                        // 窗口高度 = 标题栏pref(框架给的,约40) + ContentRoot.preferred。
+                        // 标题栏实际要占约 130，差额只能加在 ContentRoot 上，否则
+                        // 布局组会把标题栏压到十几像素。+120 保证内容区装得下内容后
+                        // 还能留住标题栏的自然高度。
+                        crLayout.preferredHeight = Mathf.Max(1f, preferred + 120f);
                         crLayout.flexibleHeight = 0f;
                     }
                     else
@@ -1453,9 +1457,10 @@ namespace ItemCatalog.UI
                             _bodyHost.GetWorldCorners(bc3);
                             float gap = (wc3[1].y - bc3[1].y) / sy3;
 
-                            // 只接受**变大**的修正：标题栏一旦被压，量到的 gap 就会变小，
-                            // 若允许变小就会「越量越小 → 窗口越矮 → 标题栏越扁」地递减。
-                            if (gap > 20f && gap < 300f && gap > _chromeMeasured + 2f)
+                            // 只接受**变大**的修正，且有下限：标题栏一旦被压，量到的 gap
+                            // 会掉到十几像素，若采纳就会「越量越小 → 窗口越矮 → 更扁」。
+                            // 低于 100 一律视为被压状态，不采纳。
+                            if (gap > 100f && gap < 300f && gap > _chromeMeasured + 2f)
                             {
                                 _chromeMeasured = gap;
 
