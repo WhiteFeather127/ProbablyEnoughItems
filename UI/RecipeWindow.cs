@@ -2821,12 +2821,18 @@ namespace ItemCatalog.UI
 
             try
             {
-                ModEntry.Log.Log("[mach-layout] win=" + WorldRect(_window == null ? null : _window.Rect)
+                var root = _window == null ? null : _window.Rect;
+                var cr = _window == null ? null : _window.ContentRoot;
+                ModEntry.Log.Log("[mach-layout] win=" + WorldRect(root)
+                                 + " cr=" + WorldRect(cr)
+                                 + " crLe=" + LayoutInfo(cr)
                                  + " body=" + WorldRect(_bodyHost)
+                                 + " bodyLe=" + LayoutInfo(_bodyHost)
+                                 + " bodyParent=" + (_bodyHost.parent == null ? "null" : _bodyHost.parent.name)
+                                 + " bodyParentGroups=" + GroupInfo(_bodyHost.parent as RectTransform)
                                  + " host=" + WorldRect(host)
                                  + " panel=" + WorldRect(panel)
-                                 + " scale=" + panel.localScale.x
-                                 + " sizeDelta=" + panel.sizeDelta);
+                                 + " preferred=" + UnityEngine.UI.LayoutUtility.GetPreferredHeight(_bodyHost));
             }
             catch (Exception e) { Warn("dump layout: " + e.Message); }
         }
@@ -2838,6 +2844,31 @@ namespace ItemCatalog.UI
             rect.GetWorldCorners(corners);
             return string.Format("(x{0:F0}..{1:F0} y{2:F0}..{3:F0})",
                 corners[0].x, corners[2].x, corners[0].y, corners[2].y);
+        }
+
+        /// <summary>LayoutElement 的关键值，用来确认高度声明有没有落到位。</summary>
+        private static string LayoutInfo(RectTransform rect)
+        {
+            if (rect == null) return "null";
+            var le = rect.GetComponent<UnityEngine.UI.LayoutElement>();
+            if (le == null) return "noLE";
+            return string.Format("(min{0:F0} pref{1:F0} flex{2:F1})",
+                le.minHeight, le.preferredHeight, le.flexibleHeight);
+        }
+
+        /// <summary>父级容器上挂了哪些布局组、是否控制子级高度。</summary>
+        private static string GroupInfo(RectTransform rect)
+        {
+            if (rect == null) return "null";
+            var v = rect.GetComponent<UnityEngine.UI.VerticalLayoutGroup>();
+            var h = rect.GetComponent<UnityEngine.UI.HorizontalLayoutGroup>();
+            var g = rect.GetComponent<UnityEngine.UI.GridLayoutGroup>();
+            var sb = new System.Text.StringBuilder();
+            if (v != null) sb.Append("VLG(ctrlH=").Append(v.childControlHeight).Append(",ctrlW=").Append(v.childControlWidth).Append(")");
+            if (h != null) sb.Append(" HLG");
+            if (g != null) sb.Append(" Grid");
+            if (sb.Length == 0) sb.Append("none");
+            return sb.ToString();
         }
 
         /// <summary>把当前配方的物品塞进原版窗口的真 inventory（轮播换配方时只换物品，不重建窗口）。</summary>
