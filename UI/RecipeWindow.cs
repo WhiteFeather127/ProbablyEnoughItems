@@ -2919,6 +2919,7 @@ namespace ItemCatalog.UI
             // 保证 AddSpace 占的高度和面板最终缩放后的高度一致。
             float panelH = Mathf.Max(1f, _vanillaMachine.ScaledSize(_bodyHost, panelMaxH).y);
             builder.AddSpace(panelH);
+            var spaceEl = builder.Last;   // 占位元素，稍后按实测内容高度修正
             builder.End();
 
             // 关键：host 在 bodyHost 的 VerticalLayoutGroup 下，childControlWidth/Height=true，
@@ -2937,12 +2938,33 @@ namespace ItemCatalog.UI
             // 布局跑一次后塞物品（否则 inventory inner rect 还是 0，物品会浮到格子外）。
             var rect = _vanillaMachine.AttachContentTo(host);
             if (rect != null) CustomUIBuilder.RebuildLayout(rect);
-            _vanillaMachine.MatchGameCanvasScale(host, panelMaxH);
+
+            // MatchGameCanvasScale 返回**实测内容**缩放后的高度（不是 rect 高度）。
+            // 用它修正占位空间和 host 高度：rect 含底部留白，按它给高度会导致
+            // 内容偏上、下面空一段（用户说的「实际位置和布局位置不符」）。
+            float visualH = _vanillaMachine.MatchGameCanvasScale(host, panelMaxH);
+            if (visualH > 10f)
+            {
+                if (spaceEl != null && spaceEl.Rect != null)
+                {
+                    var spaceLe = spaceEl.Rect.GetComponent<UnityEngine.UI.LayoutElement>();
+                    if (spaceLe == null) spaceLe = spaceEl.Rect.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
+                    spaceLe.minHeight = visualH;
+                    spaceLe.preferredHeight = visualH;
+                }
+                if (host != null)
+                {
+                    var hostLe = EnsureLayoutElement(host);
+                    hostLe.minHeight = visualH;
+                    hostLe.preferredHeight = visualH;
+                }
+            }
+
             FillVanillaMachine(recipe);
 
             if (ModEntry.Log != null)
                 ModEntry.Log.Log("[vanilla-machine] furnace v" + _vanillaVariant
-                                 + " panelH=" + panelH
+                                 + " panelH=" + panelH + " visualH=" + visualH
                                  + " rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
         }
 
