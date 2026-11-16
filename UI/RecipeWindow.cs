@@ -23,7 +23,10 @@ namespace ItemCatalog.UI
         private const string WinId = "recipe:win";
         private const float WinWidth = 600f;
         private const float WinMinHeight = 240f;
-        private const float WinMaxHeight = 900f;
+        // 900 太小：机器页 内容886 + WindowChrome64 = 950 会被砍到 900，
+        // 布局组只好把标题栏压到 0（日志 [win-children] Header h=0）。
+        // 1080p 下屏幕本可给到 1000，这里放开到 1000；普通页面内容少、碰不到上限。
+        private const float WinMaxHeight = 1000f;
 
         // 机器页高度预算里的「标题栏 + 各层 padding」总量。
         // 实测窗口顶边到 bodyHost 顶边约 130，用 118 会少给 12~20px、标题栏被压。
