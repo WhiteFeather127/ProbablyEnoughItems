@@ -219,6 +219,9 @@ namespace ItemCatalog.UI
         private static readonly List<TagStrip> _tagStrips = new List<TagStrip>();
         private static readonly List<MachineRecipeStrip> _machineStrips = new List<MachineRecipeStrip>();
 
+        /// <summary>机器页当前嵌入的原版机器窗口（真 GameGridInventory + 样本物品）。</summary>
+        private static VanillaMachinePanel _vanillaMachine;
+
         private static int _tagStripSeq;
 
         /// <summary>查不到出处的掉落池：别的来源都没有时才兜底列成「掉落池」大类。</summary>
@@ -361,6 +364,7 @@ namespace ItemCatalog.UI
             _tagRollIndex.Clear();   // 换物品后标签轮播从头开始
             _tagStrips.Clear();
             _machineStrips.Clear();
+            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _tagStripSeq = 0;
             SourceSeed = null;
             SourceWater = null;
@@ -955,6 +959,7 @@ namespace ItemCatalog.UI
         private static void OnWindowClosed()
         {
             _highlights.Clear();
+            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _window = null;
             _bodyHost = null;
             CatalogWindow.ResetExternalCells();
@@ -2685,12 +2690,43 @@ namespace ItemCatalog.UI
             }
 
             var groups = MachinePanels.RecipesFor(_entry.Id);
-            if (groups == null || groups.Length == 0)
+            if (groups == null || groups.Length == 0) return;
+
+            // 第一条配方（默认展示的那一档）：用游戏自己的控件造原版机器窗口，
+            // 格子 / 物品图标 / 提示 / 拖拽全是原生的，不是自绘。
+            var first = groups[0];
+            if (first == null || first.Variants == null || first.Variants.Length == 0) return;
+            var recipe = first.Variants[0];
+            if (recipe == null) return;
+
+            string moduleId = recipe.Modules != null && recipe.Modules.Length > 0 ? recipe.Modules[0] : null;
+
+            // 留一个占位容器，把原版窗口的内容节点挂进来
+            builder.BeginColumn(2f);
+            var host = builder.CurrentContainer;
+            builder.End();
+
+            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
+            _vanillaMachine = new VanillaMachinePanel();
+
+            bool built = false;
+            if (string.Equals(_entry.Id, "furnace", StringComparison.Ordinal))
+                built = _vanillaMachine.BuildFurnace(recipe.Inputs, moduleId, recipe.Outputs);
+
+            if (built)
             {
-                DrawMachinePanel(builder, MachinePanels.For(_entry.Id), null, null, null, 0);
-                return;
+                var rect = _vanillaMachine.AttachContentTo(host);
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] furnace attached rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
+            }
+            else
+            {
+                if (ModEntry.Log != null) ModEntry.Log.Warning("[vanilla-machine] build failed");
+                _vanillaMachine.Destroy();
+                _vanillaMachine = null;
             }
 
+            // 纯度分档说明仍用自绘列表（轮播）：告诉玩家同一台机器还能出哪些档
             for (int i = 0; i < groups.Length; i++)
             {
                 var group = groups[i];
@@ -2698,21 +2734,6 @@ namespace ItemCatalog.UI
 
                 if (i > 0) builder.AddSeparator("mach_sep", 6);
                 builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
-
-                builder.BeginColumn(2f);
-                var host = builder.CurrentContainer;
-                builder.End();
-
-                var strip = new MachineRecipeStrip
-                {
-                    Host = host,
-                    Group = group,
-                    Variant = 0,
-                    Module = 0,
-                    Base = 3200 + _machineStrips.Count * 24
-                };
-                _machineStrips.Add(strip);
-                RenderMachineRecipeStrip(strip);
             }
         }
 
