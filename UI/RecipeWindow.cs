@@ -24,6 +24,10 @@ namespace ItemCatalog.UI
         private const float WinWidth = 600f;
         private const float WinMinHeight = 240f;
         private const float WinMaxHeight = 900f;
+
+        // 窗口标题栏（含边框）的实际高度：WindowChrome(64) 只覆盖了内容区上下留白，
+        // 不含标题栏本身。机器页做高度预算时用这个值，避免内容顶掉标题栏。
+        private const float MachineTitleBarH = 118f;
         private const float WindowChrome = 64f;   // 标题栏 + 内容区上下留白
         private const float IconSide = 40f;
 
@@ -1319,12 +1323,12 @@ namespace ItemCatalog.UI
                 {
                     var crLayout = EnsureLayoutElement(_window.ContentRoot);
                     crLayout.minHeight = -1f;      // 硬下限会抢标题栏高度，不设
-                    // 内容首选高度 + 翻页条高度（翻页条在 bodyHost 外面，preferred 里没算它）
-                    crLayout.preferredHeight = Mathf.Max(1f, preferred + 40f);
+                    // 内容区高度钉成「窗口上限 − 标题栏」，**不跟随内容首选浮动**。
+                    // 之前写 preferred + 40，内容首选一旦超过窗口能给的空间就会反过来
+                    // 挤压标题栏（标题栏又被压扁）。固定成剩余高度，超出部分由 RectMask2D 裁。
+                    crLayout.preferredHeight = Mathf.Max(1f, MaxContentHeight() - MachineTitleBarH);
                     crLayout.flexibleHeight = 0f;
 
-                    // 声明了高度必须马上重排一次，否则布局组还按旧值分配，
-                    // bodyHost 会一直停在 122px（日志实测）。
                     CustomUIBuilder.RebuildLayout(_window.ContentRoot);
                 }
 
@@ -2777,10 +2781,10 @@ namespace ItemCatalog.UI
             // - 翻页条(34) - 间距(约 20)。窗口上限不能动（一放宽所有页面的标题栏都会被挤），
             // 所以面板按剩余空间等比缩小，比例可能略小于 2（约 1.85），但能完整显示。
             // 只影响机器页：面板可用高度按窗口实际能给出的空间算。
-            // 标题栏约 118、顶部行约 56、翻页条约 34，其余给面板。
+            // 标题栏、顶部行、翻页条各占一份，其余给面板。
             // 全局窗口机制（WindowChrome / WinMaxHeight / MaxContentHeight）一律不动。
-            const float RealTitleBar = 118f;
-            float panelMaxH = Mathf.Max(120f, MaxContentHeight() - RealTitleBar - 56f - 34f - 20f);
+            float panelMaxH = Mathf.Max(120f,
+                MaxContentHeight() - MachineTitleBarH - 56f - 34f - 20f);
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
