@@ -966,7 +966,6 @@ namespace ItemCatalog.UI
 
             if (_window != null)
             {
-                PinTitleBar(_window);   // 固定标题栏高度（只加高度约束，不动位置尺寸）
                 try { CustomUIBuilder.RebuildLayout(_window.ContentRoot); }
                 catch { }
             }
@@ -1009,52 +1008,6 @@ namespace ItemCatalog.UI
             catch { return 0f; }
         }
 
-        /// <summary>
-        /// 量关闭按钮的真实高度：标题栏高度以它为基准，
-        /// 这样按钮永远完整显示、也不会因为布局组压缩而被压扁。
-        /// 排除内容区里的按钮（翻页 / 分类切换等）。
-        /// </summary>
-        private static float CloseButtonHeight(CustomUIWindow window)
-        {
-            if (window == null) return 0f;
-
-            try
-            {
-                // 精确取 CustomUIWindowFrame.closeButton（frame 是私有字段，closeButton 是公有），
-                // 不用 GetComponentsInChildren 乱猜——那会拿到被拉伸的容器按钮（实测 110 高）。
-                // 可见性标志放开到 Public|NonPublic，避免字段声明可见性与预期不符时取不到。
-                const System.Reflection.BindingFlags Any =
-                    System.Reflection.BindingFlags.Public |
-                    System.Reflection.BindingFlags.NonPublic |
-                    System.Reflection.BindingFlags.Instance;
-
-                var frameField = typeof(CustomUIWindow).GetField("frame", Any);
-                var frame = frameField == null ? null : frameField.GetValue(window);
-                if (frame == null)
-                {
-                    if (ModEntry.Log != null) ModEntry.Log.Warning("[close-btn] frame=null field=" + (frameField == null ? "missing" : "ok"));
-                    return 0f;
-                }
-
-                var btnField = frame.GetType().GetField("closeButton", Any);
-                var btn = btnField == null ? null : btnField.GetValue(frame) as UnityEngine.UI.Button;
-                if (btn == null)
-                {
-                    if (ModEntry.Log != null) ModEntry.Log.Warning("[close-btn] button=null field=" + (btnField == null ? "missing" : "ok") + " frameType=" + frame.GetType().Name);
-                    return 0f;
-                }
-
-                var rt = btn.transform as RectTransform;
-                if (rt == null) return 0f;
-
-                if (ModEntry.Log != null)
-                    ModEntry.Log.Log("[close-btn] name=" + btn.name
-                                     + " h=" + rt.rect.height
-                                     + " w=" + rt.rect.width);
-                return rt.rect.height;
-            }
-            catch (Exception e) { Warn("close button: " + e.Message); return 0f; }
-        }
 
         /// <summary>
         /// 固定标题栏高度：只设 LayoutElement 的 min/preferred/flexible 三项，
@@ -1062,41 +1015,6 @@ namespace ItemCatalog.UI
         ///
         /// 高度取「关闭按钮实测高度 + 上下留白」，保证按钮完整且不会过高。
         /// </summary>
-        private static void PinTitleBar(CustomUIWindow window)
-        {
-            if (window == null) return;
-            var root = window.Rect;
-            var content = window.ContentRoot;
-            if (root == null || content == null || root == content) return;
-
-            try
-            {
-                for (int i = 0; i < root.childCount; i++)
-                {
-                    var child = root.GetChild(i) as RectTransform;
-                    if (child == null || child == content) continue;
-
-                    // 以**关闭按钮的实测高度**为基准（用户指定）：按钮完整显示即可，
-                    // 不必给整条标题栏更高；再加 8px 上下留白。
-                    // GetPreferredHeight 会递归累加子级偏高，rect.height 又随窗口变化，都不如按钮可靠。
-                    float btnH = CloseButtonHeight(window);
-                    float want = btnH > 16f ? btnH + 8f : child.rect.height;
-                    if (want < 30f || want > 200f) want = MachineTitleBarH;
-
-                    _chromeLocked = want;   // 缓存下来，窗口高度也用它，两边口径一致
-
-                    var le = EnsureLayoutElement(child);
-                    le.minHeight = want;         // 硬下限：窗口再小也不许压到它以下
-                    le.preferredHeight = want;
-                    le.flexibleHeight = 0f;      // 也不吸收多余空间
-                    if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[pin-title] locked=" + want);
-                    break;
-                }
-            }
-            catch (Exception e) { Warn("pin title: " + e.Message); }
-        }
-
         /// <summary>
         /// 标题栏的**自然首选高度**（不受当前被压缩状态影响）。
         /// 不能用「窗口高 − 内容区高」当预算：那个差值本身就已经是压缩后的结果，
