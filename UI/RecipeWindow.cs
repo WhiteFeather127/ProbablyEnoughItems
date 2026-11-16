@@ -227,6 +227,11 @@ namespace ItemCatalog.UI
         private static VanillaMachinePanel _vanillaMachine;
         private static int _vanillaVariant;   // 当前档内轮播到第几条配方
 
+        // 机器页自适应高度用的实测值（布局跑完才有，只增不减）
+        private static float _measureChrome;    // 标题栏实测高度 = 窗口高 − 内容区高
+        private static float _measurePagerH;    // 翻页条实测高度
+        private static int _measurePass;        // 收敛轮次，防止反复重画
+
         private static int _tagStripSeq;
 
         /// <summary>查不到出处的掉落池：别的来源都没有时才兜底列成「掉落池」大类。</summary>
@@ -371,6 +376,9 @@ namespace ItemCatalog.UI
             _machineStrips.Clear();
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaVariant = 0;
+            _measureChrome = 0f;   // 换物品后重新实测（同一窗口内可复用，但换了窗口就重来）
+            _measurePagerH = 0f;
+            _measurePass = 0;
             _tagStripSeq = 0;
             SourceSeed = null;
             SourceWater = null;
@@ -954,11 +962,47 @@ namespace ItemCatalog.UI
 
             if (_window != null)
             {
+                PinTitleBar(_window);   // 标题栏固定大小，之后内容再多也压不动它
                 try { CustomUIBuilder.RebuildLayout(_window.ContentRoot); }
                 catch { }
             }
 
             Render();
+        }
+
+        /// <summary>
+        /// 固定窗口标题栏高度：只加 LayoutElement 的硬性 minHeight + 关闭弹性，
+        /// **不改 anchor / pivot / 位置 / padding**（上一版改这些把窗口布局搞坏了）。
+        /// 布局组因此不能再把它压小，窗口变小时标题栏保持原高度。
+        /// </summary>
+        private static void PinTitleBar(CustomUIWindow window)
+        {
+            if (window == null) return;
+            var root = window.Rect;
+            var content = window.ContentRoot;
+            if (root == null || content == null || root == content) return;
+
+            try
+            {
+                for (int i = 0; i < root.childCount; i++)
+                {
+                    var child = root.GetChild(i) as RectTransform;
+                    if (child == null || child == content) continue;
+
+                    float h = child.rect.height;
+                    if (h < 1f) h = UnityEngine.UI.LayoutUtility.GetPreferredHeight(child);
+                    if (h < 1f) continue;
+
+                    var le = EnsureLayoutElement(child);
+                    le.minHeight = h;          // 硬下限：不许被压小
+                    le.preferredHeight = h;
+                    le.flexibleHeight = 0f;    // 也不许被拉大
+                    if (ModEntry.Log != null)
+                        ModEntry.Log.Log("[pin-title] h=" + h);
+                    break;
+                }
+            }
+            catch (Exception e) { Warn("pin title: " + e.Message); }
         }
 
         /// <summary>窗口被游戏关掉（Esc / 点 X）时，别留下悬空提示框和拖拽登记。</summary>
@@ -1316,25 +1360,22 @@ namespace ItemCatalog.UI
 
                 float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
 
-                // 机器页单独算高度：窗口 = 内容总和 + 翻页条 + 标题栏，
-                // 不再钉死内容区（钉死会在面板与翻页之间、翻页下方留下空白）。
-                // 上限放到屏幕可用高度，让原版面板能按 2 倍比例完整显示。
-                const float PagerH = 40f;
+                // 机器页：窗口高度 = 内容首选 + 翻页条 + 标题栏，三者都用**实测值**
+                // （_measureChrome / _measurePagerH 在布局后量出来，见下方测量段）。
+                // 首轮还没有实测值时用保守初值，第二轮就换成实测，不留空白也不挤压。
                 if (machinePage)
                 {
-                    float screenCap = Screen.height > 0 ? Screen.height - 20f : 1060f;
-                    height = Mathf.Clamp(preferred + PagerH + MachineTitleBarH, WinMinHeight, screenCap);
+                    float chromeUse = _measureChrome > 4f ? _measureChrome : MachineTitleBarH;
+                    float pagerUse = _measurePagerH > 1f ? _measurePagerH : 34f;
+                    height = Mathf.Max(WinMinHeight, preferred + pagerUse + chromeUse);
                 }
 
                 if (machinePage && _window.ContentRoot != null)
                 {
                     var crLayout = EnsureLayoutElement(_window.ContentRoot);
-                    crLayout.minHeight = -1f;      // 硬下限会抢标题栏高度，不设
-                    // 内容区 = 内容首选 + 翻页条，紧贴内容，不留空白；
-                    // 高度上限受窗口约束，超出由 RectMask2D 裁在内容区内。
-                    crLayout.preferredHeight = Mathf.Max(1f, preferred + PagerH);
+                    crLayout.minHeight = -1f;
+                    crLayout.preferredHeight = Mathf.Max(1f, preferred + (_measurePagerH > 1f ? _measurePagerH : 34f));
                     crLayout.flexibleHeight = 0f;
-
                     CustomUIBuilder.RebuildLayout(_window.ContentRoot);
                 }
 
@@ -1378,6 +1419,43 @@ namespace ItemCatalog.UI
                     if (GridColumns() != _lastColumnsUsed)
                     {
                         _lastColumnsUsed = GridColumns();
+                        Render();
+                        return;
+                    }
+                }
+
+                // ── 机器页：把标题栏、翻页条的真实高度量出来，喂给下一轮高度计算 ──
+                // 这样窗口高度 = 内容 + 翻页条 + 标题栏 全部来自实测，不再靠常量推算；
+                // 差异明显才重画一轮（最多 2 轮），之后稳定不再重排。
+                if (machinePage && _measurePass < 2
+                    && _window.Rect != null && _window.ContentRoot != null
+                    && _machinePagerRow != null)
+                {
+                    float winH = _window.Rect.rect.height;
+                    float crH = _window.ContentRoot.rect.height;
+                    float chrome = winH - crH;
+                    float pagerH = _machinePagerRow.rect.height;
+
+                    bool changed = false;
+                    if (chrome > 4f && Mathf.Abs(chrome - _measureChrome) > 2f)
+                    {
+                        _measureChrome = chrome;
+                        changed = true;
+                    }
+                    if (pagerH > 1f && Mathf.Abs(pagerH - _measurePagerH) > 2f)
+                    {
+                        _measurePagerH = pagerH;
+                        changed = true;
+                    }
+
+                    if (ModEntry.Log != null)
+                        ModEntry.Log.Log("[mach-measure] win=" + winH + " cr=" + crH
+                                         + " chrome=" + chrome + " pager=" + pagerH
+                                         + " changed=" + changed + " pass=" + _measurePass);
+
+                    if (changed)
+                    {
+                        _measurePass++;
                         Render();
                         return;
                     }
@@ -2786,12 +2864,15 @@ namespace ItemCatalog.UI
             // 面板可用高度 = 窗口上限(900) - 实际标题栏(约 32) - 顶部行(约 56)
             // - 翻页条(34) - 间距(约 20)。窗口上限不能动（一放宽所有页面的标题栏都会被挤），
             // 所以面板按剩余空间等比缩小，比例可能略小于 2（约 1.85），但能完整显示。
-            // 只影响机器页：面板可用高度按**屏幕**能给的空间算（不受 MaxContentHeight 900 限制，
-            // 机器页的窗口高度在本文件 ApplyContentHeight 里单独按内容总和计算）。
-            // 标题栏、顶部行、翻页条各占一份，其余给面板。
+            // 面板可用高度 = 屏幕可用高 − 标题栏 − 顶部行 − 翻页条。
+            // 标题栏/翻页条优先用**实测值**（ApplyContentHeight 里量出来），
+            // 首轮还没有才退回常量，之后按实测自适应。
             float screenCap = Screen.height > 0 ? Screen.height - 20f : 1060f;
-            float panelMaxH = Mathf.Max(120f,
-                screenCap - MachineTitleBarH - 56f - 34f - 20f);
+            float chromeUse = _measureChrome > 4f ? _measureChrome : MachineTitleBarH;
+            float pagerUse = _measurePagerH > 1f ? _measurePagerH : 34f;
+            float topUse = _machineTopRow != null && _machineTopRow.rect.height > 1f
+                ? _machineTopRow.rect.height : 56f;
+            float panelMaxH = Mathf.Max(120f, screenCap - chromeUse - topUse - pagerUse - 20f);
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
