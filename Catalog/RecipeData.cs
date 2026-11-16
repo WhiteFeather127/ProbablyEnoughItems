@@ -125,6 +125,9 @@ namespace ItemCatalog.Catalog
         /// <summary>空扫描后的重试时间点（unscaled）。</summary>
         private static float _retryAt;
 
+        /// <summary>重试退避间隔：10 → 20 → 40 → 60 封顶（卡顿保护）。</summary>
+        private static float _retryDelay = 10f;
+
         /// <summary>本次扫描中访问物品字段抛异常的次数（实例被销毁的信号）。</summary>
         private static int _scanThrows;
 
@@ -141,7 +144,8 @@ namespace ItemCatalog.Catalog
             {
                 if (ModEntry.Log != null)
                     ModEntry.Log.Log("[recipes] catalog not ready, deferred");
-                _retryAt = UnityEngine.Time.unscaledTime + 10f;
+                _retryAt = UnityEngine.Time.unscaledTime + _retryDelay;
+                _retryDelay = UnityEngine.Mathf.Min(_retryDelay * 2f, 60f);
                 return;
             }
 
@@ -167,20 +171,24 @@ namespace ItemCatalog.Catalog
                 if (entryByIdMissing(entry)) _entryById[entry.Id] = entry;
 
                 // 读档会重建 DirectoryMaster 的物品实例：条目里缓存的 GameItem
-                // 可能已被游戏销毁（Unity 对象销毁后访问字段抛 MissingReference，
-                // 被下面的 catch 吞成 null——表现为全部机器凭空消失）。
-                // 扫描时按 id 重新解析，保证拿到的是当前活着的实例。
-                GameItem scanItem = entry.Item;
-                try
-                {
-                    var fresh = DirectoryMaster.Item(entry.Id);
-                    if (fresh != null) scanItem = fresh;
-                }
-                catch { }
+                // 可能已被游戏销毁（Unity 对象销毁后访问字段抛 MissingReference）。
+                // 只有实例真的被销毁时才按 id 重新解析——DirectoryMaster.Item
+                // 带创建副作用（所有权注册 / uniqueId），对 516 个条目盲调会卡死游戏。
+                RecipeManager manager = null;
+                bool destroyed = false;
+                try { manager = entry.Item.recipeManager; }
+                catch { destroyed = true; _scanThrows++; }
 
-                RecipeManager manager;
-                try { manager = scanItem.recipeManager; }
-                catch { _scanThrows++; manager = null; }
+                if (destroyed)
+                {
+                    try
+                    {
+                        var fresh = DirectoryMaster.Item(entry.Id);
+                        if (fresh != null) manager = fresh.recipeManager;
+                    }
+                    catch { }
+                }
+
                 if (manager == null) continue;
 
                 List<CraftingRecipe> recipes;
@@ -213,12 +221,14 @@ namespace ItemCatalog.Catalog
             // 进存档后第一次查询就会拿到完整配方。
             if (MachineCount == 0)
             {
-                _retryAt = UnityEngine.Time.unscaledTime + 10f;
+                _retryAt = UnityEngine.Time.unscaledTime + _retryDelay;
+                _retryDelay = UnityEngine.Mathf.Min(_retryDelay * 2f, 60f);
 
                 if (ModEntry.Log != null)
                     ModEntry.Log.Log(string.Format(
                         "[recipes] no machines yet (recipeManager attaches after save load), deferred"
-                        + " [all={0} withItem={1}] retry in 10s", items.Count, CountWithItem(items)));
+                        + " [all={0} withItem={1} throws={2}] retry in {3:0}s",
+                        items.Count, CountWithItem(items), _scanThrows, _retryDelay));
                 return;
             }
 
