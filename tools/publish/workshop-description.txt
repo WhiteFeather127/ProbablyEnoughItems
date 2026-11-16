@@ -36,16 +36,18 @@ It gathers all 27 item directories in the game, along with entries injected by o
 [list]
 [*][b]Sold by[/b]: one page per customer, opening with the faction and the portrait, then every item that customer can put on the table
 [*][b]Shop locations[/b]: stores and vending spots stocking the item
+[*][b]Machine[/b]: the machine's own interface restored — battery, module and function slots plus the container grid — with its output recipes below
 [*][b]Crafting[/b]: the recipe that produces it, with materials and tools
-[*][b]Use sources[/b]: what you consume to obtain this item
-[*][b]Loot pools[/b]: containers, tables and rolls that can drop it
+[*][b]Use[/b]: merged use relations — above the [b]Products[/b] divider the grid shows what goes in, below it what comes out
+[*][b]Loot pools[/b]: containers, tables and rolls that can drop it; every pool of one location is merged into a single page
 [/list]
 
 [h2]Use categories[/h2]
 [list]
+[*][b]Machine[/b]: the same machine pages, from the consumption side
 [*][b]Wanted[/b]: customers buying the item, one page per customer, same layout as the source pages
 [*][b]Crafting material[/b]: recipes that consume it
-[*][b]Use results[/b]: what consuming this item yields
+[*][b]Use[/b]: the merged use relations, same as the source side
 [*][b]Open[/b]: what this container or key card opens
 [/list]
 
@@ -114,16 +116,18 @@ Verified against game version 0.46D.
 [list]
 [*][b]客人的货[/b]：一个客人一页，以阵营与客人立绘开篇，随后列出他可能摆上桌的全部物品
 [*][b]地点商店[/b]：卖这件物品的店铺与售货点
+[*][b]机器[/b]：还原机器自身的界面 —— 电池、模块与功能槽、容器网格 —— 下方是它的产出配方
 [*][b]合成[/b]：产出这件物品的配方，含材料与工具
-[*][b]使用来源[/b]：用掉什么东西才能得到这件
-[*][b]掉落池[/b]：能开出这件物品的容器、掉落表与随机池
+[*][b]使用[/b]：合并的使用关系 —— 「产物」分界线上方是投入，下方是产出
+[*][b]掉落池[/b]：能开出这件物品的容器、掉落表与随机池；同一地点的全部池子合并成一页
 [/list]
 
 [h2]用途分类[/h2]
 [list]
+[*][b]机器[/b]：同样的机器页，从消耗侧查看
 [*][b]求购[/b]：收购这件物品的客人，一个客人一页，版式与来源页一致
 [*][b]合成材料[/b]：把这件东西当材料用掉的配方
-[*][b]使用用途[/b]：用掉这件物品能得到什么
+[*][b]使用[/b]：与来源侧相同的使用关系
 [*][b]开启[/b]：这箱子或这张卡能开出什么
 [/list]
 
