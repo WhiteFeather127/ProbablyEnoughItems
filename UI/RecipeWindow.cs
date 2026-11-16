@@ -2825,16 +2825,6 @@ namespace ItemCatalog.UI
             }
         }
 
-        /// <summary>
-        /// 变体物品（`portable_water_purifier_used`、`xxx_broken` 这类）在游戏里常常
-        /// 只是同一件东西的状态位，没有独立图标。把状态后缀去掉再找一次图，
-        /// 免得格子上变成一串被裁掉的字母。
-        /// </summary>
-        private static readonly string[] VariantSuffixes =
-        {
-            "_used", "_broken", "_ruined", "_dirty", "_empty", "_full", "_wet", "_dry", "_charged", "_dead"
-        };
-
         private static string IconFallbackId(string id)
         {
             string baseId = BaseItemId(id);
@@ -2843,76 +2833,14 @@ namespace ItemCatalog.UI
             return CatalogWindow.IconFor(baseId) != null ? baseId : null;
         }
 
-        /// <summary>满装盒（掉落表旧命名）→ 目录里的真身容器物品。</summary>
-        private static readonly Dictionary<string, string> FullBoxAliases =
-            new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                { "full_water_purification_tablet_box", "water_tablet_container" },
-                { "full_nutrient_tablet_box", "nutrient_tablet_container" },
-                { "full_water_test_strip_box", "water_test_container" }
-            };
-
         /// <summary>
-        /// 特殊物品 id → 本体物品 id：random_* 展开占位，状态后缀（_used 等）剥掉，
-        /// 满装前缀（full_beer / full_water_test_strip_box 这类）也剥掉。
-        /// 只在剥出来的 id 真的是目录物品时才返回。名字 / 图标 / 合成条目共用这一份。
+        /// 特殊物品 id → 本体物品 id。实现在 <see cref="LootSource.BaseItemId"/>
+        /// （数据层的真实 id 解析唯一入口），这里只是 UI 层的转发——
+        /// 图标 / 名字 / 正反查索引必须共用同一个解析器，不能各写一份。
         /// </summary>
         internal static string BaseItemId(string id)
         {
-            string text = (id ?? string.Empty).Trim();
-            if (text.Length == 0) return null;
-
-            if (text.StartsWith("random_", StringComparison.Ordinal))
-            {
-                string expanded = LootSource.ExpandPlaceholder(text);
-                if (expanded != text && RecipeIndex.FindEntry(expanded) != null) return expanded;
-            }
-
-            // 掉落表里的满装盒是旧命名，目录真身是游戏自己的 *_container 容器物品：
-            //   full_water_purification_tablet_box → water_tablet_container
-            //   full_nutrient_tablet_box           → nutrient_tablet_container
-            //   full_water_test_strip_box          → water_test_container
-            string fullBoxBase;
-            if (FullBoxAliases.TryGetValue(text, out fullBoxBase) &&
-                RecipeIndex.FindEntry(fullBoxBase) != null)
-            {
-                return fullBoxBase;
-            }
-
-            // 运行时改名的瓶：目录里没有这个 id（游戏把 mini_bottle 改名灌酒，
-            // PreBuildChemHelper.CreateMiniAlcoholBottle），借本体 mini_bottle 的图标和名字
-            if (string.Equals(text, "mini_alcohol_bottle", StringComparison.Ordinal))
-            {
-                if (RecipeIndex.FindEntry("mini_bottle") != null) return "mini_bottle";
-            }
-
-            // 满装容器：full_beer → beer；full_water_test_strip_box 先剥 full_
-            // 再剥包装后缀（_box / _packet）→ water_test_strip。逐层试，命中目录条目为止。
-            if (text.StartsWith("full_", StringComparison.Ordinal))
-            {
-                string baseId = StripVariantSuffix(text.Substring(5));
-                if (baseId != null) return baseId;
-            }
-
-            return StripVariantSuffix(text);
-        }
-
-        /// <summary>剥一层状态/包装后缀（_used / _box / _packet…），剥出的 id 是目录条目才返回。</summary>
-        private static string StripVariantSuffix(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return null;
-
-            if (RecipeIndex.FindEntry(text) != null) return text;
-
-            for (int i = 0; i < VariantSuffixes.Length; i++)
-            {
-                if (!text.EndsWith(VariantSuffixes[i], StringComparison.Ordinal)) continue;
-
-                string baseId = text.Substring(0, text.Length - VariantSuffixes[i].Length);
-                if (baseId.Length > 0 && RecipeIndex.FindEntry(baseId) != null) return baseId;
-            }
-
-            return null;
+            return LootSource.BaseItemId(id);
         }
 
         /// <summary>占位 id 的可读名；不认识的返回 null。</summary>

@@ -169,19 +169,38 @@ namespace ItemCatalog.Catalog
                 _all.Add(info);
 
                 for (int k = 0; k < info.Sources.Length; k++)
+                {
                     Append(_using, info.Sources[k], info);
+                    AppendAlias(_using, info.Sources[k], info);
+                }
                 for (int k = 0; k < info.SourceTags.Length; k++)
                     Append(_tagUsing, info.SourceTags[k], info);
 
                 if (info.Produces != null)
                 {
                     for (int k = 0; k < info.Produces.Length; k++)
+                    {
                         Append(_producing, info.Produces[k], info);
+                        AppendAlias(_producing, info.Produces[k], info);
+                    }
                 }
             }
 
             if (ModEntry.Log != null)
                 ModEntry.Log.Log("[uses] loaded " + _all.Count + " rows from " + UsesCsvPath);
+        }
+
+        /// <summary>
+        /// **正反查按真实物品 id**：别名 id（运行时改名瓶 mini_alcohol_bottle、
+        /// 满装盒 full_*、占位 random_*、状态变体 _used…）额外以解析出的本体 id
+        /// 再登记一份（统一走 <see cref="LootSource.BaseItemId"/>）——
+        /// 否则本体页（迷你瓶的「能从化学品拆包得到」）查不到这条记录。
+        /// 多余登记无害：解析不出本体的 id 不会被查询。
+        /// </summary>
+        private static void AppendAlias(Dictionary<string, List<UseInfo>> map, string id, UseInfo info)
+        {
+            string baseId = LootSource.BaseItemId(id);
+            if (!string.IsNullOrEmpty(baseId) && baseId != id) Append(map, baseId, info);
         }
 
         private static void Append(Dictionary<string, List<UseInfo>> map, string key, UseInfo info)

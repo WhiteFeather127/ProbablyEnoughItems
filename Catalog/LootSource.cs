@@ -422,6 +422,78 @@ namespace ItemCatalog.Catalog
             "_used", "_broken", "_ruined", "_dirty", "_empty", "_full", "_wet", "_dry", "_charged", "_dead"
         };
 
+        /// <summary>满装盒（掉落表旧命名）→ 目录里的真身容器物品。</summary>
+        private static readonly Dictionary<string, string> FullBoxAliases =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "full_water_purification_tablet_box", "water_tablet_container" },
+                { "full_nutrient_tablet_box", "nutrient_tablet_container" },
+                { "full_water_test_strip_box", "water_test_container" }
+            };
+
+        /// <summary>
+        /// **真实物品 id 解析的唯一入口**：特殊物品 id → 本体物品 id。
+        /// random_* 展开占位（→ 同族默认模块 / 默认节点）、满装盒旧命名对上
+        /// 游戏自己的 *_container、运行时改名瓶（mini_alcohol_bottle）借本体、
+        /// full_ 前缀与状态后缀（_used 等）逐层剥。
+        /// 只在剥出来的 id 真的是目录物品时才返回；正反查索引 / 图标 / 名字共用这一份。
+        /// 数据层规则（AGENTS.md）：**任何 id 索引的正反查都必须按这里解析出的
+        /// 真实物品 id 登记**——占位 / 变体 id 只能作为附加键，不能是唯一键。
+        /// </summary>
+        internal static string BaseItemId(string id)
+        {
+            string text = (id ?? string.Empty).Trim();
+            if (text.Length == 0) return null;
+
+            if (text.StartsWith("random_", StringComparison.Ordinal))
+            {
+                string expanded = ExpandPlaceholder(text);
+                if (expanded != text && RecipeIndex.FindEntry(expanded) != null) return expanded;
+            }
+
+            string fullBoxBase;
+            if (FullBoxAliases.TryGetValue(text, out fullBoxBase) &&
+                RecipeIndex.FindEntry(fullBoxBase) != null)
+            {
+                return fullBoxBase;
+            }
+
+            // 运行时改名的瓶：目录里没有这个 id（游戏把 mini_bottle 改名灌酒，
+            // PreBuildChemHelper.CreateMiniAlcoholBottle），本体是 mini_bottle
+            if (string.Equals(text, "mini_alcohol_bottle", StringComparison.Ordinal))
+            {
+                if (RecipeIndex.FindEntry("mini_bottle") != null) return "mini_bottle";
+            }
+
+            // 满装容器：full_beer → beer；full_water_test_strip_box 先剥 full_
+            // 再逐层剥后缀，命中目录条目为止
+            if (text.StartsWith("full_", StringComparison.Ordinal))
+            {
+                string baseId = StripSuffix(text.Substring(5));
+                if (baseId != null) return baseId;
+            }
+
+            return StripSuffix(text);
+        }
+
+        /// <summary>剥一层状态/包装后缀，剥出的 id 是目录条目才返回。</summary>
+        private static string StripSuffix(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+
+            if (RecipeIndex.FindEntry(text) != null) return text;
+
+            for (int i = 0; i < AliasSuffixes.Length; i++)
+            {
+                if (!text.EndsWith(AliasSuffixes[i], StringComparison.Ordinal)) continue;
+
+                string baseId = text.Substring(0, text.Length - AliasSuffixes[i].Length);
+                if (baseId.Length > 0 && RecipeIndex.FindEntry(baseId) != null) return baseId;
+            }
+
+            return null;
+        }
+
         /// <summary>往反查索引登记一张表（键不存在就建桶）。</summary>
         private static void RegisterHit(Dictionary<string, List<LootTableInfo>> map, string itemId, LootTableInfo table)
         {

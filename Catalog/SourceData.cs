@@ -145,7 +145,7 @@ namespace ItemCatalog.Catalog
         /// <summary>这个 id 是否能通过别名落到一个目录物品上。</summary>
         private static bool HasResolvableAlias(string id)
         {
-            string alias = ResolveAlias(id);
+            string alias = LootSource.BaseItemId(id);
             return !string.IsNullOrEmpty(alias) && alias != id
                    && RecipeIndex.FindEntry(alias) != null;
         }
@@ -413,39 +413,17 @@ namespace ItemCatalog.Catalog
             if (!list.Contains(source)) list.Add(source);
         }
 
-        /// <summary>变体状态后缀：去掉之后通常就是本体的目录 id。</summary>
-        private static readonly string[] AliasSuffixes =
-        {
-            "_used", "_broken", "_ruined", "_dirty", "_empty", "_full", "_wet", "_dry", "_charged", "_dead"
-        };
-
         /// <summary>
         /// 预构建键（portable_water_purifier_used 这类）不是目录物品，货单只能记别名 id；
-        /// 玩家反查的是本体（净水器）。把别名去掉状态后缀（或展开 random_* 占位）
-        /// 再登记一份，本体的来源里就能看到这家店。
+        /// 玩家反查的是本体（净水器）。解析出本体 id（数据层统一入口
+        /// <see cref="LootSource.BaseItemId"/>：random_* 展开 / 满装盒对上 _container /
+        /// 状态后缀剥离）再登记一份，本体的来源里就能看到这家店。
         /// 多余的登记无害：没有目录条目的 id 永远不会被查询。
         /// </summary>
         private static void AddAliasSource(string itemId, SourceInfo source)
         {
-            string alias = ResolveAlias(itemId);
+            string alias = LootSource.BaseItemId(itemId);
             if (!string.IsNullOrEmpty(alias) && alias != itemId) Add(alias, source);
-        }
-
-        /// <summary>货单 id → 目录物品 id 的别名解析；不是别名时返回 null。</summary>
-        private static string ResolveAlias(string itemId)
-        {
-            if (string.IsNullOrEmpty(itemId)) return null;
-
-            if (itemId.StartsWith("random_", StringComparison.Ordinal))
-                return LootSource.ExpandPlaceholder(itemId);
-
-            for (int i = 0; i < AliasSuffixes.Length; i++)
-            {
-                if (!itemId.EndsWith(AliasSuffixes[i], StringComparison.Ordinal)) continue;
-                return itemId.Substring(0, itemId.Length - AliasSuffixes[i].Length);
-            }
-
-            return null;
         }
 
         internal static List<SourceInfo> For(string itemId)
