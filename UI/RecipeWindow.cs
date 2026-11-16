@@ -820,11 +820,17 @@ namespace ItemCatalog.UI
         private static void AddClientCategory(List<SourceInfo> sources, List<SourceInfo> wanted)
         {
             var clients = new List<SourceInfo>();
-            for (int i = 0; i < sources.Count; i++)
+
+            // sources / wanted 都可能为 null——右键只传 wanted（用途方向没有卖家货单），
+            // 左键只传 sources（来源方向不做收购查询）
+            if (sources != null)
             {
-                var one = sources[i];
-                if (one == null || one.Kind != SourceKind.Client) continue;
-                clients.Add(one);
+                for (int i = 0; i < sources.Count; i++)
+                {
+                    var one = sources[i];
+                    if (one == null || one.Kind != SourceKind.Client) continue;
+                    clients.Add(one);
+                }
             }
 
             // 收购方：卖家里没有的补在后面（同一客人既卖又收时，一页清单里两面都有）
