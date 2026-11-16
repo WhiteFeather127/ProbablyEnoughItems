@@ -964,65 +964,11 @@ namespace ItemCatalog.UI
 
             if (_window != null)
             {
-                PinTitleBar(_window);   // 只固定高度/去掉弹性，不动位置尺寸
                 try { CustomUIBuilder.RebuildLayout(_window.ContentRoot); }
                 catch { }
             }
 
             Render();
-        }
-
-        /// <summary>
-        /// 固定窗口标题栏：只设 LayoutElement 的三个高度属性（min/preferred/flexible），
-        /// **位置、尺寸、锚点、pivot、padding 一概不动**。
-        ///
-        /// 日志实测窗口 1066 里 ContentRoot 只拿到 488，差 578 全被标题栏吃掉——
-        /// 因为标题栏的 flexibleHeight 默认会吸收窗口所有多余空间。
-        /// 把 flexibleHeight 归 0、高度钉成常量，它就不会再抢内容的空间。
-        /// </summary>
-        private static void PinTitleBar(CustomUIWindow window)
-        {
-            if (window == null) return;
-            var root = window.Rect;
-            var content = window.ContentRoot;
-            if (root == null || content == null || root == content) return;
-
-            try
-            {
-                for (int i = 0; i < root.childCount; i++)
-                {
-                    var child = root.GetChild(i) as RectTransform;
-                    if (child == null || child == content) continue;
-
-                    var le = EnsureLayoutElement(child);
-                    float wasFlex = le.flexibleHeight;
-                    float w = child.rect.width;
-
-                    // 高度用**它自己的实测值**，不要写常量：常量若比真实高度大，
-                    // 布局就比视觉高、下方多出一条空白（用户看到的正是这个）。
-                    // 只接受合理范围，避免窗口还没布局时读到 0 或被压扁的异常值。
-                    float h = child.rect.height;
-                    if (h < 40f || h > 220f) h = MachineTitleBarH;
-
-                    // 宽度同样锁成原值：加了 LayoutElement 后 preferredWidth 默认 -1，
-                    // 布局组会 fallback 到父级满宽，左右会露空白。
-                    if (w > 1f)
-                    {
-                        le.minWidth = w;
-                        le.preferredWidth = w;
-                        le.flexibleWidth = 0f;
-                    }
-
-                    le.minHeight = h;
-                    le.preferredHeight = h;
-                    le.flexibleHeight = 0f;      // 不再吸收多余空间
-                    if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[pin-title] keepH=" + h
-                                         + " keepW=" + w + " wasFlex=" + wasFlex);
-                    break;
-                }
-            }
-            catch (Exception e) { Warn("pin title: " + e.Message); }
         }
 
         /// <summary>窗口被游戏关掉（Esc / 点 X）时，别留下悬空提示框和拖拽登记。</summary>
@@ -1401,7 +1347,12 @@ namespace ItemCatalog.UI
                     crLayout.minHeight = -1f;
                     crLayout.preferredHeight = Mathf.Max(1f, preferred);
                     crLayout.flexibleHeight = 0f;
-                    CustomUIBuilder.RebuildLayout(_window.ContentRoot);
+
+                    // 必须重排**窗口 root**，不能只重排 ContentRoot：
+                    // 分配子级高度的是 root 上的布局组，只重排 ContentRoot 内部的话
+                    // 它仍按旧 preferred 分配，ContentRoot 拿不到新高度、
+                    // 多余空间全被标题栏吸收（日志实测 cr 只有 488、标题栏吃了 578）。
+                    CustomUIBuilder.RebuildLayout(_window.Rect);
                 }
 
                 if (Mathf.Abs(height - _lastHeight) > 2f)
