@@ -1311,43 +1311,22 @@ namespace ItemCatalog.UI
 
                 float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
 
-                // 布局链：窗口root(VLG) → ContentRoot → Content(VLG) → _bodyHost → 内容。
-                // 实测 ContentRoot 已经是 968、bodyHost 的 preferred 也是 968，
-                // 但 Content 的 VLG 只给 bodyHost 分配 122（布局组按旧值算、没跟着重排）。
-                // 直接把 Content 的子级高度控制关掉，让 bodyHost 拉伸铺满 ContentRoot，
-                // 不再依赖布局组推算——这样 968 的空间才能真正落到内容区上。
-                float innerHeight = Mathf.Max(1f, preferred);
-                var contentRoot = _window.ContentRoot;
-                if (contentRoot != null)
+                // 只有机器页需要特殊处理：原版面板是 ignoreLayout 的绝对定位节点，
+                // 它的高度要显式声明给 ContentRoot，否则内容区撑不开、面板被裁。
+                // 其它页面保持通用逻辑（bodyHost 按内容自适应），不能改动它们的布局。
+                var pageCategory = _categories.Count == 0 ? null : _categories[_category];
+                bool machinePage = pageCategory != null && pageCategory.Kind == CatMachine;
+                if (machinePage && _window.ContentRoot != null)
                 {
-                    var crLayout = EnsureLayoutElement(contentRoot);
-                    // 只给软性 preferredHeight，**不设 minHeight**：
-                    // minHeight 是硬下限，会逼布局组去牺牲标题栏空间（关闭按钮被压扁）。
-                    // preferred 参与计算，但不剥夺标题栏该有的高度。
-                    crLayout.minHeight = -1f;
-                    crLayout.preferredHeight = innerHeight;
+                    var crLayout = EnsureLayoutElement(_window.ContentRoot);
+                    crLayout.minHeight = -1f;      // 硬下限会抢标题栏高度，不设
+                    // 内容首选高度 + 翻页条高度（翻页条在 bodyHost 外面，preferred 里没算它）
+                    crLayout.preferredHeight = Mathf.Max(1f, preferred + 40f);
                     crLayout.flexibleHeight = 0f;
-                }
 
-                if (_bodyHost != null)
-                {
-                    var bodyParent = _bodyHost.parent as RectTransform;
-                    if (bodyParent != null)
-                    {
-                        var parentGroup = bodyParent.GetComponent<UnityEngine.UI.VerticalLayoutGroup>();
-                        if (parentGroup != null)
-                        {
-                            parentGroup.childControlHeight = false;   // 高度由我们直接铺满
-                            parentGroup.childForceExpandHeight = false;
-                        }
-                    }
-
-                    // 拉伸铺满父级：上下左右全贴边，不再由布局组分配高度
-                    _bodyHost.anchorMin = Vector2.zero;
-                    _bodyHost.anchorMax = Vector2.one;
-                    _bodyHost.pivot = new Vector2(0.5f, 0.5f);
-                    _bodyHost.offsetMin = Vector2.zero;
-                    _bodyHost.offsetMax = Vector2.zero;
+                    // 声明了高度必须马上重排一次，否则布局组还按旧值分配，
+                    // bodyHost 会一直停在 122px（日志实测）。
+                    CustomUIBuilder.RebuildLayout(_window.ContentRoot);
                 }
 
                 if (Mathf.Abs(height - _lastHeight) > 2f)
@@ -1404,7 +1383,9 @@ namespace ItemCatalog.UI
         /// <summary>窗口最长到 WinMaxHeight，但别长出屏幕（留 80px 给标题栏与任务栏）。</summary>
         private static float MaxContentHeight()
         {
-            float cap = Screen.height > 0 ? Mathf.Min(WinMaxHeight, Screen.height - 80f) : WinMaxHeight;
+            // 留 40px 给窗口标题栏与屏幕边缘（原来留 80，机器页内容 968+翻页条 40
+            // 在 1080p 上会被卡到 1000，翻页条被挤出去）。
+            float cap = Screen.height > 0 ? Mathf.Min(WinMaxHeight, Screen.height - 40f) : WinMaxHeight;
             return Mathf.Max(cap, WinMinHeight);
         }
 
