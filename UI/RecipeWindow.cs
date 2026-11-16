@@ -1794,6 +1794,11 @@ namespace ItemCatalog.UI
         /// </summary>
         private static void RenderGoods(CustomUIBuilder builder, string id, bool match, int index, bool emptyOnly, List<Sprite> rotate = null)
         {
+            // 占位 id（random_performance_module 这类）直接换成同族的**默认模块**：
+            // 池子里塞的是占位，游戏生成时才掷骰；图鉴展示不做随机实例，
+            // 统一显示默认模块的目录条目（图标 / 名字 / 详情都是本体）。
+            id = LootSource.ExpandPlaceholder(id);
+
             // 容器：按当前客人算出他卖的这瓶水的图标（见 CatalogWindow.BuildClientVariants）。
             string ignoredComposition;
             List<Sprite> fulls = null;
@@ -1893,6 +1898,9 @@ namespace ItemCatalog.UI
         private static void BindGoods(CustomUIBuilder builder, string id, bool hasButton)
         {
             if (id == null) return;
+
+            // 占位 id 换成同族默认模块（与 RenderGoods 同一规则），不做随机实例
+            id = LootSource.ExpandPlaceholder(id);
 
             var entry = RecipeIndex.FindEntry(id);
             if (entry == null && PreBuiltItems.IsPreBuilt(id)) entry = CatalogWindow.PreBuiltEntry(id);

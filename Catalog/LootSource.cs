@@ -76,7 +76,11 @@ namespace ItemCatalog.Catalog
                 var items = pair.Value;
                 for (int i = 0; i < items.Count; i++)
                 {
-                    if (items[i] != null && string.Equals(items[i].Id, itemId, StringComparison.Ordinal))
+                    // 箱内容物里的占位 id（random_quality_module 这类）按展开后的
+                    // 本体 id 对上——具体模块的页才能反查到装它的箱子
+                    if (items[i] != null &&
+                        (string.Equals(items[i].Id, itemId, StringComparison.Ordinal) ||
+                         string.Equals(ExpandPlaceholder(items[i].Id), itemId, StringComparison.Ordinal)))
                     {
                         if (!boxes.Contains(pair.Key)) boxes.Add(pair.Key);
                         break;
@@ -592,6 +596,21 @@ namespace ItemCatalog.Catalog
                         }
 
                         if (!hit.Contains(table)) hit.Add(table);
+
+                        // 占位 id（random_performance_module 这类）在生成时才被换成
+                        // 同族的默认模块 —— 反查索引同时登记展开后的本体 id，
+                        // 否则具体模块（system_module_quality 等）的来源页查不到
+                        // 装着它的池子，倾倒场这类地点就「反查不到来源」了。
+                        string expanded = ExpandPlaceholder(entry.id);
+                        if (expanded != entry.id)
+                        {
+                            if (!map.TryGetValue(expanded, out hit))
+                            {
+                                hit = new List<LootTableInfo>();
+                                map[expanded] = hit;
+                            }
+                            if (!hit.Contains(table)) hit.Add(table);
+                        }
                     }
 
                     tables.Add(table);
