@@ -189,5 +189,173 @@ namespace ItemCatalog.UI
             Panel[] panels;
             return Panels.TryGetValue(machineId, out panels) ? panels : null;
         }
+
+        // ===================== 产出配方（静态） =====================
+        //
+        // 游戏机器没有 recipeManager/CraftingRecipe：熔炉是 MachineFurnace 的周期回调
+        // （<Furnace>b__5），蒸发器等是自己的工艺方法——产出逻辑写死在 IL 里。
+        // 所以机器页的配方和面板一样静态收录，不再依赖运行时配方索引。
+
+        /// <summary>一个配方变体：投入 / 用到的模块 / 产物（都是物品 id）。</summary>
+        internal sealed class Recipe
+        {
+            internal string[] Inputs;
+            internal string[] Modules;
+            internal string[] Outputs;
+            internal string NoteKey;      // 本地化键（mach_furnace_*）；取不到时显示 NoteFallback
+            internal string NoteFallback;
+
+            internal Recipe(string[] inputs, string[] modules, string[] outputs,
+                            string noteKey, string noteFallback)
+            {
+                Inputs = inputs ?? empty;
+                Modules = modules ?? empty;
+                Outputs = outputs ?? empty;
+                NoteKey = noteKey;
+                NoteFallback = noteFallback;
+            }
+        }
+
+        private static readonly string[] empty = new string[0];
+
+        /// <summary>
+        /// 一组轮播配方：同一纯度 / 同一类产出下，能达成它的不同投料方式
+        /// （以及模块带来的不同效果）各是一条，页面每秒轮播一条。
+        /// TitleKey 是这一组的名字（纯度档位 / 特殊产出）。
+        /// </summary>
+        internal sealed class RecipeGroup
+        {
+            internal string TitleKey;
+            internal string TitleFallback;
+            internal Recipe[] Variants;
+        }
+
+        /// <summary>
+        /// 熔炉产出：金属锭按纯度分档，档内不同投料方式轮播。
+        ///
+        /// 反编译依据（MachineFurnace + IngotPurityHelper）：
+        /// · 基础纯度 = LOW；锭的档位 = LOW + floor(2 × 普通矿石数 ÷ 投料数)
+        ///   + 品质加成（机器模块的 GetCurrentQualityBonus ÷ 100）。
+        /// · flux_agent / advanced_flux_agent：保证品质加成至少 +1（会被消耗）。
+        /// · furnace_module_blast：每周期多熔一份投料（2 → 3），但品质加成 -1。
+        /// · furnace_module_junk：垃圾 → 废金属（另一条产出，不产锭）。
+        /// 档位全集：VERY_LOW / LOW / FAIR / HIGH / VERY_HIGH / PERFECT。
+        /// 这里每组列的是「能稳定落在这一档」的投料组合；轮播展示不同方案。
+        /// </summary>
+        private static readonly RecipeGroup[] FurnaceGroups =
+        {
+            new RecipeGroup
+            {
+                TitleKey = "mach_furnace_perfect", TitleFallback = "完美纯度金属锭",
+                Variants = new[]
+                {
+                    // 2 矿石 + 高级助熔剂 + 优质模块（+2 档）
+                    new Recipe(new[] { "common_ore", "common_ore", "advanced_flux_agent" },
+                               new[] { "system_module_quality" },
+                               new[] { "metal_ingot" },
+                               "mach_note_perfect", "高纯矿石 + 高级助熔剂，品质模块再提一档"),
+                    // 全矿石 + 高品质加成
+                    new Recipe(new[] { "common_ore", "common_ore", "common_ore" },
+                               new[] { "system_module_quality", "furnace_module_blast" },
+                               new[] { "metal_ingot" },
+                               "mach_note_perfect_alt", "全矿石 + 品质模块；爆燃模块虽 -1 档但每周期多熔一份")
+                }
+            },
+            new RecipeGroup
+            {
+                TitleKey = "mach_furnace_very_high", TitleFallback = "极高纯度金属锭",
+                Variants = new[]
+                {
+                    new Recipe(new[] { "common_ore", "common_ore", "flux_agent" },
+                               null, new[] { "metal_ingot" },
+                               "mach_note_flux", "矿石占多数 + 助熔剂保证 +1 档"),
+                    new Recipe(new[] { "common_ore", "common_ore" },
+                               new[] { "system_module_quality" },
+                               new[] { "metal_ingot" },
+                               "mach_note_quality", "全矿石 + 品质模块的加成")
+                }
+            },
+            new RecipeGroup
+            {
+                TitleKey = "mach_furnace_high", TitleFallback = "高纯度金属锭",
+                Variants = new[]
+                {
+                    new Recipe(new[] { "common_ore", "common_ore" },
+                               null, new[] { "metal_ingot" },
+                               "mach_note_ore2", "两份矿石 → 基础 +2 档"),
+                    new Recipe(new[] { "common_ore", "scrap_metal", "flux_agent" },
+                               null, new[] { "metal_ingot" },
+                               "mach_note_ore_flux", "一份矿石 + 助熔剂")
+                }
+            },
+            new RecipeGroup
+            {
+                TitleKey = "mach_furnace_fair", TitleFallback = "一般纯度金属锭",
+                Variants = new[]
+                {
+                    new Recipe(new[] { "common_ore", "scrap_metal" },
+                               null, new[] { "metal_ingot" },
+                               "mach_note_ore1", "矿石与废金属各一份 → 基础 +1 档"),
+                    new Recipe(new[] { "scrap_metal", "scrap_metal", "flux_agent" },
+                               null, new[] { "metal_ingot" },
+                               "mach_note_flux2", "废金属 + 助熔剂也能提一档")
+                }
+            },
+            new RecipeGroup
+            {
+                TitleKey = "mach_furnace_low", TitleFallback = "低纯度金属锭",
+                Variants = new[]
+                {
+                    new Recipe(new[] { "scrap_metal", "scrap_metal" },
+                               null, new[] { "metal_ingot" },
+                               "mach_note_scrap", "纯废金属 → 基础档"),
+                    new Recipe(new[] { "common_ore", "scrap_metal" },
+                               new[] { "furnace_module_blast" },
+                               new[] { "metal_ingot" },
+                               "mach_note_blast", "爆燃模块多熔一份但 -1 档")
+                }
+            },
+            new RecipeGroup
+            {
+                TitleKey = "mach_furnace_very_low", TitleFallback = "极低纯度金属锭",
+                Variants = new[]
+                {
+                    new Recipe(new[] { "scrap_metal", "scrap_metal" },
+                               new[] { "furnace_module_blast" },
+                               new[] { "metal_ingot" },
+                               "mach_note_blast_low", "爆燃模块 -1 档；仍可多熔一份投料"),
+                    new Recipe(new[] { "common_ore", "scrap_metal", "flux_agent" },
+                               new[] { "furnace_module_blast" },
+                               new[] { "metal_ingot" },
+                               "mach_note_blast_flux", "助熔剂与爆燃模块互相抵消")
+                }
+            },
+            new RecipeGroup
+            {
+                TitleKey = "mach_furnace_junk", TitleFallback = "废料回收（需垃圾模块）",
+                Variants = new[]
+                {
+                    new Recipe(new[] { "junk" },
+                               new[] { "furnace_module_junk" },
+                               new[] { "scrap_metal" },
+                               "mach_note_junk", "装上垃圾模块后，垃圾可以直接熔成废金属")
+                }
+            }
+        };
+
+        private static readonly Dictionary<string, RecipeGroup[]> Recipes =
+            new Dictionary<string, RecipeGroup[]>(StringComparer.Ordinal)
+            {
+                { "furnace", FurnaceGroups }
+            };
+
+        /// <summary>这台机器的静态产出配方组；没有静态数据时返回 null。</summary>
+        internal static RecipeGroup[] RecipesFor(string machineId)
+        {
+            if (string.IsNullOrEmpty(machineId)) return null;
+
+            RecipeGroup[] groups;
+            return Recipes.TryGetValue(machineId, out groups) ? groups : null;
+        }
     }
 }

@@ -38,10 +38,6 @@ uses,red_beer,drink,empty_beer_bottle,
 #   MiscItemDirectory::<ScratcherTicketStack>b__76_2  →  ItemSpawner.Spawn("scratcher")
 uses,scratcher_stack,open,scratcher,
 
-# 熔炉周期产出
-#   MachineFurnace::<Furnace>b__5  →  metal_ingot + scrap_metal
-uses,furnace,apply,metal_ingot|scrap_metal,
-
 # 捕鼠夹周期产出
 #   RatTrap::<CreateMouseTrap>b__3  →  processed_cheese
 uses,mouse_trap,apply,processed_cheese,

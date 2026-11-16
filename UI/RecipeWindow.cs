@@ -217,6 +217,7 @@ namespace ItemCatalog.UI
         /// （旧做法是整页 `Render()`，会闪、会丢滚动位置、会重置立绘）。
         /// </summary>
         private static readonly List<TagStrip> _tagStrips = new List<TagStrip>();
+        private static readonly List<MachineRecipeStrip> _machineStrips = new List<MachineRecipeStrip>();
 
         private static int _tagStripSeq;
 
@@ -230,6 +231,16 @@ namespace ItemCatalog.UI
             internal int Base;                      // 格子 id 起点
             internal string CurrentId;              // 当前详情物品，用于「它自己就在标签里」判定
             internal HashSet<string> Exclude;       // 已经单独列出的具体物品，别在标签格里重复画
+        }
+
+        /// <summary>机器静态配方的一条轮播：一个纯度组一个，逐秒切到下一条配方。</summary>
+        private sealed class MachineRecipeStrip
+        {
+            internal UnityEngine.RectTransform Host;
+            internal MachinePanels.RecipeGroup Group;
+            internal int Variant;
+            internal int Module;
+            internal int Base;
         }
 
         /// <summary>左键（来源方向）打开。页面同一份，方向标注不同。</summary>
@@ -349,6 +360,7 @@ namespace ItemCatalog.UI
             _cellAnims.Clear();
             _tagRollIndex.Clear();   // 换物品后标签轮播从头开始
             _tagStrips.Clear();
+            _machineStrips.Clear();
             _tagStripSeq = 0;
             SourceSeed = null;
             SourceWater = null;
@@ -395,6 +407,9 @@ namespace ItemCatalog.UI
 
             // 标签格只重建自己那一小块，其余格子的 _cellAnims 仍然有效，不用提前返回
             TickTagRolls();
+
+            // 机器静态配方：同一纯度组内轮播不同投料方案（模块也轮播）
+            TickMachineRecipes();
 
             // 货单里的容器图标：成分不同 → 瓶身精灵不同，逐张轮播
             if (_cellAnims.Count == 0) return;
@@ -699,10 +714,15 @@ namespace ItemCatalog.UI
                 AddClientCategory(null, SourceIndex.WantedBy(_entry.Id, _entry.Item));
 
                 // 他自己是机器 → 机器界面 + 产出配方（机器是双向内容，两个方向都给）
-                var ownRecipes = RecipeIndex.ByMachine(_entry.Id);
-                if (ownRecipes.Count > 0)
+                if (MachinePanels.For(_entry.Id) != null ||
+                    MachinePanels.RecipesFor(_entry.Id) != null ||
+                    RecipeIndex.ByMachine(_entry.Id).Count > 0)
                 {
-                    _categories.Add(new Category { Kind = CatMachine, Recipes = ownRecipes });
+                    _categories.Add(new Category
+                    {
+                        Kind = CatMachine,
+                        Recipes = RecipeIndex.ByMachine(_entry.Id)
+                    });
                 }
 
                 // 合成：把它当材料用掉的配方
@@ -721,12 +741,18 @@ namespace ItemCatalog.UI
                 // 地点各自成类——配给站、杰克逊博士
                 AddSourceCategory(CatLocation, SourceIndex.For(_entry.Id));
 
-                // 他自己是机器 → 机器界面（电池 / 模块 / 功能槽 / 容器网格）+ 自己的产出配方。
-                // 判定依据与配方采集一致：带 recipeManager 且登记过配方的物品就是机器。
-                var ownRecipes = RecipeIndex.ByMachine(_entry.Id);
-                if (ownRecipes.Count > 0)
+                // 他自己是机器 → 机器界面（电池 / 模块 / 功能槽 / 容器网格）+ 产出配方。
+                // 判定不再依赖运行时配方索引（游戏机器的 recipeManager 静态为空）：
+                // 静态面板表 / 静态配方表里有它就算机器。
+                if (MachinePanels.For(_entry.Id) != null ||
+                    MachinePanels.RecipesFor(_entry.Id) != null ||
+                    RecipeIndex.ByMachine(_entry.Id).Count > 0)
                 {
-                    _categories.Add(new Category { Kind = CatMachine, Recipes = ownRecipes });
+                    _categories.Add(new Category
+                    {
+                        Kind = CatMachine,
+                        Recipes = RecipeIndex.ByMachine(_entry.Id)
+                    });
                 }
 
                 // 合成：产出它的配方
@@ -2673,8 +2699,39 @@ namespace ItemCatalog.UI
                 }
             }
 
-            if (recipes != null && recipes.Count > 0)
+            // 静态产出配方：按纯度分档，每档一个轮播容器（同一档的不同投料方案
+            // 每秒切一条）；游戏机器没有 CraftingRecipe，只能像面板一样静态收录。
+            var groups = MachinePanels.RecipesFor(_entry.Id);
+            if (groups != null && groups.Length > 0)
             {
+                builder.AddLabel(Loc("mach_recipes", "产出配方"), "mach_recipes");
+
+                for (int i = 0; i < groups.Length; i++)
+                {
+                    var group = groups[i];
+                    if (group == null || group.Variants == null || group.Variants.Length == 0) continue;
+
+                    if (i > 0) builder.AddSeparator("mach_sep", 4);
+
+                    builder.BeginColumn(2f);
+                    var host = builder.CurrentContainer;
+                    builder.End();
+
+                    var strip = new MachineRecipeStrip
+                    {
+                        Host = host,
+                        Group = group,
+                        Variant = 0,
+                        Module = 0,
+                        Base = 3200 + _machineStrips.Count * 24
+                    };
+                    _machineStrips.Add(strip);
+                    RenderMachineRecipeStrip(strip);
+                }
+            }
+            else if (recipes != null && recipes.Count > 0)
+            {
+                // 没有静态表的机器：退回运行时配方（目前游戏机器几乎都没有）
                 builder.AddLabel(Loc("mach_recipes", "产出配方"), "mach_recipes");
                 for (int i = 0; i < recipes.Count; i++)
                 {
@@ -2682,6 +2739,82 @@ namespace ItemCatalog.UI
                     if (i > 0) builder.AddSeparator("mach_sep", 4);
                     RenderRecipe(builder, recipes[i]);
                 }
+            }
+        }
+
+        /// <summary>
+        /// 把一条机器配方重画到自己的容器里（清空 → 新建 builder → 标题 / 投入 / 模块 / 说明 / 产物）。
+        /// <see cref="TickMachineRecipes"/> 每秒只重建这一小块，页面其余部分不动。
+        /// 物品顺序按表里的「最优排列」（高纯度投料在前），不还原机器的槽位坐标。
+        /// </summary>
+        private static void RenderMachineRecipeStrip(MachineRecipeStrip strip)
+        {
+            if (strip == null || strip.Host == null || strip.Group == null) return;
+
+            var manager = CustomUIManager.Instance;
+            if (manager == null || _window == null || !_window.IsAlive) return;
+
+            for (int i = _highlights.Count - 1; i >= 0; i--)
+                if (_highlights[i].Key == null || _highlights[i].Value == null) _highlights.RemoveAt(i);
+
+            CustomUIBuilder.ClearContainer(strip.Host);
+            var builder = new CustomUIBuilder(manager, _window, strip.Host);
+
+            var group = strip.Group;
+            var variants = group.Variants;
+            int vi = ((strip.Variant % variants.Length) + variants.Length) % variants.Length;
+            var recipe = variants[vi];
+            if (recipe == null) return;
+
+            builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
+
+            if (recipe.Inputs.Length > 0)
+            {
+                builder.AddLabel(Loc("mach_inputs", "投入"), "mach_sub");
+                RenderItemGrid(builder, recipe.Inputs, strip.Base);
+            }
+
+            if (recipe.Modules.Length > 0)
+            {
+                // 模块也是轮播：一条配方里多个模块时每秒换一个，
+                // 避免把「互斥的模块选项」画成一次装三个
+                builder.AddLabel(Loc("mach_modules", "模块"), "mach_sub");
+                int mi = recipe.Modules.Length == 1 ? 0
+                    : ((strip.Module % recipe.Modules.Length) + recipe.Modules.Length) % recipe.Modules.Length;
+                RenderItemGrid(builder, new[] { recipe.Modules[mi] }, strip.Base + 8);
+            }
+
+            string note = Loc(recipe.NoteKey, recipe.NoteFallback);
+            if (!string.IsNullOrEmpty(note)) builder.AddLabel(note, "mach_note");
+
+            if (recipe.Outputs.Length > 0)
+            {
+                builder.AddLabel(Loc("mach_outputs", "产物"), "mach_sub");
+                RenderItemGrid(builder, recipe.Outputs, strip.Base + 16);
+            }
+        }
+
+        /// <summary>每秒推进机器配方的轮播索引：配方组间独立，模块数多个时也单独轮。</summary>
+        private static void TickMachineRecipes()
+        {
+            if (!IsOpen || _machineStrips.Count == 0) return;
+
+            for (int i = 0; i < _machineStrips.Count; i++)
+            {
+                var strip = _machineStrips[i];
+                if (strip == null || strip.Host == null || strip.Group == null) continue;
+
+                var variants = strip.Group.Variants;
+                if (variants == null || variants.Length == 0) continue;
+
+                strip.Variant = (strip.Variant + 1) % variants.Length;
+
+                var recipe = variants[strip.Variant];
+                if (recipe != null && recipe.Modules.Length > 1)
+                    strip.Module = (strip.Module + 1) % recipe.Modules.Length;
+
+                try { RenderMachineRecipeStrip(strip); }
+                catch (Exception e) { Warn("machine recipe: " + e.Message); }
             }
         }
 

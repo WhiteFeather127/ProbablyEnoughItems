@@ -96,3 +96,26 @@ use_dir_target,能拿它做什么
 note_scav_scanner,拾荒道具：拿来升级基地的金属探测器（消耗一件），每级提高夜巡拾荒的双倍掉落几率
 note_scav_flashlight,拾荒道具：夜巡拾荒时随身携带，降低受伤几率（不消耗）
 cat_craft,合成
+mach_furnace_perfect,完美纯度金属锭
+mach_furnace_very_high,极高纯度金属锭
+mach_furnace_high,高纯度金属锭
+mach_furnace_fair,一般纯度金属锭
+mach_furnace_low,低纯度金属锭
+mach_furnace_very_low,极低纯度金属锭
+mach_furnace_junk,废料回收（需垃圾模块）
+mach_note_perfect,高纯矿石 + 高级助熔剂，品质模块再提一档
+mach_note_perfect_alt,全矿石 + 品质模块；爆燃模块虽 -1 档但每周期多熔一份
+mach_note_flux,矿石占多数 + 助熔剂保证 +1 档
+mach_note_quality,全矿石 + 品质模块的加成
+mach_note_ore2,两份矿石 → 基础 +2 档
+mach_note_ore_flux,一份矿石 + 助熔剂
+mach_note_ore1,矿石与废金属各一份 → 基础 +1 档
+mach_note_flux2,废金属 + 助熔剂也能提一档
+mach_note_scrap,纯废金属 → 基础档
+mach_note_blast,爆燃模块多熔一份但 -1 档
+mach_note_blast_low,爆燃模块 -1 档；仍可多熔一份投料
+mach_note_blast_flux,助熔剂与爆燃模块互相抵消
+mach_note_junk,装上垃圾模块后，垃圾可以直接熔成废金属
+mach_inputs,投入
+mach_modules,模块
+mach_outputs,产物

@@ -94,3 +94,26 @@ cat_use,Use
 use_dir_source,How to obtain
 use_dir_target,What it makes
 cat_craft,Crafting
+mach_furnace_perfect,Perfect purity ingot
+mach_furnace_very_high,Very high purity ingot
+mach_furnace_high,High purity ingot
+mach_furnace_fair,Fair purity ingot
+mach_furnace_low,Low purity ingot
+mach_furnace_very_low,Very low purity ingot
+mach_furnace_junk,Junk recycling (junk module)
+mach_note_perfect,High ore + advanced flux, quality module adds another tier
+mach_note_perfect_alt,All ore + quality module; blast module costs a tier but melts extra
+mach_note_flux,Ore majority + flux guarantees +1 tier
+mach_note_quality,All ore + quality module bonus
+mach_note_ore2,Two ore → +2 tiers baseline
+mach_note_ore_flux,One ore + flux
+mach_note_ore1,Ore + scrap → +1 tier baseline
+mach_note_flux2,Scrap + flux also adds a tier
+mach_note_scrap,Pure scrap → base tier
+mach_note_blast,Blast melts extra but costs a tier
+mach_note_blast_low,Blast module -1 tier, extra input
+mach_note_blast_flux,Flux cancels the blast penalty
+mach_note_junk,With junk module, junk melts into scrap
+mach_inputs,Inputs
+mach_modules,Modules
+mach_outputs,Products

@@ -94,3 +94,26 @@ cat_use,Использование
 use_dir_source,Как получить
 use_dir_target,Что из неё делают
 cat_craft,Крафт
+mach_furnace_perfect,Слиток идеальной чистоты
+mach_furnace_very_high,Слиток очень высокой чистоты
+mach_furnace_high,Слиток высокой чистоты
+mach_furnace_fair,Слиток средней чистоты
+mach_furnace_low,Слиток низкой чистоты
+mach_furnace_very_low,Слиток очень низкой чистоты
+mach_furnace_junk,Переработка мусора (модуль)
+mach_note_perfect,Руда + флюс + модуль качества
+mach_note_perfect_alt,Только руда + модуль качества; модуль взрыва даёт больше
+mach_note_flux,Руда + флюс: +1 уровень
+mach_note_quality,Руда + модуль качества
+mach_note_ore2,Две руды: +2 уровня
+mach_note_ore_flux,Одна руда + флюс
+mach_note_ore1,Руда + лом: +1 уровень
+mach_note_flux2,Лом + флюс тоже повышает
+mach_note_scrap,Только лом: базовый уровень
+mach_note_blast,Взрыв: больше, но -1 уровень
+mach_note_blast_low,Взрыв: -1 уровень, лишний вход
+mach_note_blast_flux,Флюс компенсирует взрыв
+mach_note_junk,С модулем мусор Converts в лом
+mach_inputs,Вход
+mach_modules,Модули
+mach_outputs,Выход
