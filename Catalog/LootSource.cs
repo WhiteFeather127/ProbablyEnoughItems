@@ -416,6 +416,48 @@ namespace ItemCatalog.Catalog
             }
         }
 
+        /// <summary>变体状态后缀：去掉之后通常就是本体的目录 id（与 SourceData 同表）。</summary>
+        private static readonly string[] AliasSuffixes =
+        {
+            "_used", "_broken", "_ruined", "_dirty", "_empty", "_full", "_wet", "_dry", "_charged", "_dead"
+        };
+
+        /// <summary>往反查索引登记一张表（键不存在就建桶）。</summary>
+        private static void RegisterHit(Dictionary<string, List<LootTableInfo>> map, string itemId, LootTableInfo table)
+        {
+            if (string.IsNullOrEmpty(itemId)) return;
+
+            List<LootTableInfo> hit;
+            if (!map.TryGetValue(itemId, out hit))
+            {
+                hit = new List<LootTableInfo>();
+                map[itemId] = hit;
+            }
+
+            if (!hit.Contains(table)) hit.Add(table);
+        }
+
+        /// <summary>
+        /// 池内 id 的别名解析（镜像 <c>SourceData.ResolveAlias</c>）：
+        /// <c>random_*</c> 展开成同族默认模块；状态后缀剥到本体。
+        /// 不是别名返回 null。
+        /// </summary>
+        private static string ResolveAlias(string itemId)
+        {
+            if (string.IsNullOrEmpty(itemId)) return null;
+
+            if (itemId.StartsWith("random_", StringComparison.Ordinal))
+                return ExpandPlaceholder(itemId);
+
+            for (int i = 0; i < AliasSuffixes.Length; i++)
+            {
+                if (!itemId.EndsWith(AliasSuffixes[i], StringComparison.Ordinal)) continue;
+                return itemId.Substring(0, itemId.Length - AliasSuffixes[i].Length);
+            }
+
+            return null;
+        }
+
         private static void EnsureBoxContents()
         {
             if (_boxContentsLoaded) return;
@@ -586,31 +628,31 @@ namespace ItemCatalog.Catalog
 
                         entries++;
 
-                        table.Items.Add(new LootItemRef { Id = entry.id, Weight = entry.weight });
+                        // **正反查都按真实物品 id 记录**（与 SourceData.AddAliasSource
+                        // 同一条规则）：占位 id（random_performance_module 这类）在
+                        // 生成时才被换成同族默认模块——池子记录、反查索引都用展开后
+                        // 的本体 id，具体模块的页才能查到装着它的池子（倾倒场等）。
+                        string realId = entry.id.StartsWith("random_", StringComparison.Ordinal)
+                            ? ExpandPlaceholder(entry.id)
+                            : entry.id;
+
+                        table.Items.Add(new LootItemRef { Id = realId, Weight = entry.weight });
 
                         List<LootTableInfo> hit;
-                        if (!map.TryGetValue(entry.id, out hit))
+                        if (!map.TryGetValue(realId, out hit))
                         {
                             hit = new List<LootTableInfo>();
-                            map[entry.id] = hit;
+                            map[realId] = hit;
                         }
 
                         if (!hit.Contains(table)) hit.Add(table);
 
-                        // 占位 id（random_performance_module 这类）在生成时才被换成
-                        // 同族的默认模块 —— 反查索引同时登记展开后的本体 id，
-                        // 否则具体模块（system_module_quality 等）的来源页查不到
-                        // 装着它的池子，倾倒场这类地点就「反查不到来源」了。
-                        string expanded = ExpandPlaceholder(entry.id);
-                        if (expanded != entry.id)
-                        {
-                            if (!map.TryGetValue(expanded, out hit))
-                            {
-                                hit = new List<LootTableInfo>();
-                                map[expanded] = hit;
-                            }
-                            if (!hit.Contains(table)) hit.Add(table);
-                        }
+                        // 原始 id 也登记一份（占位格 / 兼容旧调用）；变体后缀的本体再补一份
+                        if (realId != entry.id) RegisterHit(map, entry.id, table);
+
+                        string alias = ResolveAlias(entry.id);
+                        if (!string.IsNullOrEmpty(alias) && alias != entry.id && alias != realId)
+                            RegisterHit(map, alias, table);
                     }
 
                     tables.Add(table);
