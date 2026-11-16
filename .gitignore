@@ -11,6 +11,9 @@ obj/
 /publish/
 /.publish/
 
+# 打包产物（release zip 在仓库根生成，发布后即删）
+/ProbablyEnoughItems-v*.zip
+
 # 系统文件
 Thumbs.db
 desktop.ini
