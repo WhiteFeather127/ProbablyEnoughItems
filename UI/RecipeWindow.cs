@@ -1212,7 +1212,10 @@ namespace ItemCatalog.UI
                 case CatLocation: return SourceTitle(category);
                 case CatCraft: return Loc("cat_craft", "合成");
                 case CatUse: return Loc("cat_use", "使用");
-                case CatLoot: return ModEntry.T("src_loot");
+                // 掉落池只按地点成大类（上面的 SiteName 分支已返回地点名）。
+                // 这里不再回退到「掉落池」——那是后端概念，玩家看到的应该是
+                // 「垃圾倾倒场 / 小偷 / 装着它的箱子」这类具体地点。
+                case CatLoot: return Loc("cat_site", "地点");
                 case CatMachine: return Loc("cat_machine", "机器");
                 default: return "?";
             }
