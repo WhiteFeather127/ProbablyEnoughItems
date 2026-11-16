@@ -2712,15 +2712,10 @@ namespace ItemCatalog.UI
 
             // 原版窗口内容节点是 reparent 进来的，不参与 CustomUIBuilder 的布局高度计算，
             // 给占位容器一个最小高度即可（原版面板自己的尺寸保留，不拉伸）。
-            builder.BeginColumn(2f);
+            // MiddleCenter：让 VerticalLayoutGroup 把里面的原版面板居中（水平+垂直）
+            builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
             builder.End();
-            if (host != null)
-            {
-                var layout = EnsureLayoutElement(host);
-                layout.flexibleHeight = 0f;
-                layout.minHeight = 360f;   // 3 个原版面板竖排的近似高度
-            }
 
             // 第一步：造原版窗口外壳并挂进详情容器（还没放物品）
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
@@ -2738,15 +2733,9 @@ namespace ItemCatalog.UI
                 if (rect != null) CustomUIBuilder.RebuildLayout(rect);
                 // 两个 Canvas 的 CanvasScaler 不同，按 scaleFactor 比例补偿，
                 // 让面板显示尺寸和游戏里正常机器窗口一致（不拍脑袋填倍数）。
-                float panelH = _vanillaMachine.MatchGameCanvasScale(host);
-                // 窗口高度适配机器面板高度：host 高度 = 缩放后的面板高度，
-                // 面板 anchor 在正中(0.5)，host 正好这么高时面板就垂直居中且不被裁。
-                if (host != null && panelH > 0f)
-                {
-                    var hostLayout = EnsureLayoutElement(host);
-                    hostLayout.minHeight = panelH;
-                    hostLayout.preferredHeight = panelH;
-                }
+                _vanillaMachine.MatchGameCanvasScale(host);
+                // host 高度由面板自己的 LayoutElement(preferredHeight=面板高度) 撑起，
+                // ApplyContentHeight 再按 host 首选高度撑窗口——窗口正好贴合面板。
                 FillVanillaMachine(recipe);
 
                 if (ModEntry.Log != null)

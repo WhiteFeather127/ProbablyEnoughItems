@@ -97,11 +97,19 @@ namespace ItemCatalog.UI
                 rect.pivot = new Vector2(0.5f, 0.5f);
                 rect.anchoredPosition = Vector2.zero;
 
-                // 面板是 reparent 进来的，不参与 host 的 VerticalLayoutGroup 排布，
-                // 否则布局会再挪它一次、破坏居中。host 高度由 minHeight 控制。
-                var ignore = rect.GetComponent<UnityEngine.UI.LayoutElement>();
-                if (ignore == null) ignore = rect.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
-                ignore.ignoreLayout = true;
+                // host 是 VerticalLayoutGroup（childControlWidth/Height=true，
+                // childAlignment 默认非居中），它会接管子节点的尺寸和位置。
+                // 给面板加 LayoutElement 声明原版尺寸：布局组按这个尺寸分配空间，
+                // 结合 BeginColumn(..., MiddleCenter) 让面板在 host 里居中。
+                var le = rect.GetComponent<UnityEngine.UI.LayoutElement>();
+                if (le == null) le = rect.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
+                le.ignoreLayout = false;
+                le.minWidth = rect.rect.width;
+                le.preferredWidth = rect.rect.width;
+                le.flexibleWidth = 0f;
+                le.minHeight = rect.rect.height;
+                le.preferredHeight = rect.rect.height;
+                le.flexibleHeight = 0f;
 
                 _attachedRect = rect;
                 return rect;
@@ -142,6 +150,18 @@ namespace ItemCatalog.UI
                 if (ratio < 0.2f || ratio > 6f) ratio = 1f;
                 // 只改缩放，anchor/pivot 已在 AttachContentTo 设成正中心，这里不碰
                 _attachedRect.localScale = new Vector3(ratio, ratio, 1f);
+
+                // 布局组按 LayoutElement 的 preferred 尺寸分配空间，而那个尺寸是
+                // AttachContentTo 时按本地像素设的。缩放后视觉尺寸 = 本地 × ratio，
+                // 必须同步更新 preferred，否则 host 高度按未缩放尺寸算，面板会被裁/留白。
+                var le = _attachedRect.GetComponent<UnityEngine.UI.LayoutElement>();
+                if (le != null)
+                {
+                    float w = _attachedRect.rect.width * ratio;
+                    float h = _attachedRect.rect.height * ratio;
+                    le.minWidth = le.preferredWidth = w;
+                    le.minHeight = le.preferredHeight = h;
+                }
 
                 // 缩放后的实际高度（sizeDelta 是本地尺寸，显示高度 = 本地 × localScale）
                 float scaledHeight = _attachedRect.rect.height * ratio;
