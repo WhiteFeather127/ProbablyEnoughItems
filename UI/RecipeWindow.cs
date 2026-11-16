@@ -228,6 +228,7 @@ namespace ItemCatalog.UI
         private static int _vanillaVariant;   // 当前档内轮播到第几条配方
 
         // 机器页自适应高度用的实测值（布局跑完才有，只增不减）
+        private static float _chromeLocked;     // 标题栏锁定的高度（窗口创建时读一次，高度预算与约束共用）
         private static float _measureChrome;    // 标题栏实测高度 = 窗口高 − 内容区高
         private static float _measurePagerH;    // 翻页条实测高度
         private static int _measurePass;        // 收敛轮次，防止反复重画
@@ -381,6 +382,7 @@ namespace ItemCatalog.UI
             _measureChrome = 0f;   // 换物品后重新实测（同一窗口内可复用，但换了窗口就重来）
             _measurePagerH = 0f;
             _measurePass = 0;
+            _chromeLocked = 0f;    // 新窗口重新锁定标题栏高度
             _tagStripSeq = 0;
             SourceSeed = null;
             SourceWater = null;
@@ -993,15 +995,20 @@ namespace ItemCatalog.UI
                     var child = root.GetChild(i) as RectTransform;
                     if (child == null || child == content) continue;
 
-                    float want = UnityEngine.UI.LayoutUtility.GetPreferredHeight(child);
-                    if (want < 40f || want > 300f) want = MachineTitleBarH;
+                    // 取当前 rect.height：PinTitleBar 只在窗口刚创建（还是最小高度、
+                    // 标题栏没被压缩）时调用，此时的值最接近真实设计高度。
+                    // 不用 GetPreferredHeight —— 它会递归累加子级，算得比实际偏高（用户反馈「高了」）。
+                    float want = child.rect.height;
+                    if (want < 40f || want > 200f) want = MachineTitleBarH;
+
+                    _chromeLocked = want;   // 缓存下来，窗口高度也用它，两边口径一致
 
                     var le = EnsureLayoutElement(child);
                     le.minHeight = want;         // 硬下限：窗口再小也不许压到它以下
                     le.preferredHeight = want;
                     le.flexibleHeight = 0f;      // 也不吸收多余空间
                     if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[pin-title] natural=" + want);
+                        ModEntry.Log.Log("[pin-title] locked=" + want);
                     break;
                 }
             }
@@ -1015,24 +1022,9 @@ namespace ItemCatalog.UI
         /// </summary>
         private static float NaturalChrome(CustomUIWindow window)
         {
-            if (window == null) return MachineTitleBarH;
-            var root = window.Rect;
-            var content = window.ContentRoot;
-            if (root == null || content == null || root == content) return MachineTitleBarH;
-
-            try
-            {
-                for (int i = 0; i < root.childCount; i++)
-                {
-                    var child = root.GetChild(i) as RectTransform;
-                    if (child == null || child == content) continue;
-
-                    float want = UnityEngine.UI.LayoutUtility.GetPreferredHeight(child);
-                    if (want >= 40f && want <= 300f) return want;
-                    break;
-                }
-            }
-            catch { }
+            // 直接用 PinTitleBar 锁定时缓存的值，保证「窗口高度预算」和
+            // 「标题栏实际锁定的高度」永远是同一个数，不会一边大一边小。
+            if (_chromeLocked > 4f) return _chromeLocked;
             return MachineTitleBarH;
         }
 
