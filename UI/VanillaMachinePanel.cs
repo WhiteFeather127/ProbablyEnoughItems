@@ -108,6 +108,42 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
+        /// 让嵌在详情窗口里的原版面板显示尺寸和游戏里正常机器窗口一致。
+        /// 游戏窗口在 RenderHandler.windowUICanvas 下，详情窗口在 CustomUIManager.overlayCanvas
+        /// 下，两个 Canvas 的 CanvasScaler 不同（overlay 是 ScaleWithScreenSize 1920×1080），
+        /// 所以同样的 gridSize×格数 像素显示出来一大一小。
+        /// 取两个 Canvas 的 scaleFactor 比例，等比补偿到内容节点上（只改 localScale，
+        /// 物品是 grid 子节点会一起缩放，格子内相对位置不变）。
+        /// </summary>
+        internal void MatchGameCanvasScale(RectTransform host)
+        {
+            if (_attachedRect == null || host == null) return;
+            try
+            {
+                // 详情窗口所在的 Canvas（沿父级找，overlay 的根）
+                var ourCanvas = host.GetComponentInParent<Canvas>();
+                // 游戏正常窗口所在的 Canvas
+                Canvas gameCanvas = null;
+                var handler = RenderHandler.current;
+                if (handler != null) gameCanvas = handler.windowUICanvas;
+
+                float ours = ourCanvas != null ? ourCanvas.scaleFactor : 1f;
+                float game = gameCanvas != null ? gameCanvas.scaleFactor : 1f;
+                if (ours <= 0.001f || game <= 0.001f) return;
+
+                float ratio = game / ours;
+                // 比例异常（比如某 Canvas 还没初始化，scaleFactor=0/极大）就别缩放
+                if (ratio < 0.2f || ratio > 6f) ratio = 1f;
+                _attachedRect.localScale = new Vector3(ratio, ratio, 1f);
+
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] canvas scale ours=" + ours
+                                     + " game=" + game + " ratio=" + ratio);
+            }
+            catch (Exception e) { Warn("canvas scale: " + e.Message); }
+        }
+
+        /// <summary>
         /// 布局定稿后往真 inventory 塞样本物品。
         /// 必须走 GraphUtils.TryAccept（不是 inventory.UncheckedAccept）：
         /// 原版入格流程 TryFindOneValidInventorySlot → SlotMarker.TryAcceptOnce 会用

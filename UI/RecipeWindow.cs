@@ -2735,8 +2735,10 @@ namespace ItemCatalog.UI
                 var rect = _vanillaMachine.AttachContentTo(host);
                 // 第二步：让布局先跑一次（inventory 的 inner rect 定稿），再塞物品，
                 // 否则物品渲染节点会定位到格子外面。
-                // 不缩放——用同样 API 造的窗口 Validate() 后尺寸就和游戏正常机器面板一致。
                 if (rect != null) CustomUIBuilder.RebuildLayout(rect);
+                // 两个 Canvas 的 CanvasScaler 不同，按 scaleFactor 比例补偿，
+                // 让面板显示尺寸和游戏里正常机器窗口一致（不拍脑袋填倍数）。
+                _vanillaMachine.MatchGameCanvasScale(host);
                 if (host != null) EnsureLayoutElement(host).minHeight = 360f;   // 3 面板竖排的近似高度，防裁切
                 FillVanillaMachine(recipe);
 
