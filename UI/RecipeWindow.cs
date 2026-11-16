@@ -996,12 +996,24 @@ namespace ItemCatalog.UI
 
                     var le = EnsureLayoutElement(child);
                     float wasFlex = le.flexibleHeight;
+                    float w = child.rect.width;
+
+                    // 宽度必须一起锁：加了 LayoutElement 后 preferredWidth 默认 -1，
+                    // 布局组会 fallback 到父级满宽，标题栏就被拉得比自身背景宽、
+                    // 左右各露出空白。锁成它原本的宽度即可。
+                    if (w > 1f)
+                    {
+                        le.minWidth = w;
+                        le.preferredWidth = w;
+                        le.flexibleWidth = 0f;
+                    }
+
                     le.minHeight = MachineTitleBarH;
                     le.preferredHeight = MachineTitleBarH;
                     le.flexibleHeight = 0f;      // 不再吸收多余空间
                     if (ModEntry.Log != null)
-                        ModEntry.Log.Log("[pin-title] fixed=" + MachineTitleBarH
-                                         + " wasFlex=" + wasFlex);
+                        ModEntry.Log.Log("[pin-title] fixedH=" + MachineTitleBarH
+                                         + " keepW=" + w + " wasFlex=" + wasFlex);
                     break;
                 }
             }
