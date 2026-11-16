@@ -1384,7 +1384,9 @@ namespace ItemCatalog.UI
                     // 首轮给足空间（+220），让标题栏以**自然高度**排布——此时量到的
                     // 「窗口顶边 → bodyHost 顶边」就是真实的标题栏+padding 总量；
                     // 第二轮用这个实测值精确设置窗口，标题栏既不压、也不多留空白。
-                    float gap = _chromeMeasured > 4f ? _chromeMeasured : 220f;
+                    // 首轮用接近真实的估算起步（避免窗口高度大幅跳变），
+                    // 之后用实测值；两者只差几像素，视觉上无感。
+                    float gap = _chromeMeasured > 4f ? _chromeMeasured : MachineTitleBarH;
                     height = Mathf.Max(WinMinHeight, preferred + gap);
                     if (Screen.height > 0)
                         height = Mathf.Min(height, Screen.height - 10f);
@@ -1450,11 +1452,22 @@ namespace ItemCatalog.UI
                                 && Mathf.Abs(gap - _chromeMeasured) > 2f)
                             {
                                 _chromeMeasured = gap;
+
+                                // 只调 SetSize，**绝不在这里 Render()**：
+                                // Render 会在 ApplyContentHeight 中途清空并重建 UI，
+                                // preferred 被打回 0、窗口高度跟着变 0。
+                                float newH = Mathf.Max(WinMinHeight, preferred + gap);
+                                if (Screen.height > 0)
+                                    newH = Mathf.Min(newH, Screen.height - 10f);
+
+                                _window.SetSize(WinWidth, newH);
+                                _lastHeight = newH;
+                                CustomUIBuilder.RebuildLayout(_window.Rect);
+
                                 if (ModEntry.Log != null)
                                     ModEntry.Log.Log("[mach-win] measured gap=" + gap
-                                                     + " preferred=" + preferred);
-                                Render();
-                                return;
+                                                     + " preferred=" + preferred
+                                                     + " -> height=" + newH);
                             }
 
                             if (ModEntry.Log != null)
