@@ -172,6 +172,10 @@ namespace ItemCatalog.UI
 
         private static ItemEntry _entry;
 
+        /// <summary>false = 来源方向（左键）；true = 用途方向（右键）。
+        /// 只影响标题栏的方向标注，页面内容是同一份。</summary>
+        private static bool _asUse;
+
         private static int _category;
         private static int _page;
 
@@ -228,16 +232,24 @@ namespace ItemCatalog.UI
             internal HashSet<string> Exclude;       // 已经单独列出的具体物品，别在标签格里重复画
         }
 
+        /// <summary>左键（来源方向）打开。页面同一份，方向标注不同。</summary>
+        internal static void OpenFor(ItemEntry entry)
+        {
+            OpenFor(entry, false);
+        }
+
         /// <summary>
         /// 打开（或复用）窗口。来源与去处已合并成同一页：
         /// 客人 / 地点 / 机器 / 合成(双向) / 使用(双向，含开启) / 掉落池。
-        /// 兼容重载保留 asUse 参数仅为旧调用点，不再区分方向。
+        /// 左键（asUse=false）标题栏标「来源」，右键（true）标「用途」——
+        /// 页面同一份，方向靠标注与打开入口区分。
         /// </summary>
-        internal static void OpenFor(ItemEntry entry)
+        internal static void OpenFor(ItemEntry entry, bool asUse)
         {
             if (entry == null) return;
 
             _entry = entry;
+            _asUse = asUse;
             _category = 0;
             _page = 0;
 
@@ -259,18 +271,12 @@ namespace ItemCatalog.UI
             {
                 try
                 {
-                    ModEntry.Log.Log("[recipe] open id=" + entry.Id
+                    ModEntry.Log.Log("[recipe] open id=" + entry.Id + " asUse=" + asUse
                                      + " cats=" + _categories.Count + " " + CategoryDigest()
                                      + " " + State());
                 }
                 catch { }
             }
-        }
-
-        /// <summary>旧签名兼容：方向参数已无意义，统一打开同一页。</summary>
-        internal static void OpenFor(ItemEntry entry, bool asUse)
-        {
-            OpenFor(entry);
         }
 
         /// <summary>
@@ -929,6 +935,9 @@ namespace ItemCatalog.UI
                 }
                 catch (Exception e) { Warn("set title: " + e.Message); }
 
+                // 标题栏左侧的「来源 / 用途」：左右键打开同一页，靠它区分方向
+                ApplyDirectionLabel();
+
                 // 大类翻页：按钮贴两端，名称居中；到头就禁用，不做循环
                 builder.BeginRow(6f);
                 builder.AddButton("<", delegate { TurnCategory(-1); }, "cat_prev");
@@ -984,6 +993,92 @@ namespace ItemCatalog.UI
             {
                 Warn("render: " + e.Message);
             }
+        }
+
+        private static TMPro.TMP_Text _dirLabel;
+
+        /// <summary>
+        /// 在标题栏左侧写「来源 / 用途」——左右键打开同一页，靠它区分方向。
+        ///
+        /// 窗口标题由 `CustomUIWindow.SetTitle` 居中绘制，没有「左侧留白」这种接口，
+        /// 所以这里复制标题那个文字对象（字体、颜色、描边全都跟着），改成靠左摆放。
+        /// 找不到标题节点就什么都不做——宁可没有这个标签，也不去猜坐标。
+        /// </summary>
+        private static void ApplyDirectionLabel()
+        {
+            if (_window == null || _entry == null) return;
+
+            string dir = ModEntry.T(_asUse ? "dir_use" : "dir_source");
+            if (string.IsNullOrEmpty(dir)) return;
+
+            try
+            {
+                if (_dirLabel != null)
+                {
+                    _dirLabel.text = dir;
+                    return;
+                }
+
+                var root = _window.Rect;
+                if (root == null) return;
+
+                TMPro.TMP_Text title = null;
+                var texts = root.GetComponentsInChildren<TMPro.TMP_Text>(true);
+                for (int i = 0; i < texts.Length; i++)
+                {
+                    if (texts[i] != null && texts[i].text == _entry.DisplayName)
+                    {
+                        title = texts[i];
+                        break;
+                    }
+                }
+
+                if (title == null || title.transform.parent == null) return;
+
+                // 物品名居中：默认是左对齐，和左边的「来源/用途」挤在一起看着像两段标题
+                try { title.alignment = TMPro.TextAlignmentOptions.Center; } catch { }
+
+                // 就放在标题栏里，但让它的布局组忽略这份克隆：
+                // 否则会被当成第三个子物体排在关闭按钮后面（跑到右边去）；
+                // 挂到窗口根上又会被竖排布局组排到最底下。
+                var bar = title.transform.parent as RectTransform;
+                if (bar == null) return;
+
+                var clone = UnityEngine.Object.Instantiate(title.gameObject, bar);
+                clone.name = "directionLabel";
+
+                try
+                {
+                    var ignore = clone.GetComponent<UnityEngine.UI.LayoutElement>();
+                    if (ignore == null) ignore = clone.AddComponent<UnityEngine.UI.LayoutElement>();
+                    ignore.ignoreLayout = true;
+                }
+                catch { }
+
+                var rect = clone.transform as RectTransform;
+                if (rect != null)
+                {
+                    float side = bar.rect.height > 4f ? bar.rect.height : 30f;
+
+                    rect.anchorMin = new Vector2(0f, 0.5f);
+                    rect.anchorMax = new Vector2(0f, 0.5f);
+                    rect.pivot = new Vector2(0f, 0.5f);
+                    rect.anchoredPosition = new Vector2(10f, 0f);
+                    rect.sizeDelta = new Vector2(140f, side);
+                }
+
+                // 画在最上层，否则会被窗口背景/内容盖住
+                try { clone.transform.SetAsLastSibling(); } catch { }
+
+                _dirLabel = clone.GetComponent<TMPro.TMP_Text>();
+                if (_dirLabel != null)
+                {
+                    _dirLabel.text = dir;
+                    _dirLabel.raycastTarget = false;
+                    try { _dirLabel.alignment = TMPro.TextAlignmentOptions.Left; } catch { }
+                }
+            }
+            catch (Exception e) { Warn("direction label: " + e.Message); }
         }
 
         /// <summary>
