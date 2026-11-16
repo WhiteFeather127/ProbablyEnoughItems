@@ -31,17 +31,29 @@ namespace ItemCatalog.UI
         internal const string ContainerShape = "10000010001000001110000010001000001";
         internal const int ShapeCols = 7;
 
+        /// <summary>
+        /// 面板在配方里的角色：画一条配方时，物品按角色放进对应格子。
+        /// Input=投料格、Module=模块格、Output=产物格、Passive=不参与配方
+        /// （电池、纸条这类只还原界面结构）。
+        /// </summary>
+        internal const char RoleInput = 'I';
+        internal const char RoleModule = 'M';
+        internal const char RoleOutput = 'O';
+        internal const char RolePassive = 'P';
+
         internal sealed class Panel
         {
             internal char Kind;
             internal string GameLabelKey;   // 游戏 mech_*_label_* 键；电池 / 模块 / 纸条用兜底文案
             internal string Fallback;       // 游戏键取不到时的兜底（中文）
+            internal char Role;             // 配方物品放进哪类格子（默认 Passive）
 
-            internal Panel(char kind, string gameLabelKey, string fallback)
+            internal Panel(char kind, string gameLabelKey, string fallback, char role = RolePassive)
             {
                 Kind = kind;
                 GameLabelKey = gameLabelKey;
                 Fallback = fallback;
+                Role = role;
             }
         }
 
@@ -51,13 +63,13 @@ namespace ItemCatalog.UI
             {
                 { "mouse_trap", new[] {
                     // RatTrap::CreateMouseTrapWindow：只有一个「trap」槽
-                    P(Slot, "mech_mouse_trap_label_trap", "捕鼠槽") } },
+                    PR(Slot, "mech_mouse_trap_label_trap", "捕鼠槽", RoleInput) } },
                 { "furnace", new[] {
-                    P(Grid, null, "容器网格"),
+                    PR(Grid, null, "容器网格", RoleInput),
                     P(Battery, null, "电池"),
-                    P(Module, "mech_furnace_label_module", "模块"),
-                    P(Slot, "mech_furnace_label_input", "投入"),
-                    P(Slot, "mech_furnace_label_output", "产出"),
+                    PR(Module, "mech_furnace_label_module", "模块", RoleModule),
+                    PR(Slot, "mech_furnace_label_input", "投入", RoleInput),
+                    PR(Slot, "mech_furnace_label_output", "产出", RoleOutput),
                     P(Note, null, "纸条") } },
                 { "moisture_farm", new[] {
                     P(Grid, null, "容器网格"),
@@ -109,9 +121,9 @@ namespace ItemCatalog.UI
                     P(Slot, "mech_recharger_label_battery", "电池组") } },
                 { "evaporator", new[] {
                     P(Battery, null, "电池"),
-                    P(Module, "mech_evaporator_label_module", "模块"),
-                    P(Slot, "mech_evaporator_label_container", "容器"),
-                    P(Slot, "mech_evaporator_label_distillate", "馏出"),
+                    PR(Module, "mech_evaporator_label_module", "模块", RoleModule),
+                    PR(Slot, "mech_evaporator_label_container", "容器", RoleInput),
+                    PR(Slot, "mech_evaporator_label_distillate", "馏出", RoleOutput),
                     P(Note, null, "纸条") } },
                 { "dna_manipulator", new[] {
                     P(Grid, null, "容器网格"),
@@ -182,6 +194,11 @@ namespace ItemCatalog.UI
         private static Panel P(char kind, string gameLabelKey, string fallback)
         {
             return new Panel(kind, gameLabelKey, fallback);
+        }
+
+        private static Panel PR(char kind, string gameLabelKey, string fallback, char role)
+        {
+            return new Panel(kind, gameLabelKey, fallback, role);
         }
 
         /// <summary>这台机器的面板序列；不是已知机器（或没有界面数据）返回 null。</summary>

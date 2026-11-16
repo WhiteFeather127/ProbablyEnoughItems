@@ -2670,10 +2670,12 @@ namespace ItemCatalog.UI
         /// （工具 = 必需的模块，材料 = 原料，产物 = 做出来的东西）。
         /// 面板结构与标签来自 <see cref="MachinePanels"/>（抄自各机器类的 IL）。
         /// </summary>
+        /// <summary>
+        /// 机器页：机器原生格子就是配方的载体——一条配方 = 画一遍面板，
+        /// 物品图标放进对应格子。每个纯度组一个容器，容器内每秒轮播一条配方。
+        /// </summary>
         private static void RenderMachinePage(CustomUIBuilder builder, List<RecipeInfo> recipes)
         {
-            // 右上角放这台机器自己的物品格：图标、名字、悬停提示、左右键查来源/用途
-            // 全部走图鉴那套标准格子（RenderGoods），不另造一套展示
             if (_entry != null)
             {
                 builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
@@ -2682,81 +2684,38 @@ namespace ItemCatalog.UI
                 builder.End();
             }
 
-            var panels = MachinePanels.For(_entry.Id);
-            if (panels != null && panels.Length > 0)
-            {
-                builder.AddLabel(Loc("mach_title", "机器界面"), "mach_title");
-
-                for (int i = 0; i < panels.Length; i++)
-                {
-                    var panel = panels[i];
-                    if (panel == null) continue;
-
-                    string label = MachinePanelLabel(panel);
-
-                    if (panel.Kind == MachinePanels.Grid)
-                    {
-                        builder.AddLabel(label, "mach_panel");
-                        DrawGridShape(builder);
-                        continue;
-                    }
-
-                    builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleLeft);
-                    builder.AddLabel(label, "mach_panel");
-                    builder.AddFlexibleSpace();
-                    DrawSlot(builder);
-                    builder.End();
-                }
-            }
-
-            // 静态产出配方：按纯度分档，每档一个轮播容器（同一档的不同投料方案
-            // 每秒切一条）；游戏机器没有 CraftingRecipe，只能像面板一样静态收录。
             var groups = MachinePanels.RecipesFor(_entry.Id);
-            if (groups != null && groups.Length > 0)
+            if (groups == null || groups.Length == 0)
             {
-                builder.AddLabel(Loc("mach_recipes", "产出配方"), "mach_recipes");
-
-                for (int i = 0; i < groups.Length; i++)
-                {
-                    var group = groups[i];
-                    if (group == null || group.Variants == null || group.Variants.Length == 0) continue;
-
-                    if (i > 0) builder.AddSeparator("mach_sep", 4);
-
-                    builder.BeginColumn(2f);
-                    var host = builder.CurrentContainer;
-                    builder.End();
-
-                    var strip = new MachineRecipeStrip
-                    {
-                        Host = host,
-                        Group = group,
-                        Variant = 0,
-                        Module = 0,
-                        Base = 3200 + _machineStrips.Count * 24
-                    };
-                    _machineStrips.Add(strip);
-                    RenderMachineRecipeStrip(strip);
-                }
+                DrawMachinePanel(builder, MachinePanels.For(_entry.Id), null, null, null, 0);
+                return;
             }
-            else if (recipes != null && recipes.Count > 0)
+
+            for (int i = 0; i < groups.Length; i++)
             {
-                // 没有静态表的机器：退回运行时配方（目前游戏机器几乎都没有）
-                builder.AddLabel(Loc("mach_recipes", "产出配方"), "mach_recipes");
-                for (int i = 0; i < recipes.Count; i++)
+                var group = groups[i];
+                if (group == null || group.Variants == null || group.Variants.Length == 0) continue;
+
+                if (i > 0) builder.AddSeparator("mach_sep", 6);
+                builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
+
+                builder.BeginColumn(2f);
+                var host = builder.CurrentContainer;
+                builder.End();
+
+                var strip = new MachineRecipeStrip
                 {
-                    if (recipes[i] == null) continue;
-                    if (i > 0) builder.AddSeparator("mach_sep", 4);
-                    RenderRecipe(builder, recipes[i]);
-                }
+                    Host = host,
+                    Group = group,
+                    Variant = 0,
+                    Module = 0,
+                    Base = 3200 + _machineStrips.Count * 24
+                };
+                _machineStrips.Add(strip);
+                RenderMachineRecipeStrip(strip);
             }
         }
 
-        /// <summary>
-        /// 把一条机器配方重画到自己的容器里（清空 → 新建 builder → 标题 / 投入 / 模块 / 说明 / 产物）。
-        /// <see cref="TickMachineRecipes"/> 每秒只重建这一小块，页面其余部分不动。
-        /// 物品顺序按表里的「最优排列」（高纯度投料在前），不还原机器的槽位坐标。
-        /// </summary>
         private static void RenderMachineRecipeStrip(MachineRecipeStrip strip)
         {
             if (strip == null || strip.Host == null || strip.Group == null) return;
@@ -2770,38 +2729,85 @@ namespace ItemCatalog.UI
             CustomUIBuilder.ClearContainer(strip.Host);
             var builder = new CustomUIBuilder(manager, _window, strip.Host);
 
-            var group = strip.Group;
-            var variants = group.Variants;
+            var variants = strip.Group.Variants;
             int vi = ((strip.Variant % variants.Length) + variants.Length) % variants.Length;
             var recipe = variants[vi];
             if (recipe == null) return;
 
-            builder.AddLabel(Loc(group.TitleKey, group.TitleFallback), "mach_group");
+            int mi = recipe.Modules.Length == 0 ? -1
+                : ((strip.Module % recipe.Modules.Length) + recipe.Modules.Length) % recipe.Modules.Length;
+            string moduleId = mi >= 0 ? recipe.Modules[mi] : null;
 
-            if (recipe.Inputs.Length > 0)
-            {
-                builder.AddLabel(Loc("mach_inputs", "投入"), "mach_sub");
-                RenderItemGrid(builder, recipe.Inputs, strip.Base);
-            }
-
-            if (recipe.Modules.Length > 0)
-            {
-                // 模块也是轮播：一条配方里多个模块时每秒换一个，
-                // 避免把「互斥的模块选项」画成一次装三个
-                builder.AddLabel(Loc("mach_modules", "模块"), "mach_sub");
-                int mi = recipe.Modules.Length == 1 ? 0
-                    : ((strip.Module % recipe.Modules.Length) + recipe.Modules.Length) % recipe.Modules.Length;
-                RenderItemGrid(builder, new[] { recipe.Modules[mi] }, strip.Base + 8);
-            }
+            DrawMachinePanel(builder, MachinePanels.For(_entry.Id), recipe.Inputs,
+                             moduleId, recipe.Outputs, strip.Base);
 
             string note = Loc(recipe.NoteKey, recipe.NoteFallback);
             if (!string.IsNullOrEmpty(note)) builder.AddLabel(note, "mach_note");
+        }
 
-            if (recipe.Outputs.Length > 0)
+        /// <summary>
+        /// 机器原生面板：逐格画出界面结构，配方物品按角色放进对应格子。
+        /// Grid 的 7x5 形状格依次填投料；单槽按角色填模块 / 产物；电池 / 纸条留空框。
+        /// 格子里只画图标（不画名字标签），否则一个槽里多个元素会在行布局里叠成一团。
+        /// </summary>
+        private static void DrawMachinePanel(CustomUIBuilder builder, MachinePanels.Panel[] panels,
+                                             string[] inputs, string moduleId, string[] outputs, int idBase)
+        {
+            if (panels == null || panels.Length == 0) return;
+
+            int outputAt = 0;
+            for (int p = 0; p < panels.Length; p++)
             {
-                builder.AddLabel(Loc("mach_outputs", "产物"), "mach_sub");
-                RenderItemGrid(builder, recipe.Outputs, strip.Base + 16);
+                var panel = panels[p];
+                if (panel == null) continue;
+
+                string label = MachinePanelLabel(panel);
+
+                if (panel.Kind == MachinePanels.Grid)
+                {
+                    builder.AddLabel(label, "mach_panel");
+                    DrawGridShape(builder, slotIndex =>
+                    {
+                        if (panel.Role == MachinePanels.RoleInput && inputs != null && slotIndex < inputs.Length)
+                            return inputs[slotIndex];
+                        return null;
+                    }, idBase + p * 16);
+                    continue;
+                }
+
+                builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleLeft);
+                builder.AddLabel(label, "mach_panel");
+                builder.AddFlexibleSpace();
+
+                string itemId = null;
+                if (panel.Role == MachinePanels.RoleModule) itemId = moduleId;
+                else if (panel.Role == MachinePanels.RoleOutput && outputs != null && outputAt < outputs.Length)
+                    itemId = outputs[outputAt++];
+
+                DrawItemInSlot(builder, itemId, idBase + p);
+                builder.End();
             }
+        }
+
+        /// <summary>格子里放一个物品：有图标就画图标，没图标画空框。只画图标，不画名字。</summary>
+        private static void DrawItemInSlot(CustomUIBuilder builder, string id, int elementId)
+        {
+            if (string.IsNullOrEmpty(id))
+            {
+                DrawSlot(builder);
+                return;
+            }
+
+            var sprite = CatalogWindow.IconFor(id) ?? CatalogWindow.CompositeIconFor(id);
+            if (sprite == null)
+            {
+                DrawSlot(builder);
+                return;
+            }
+
+            float w, h;
+            CatalogWindow.FitIcon(sprite, 24f, out w, out h);
+            builder.AddImage(sprite, w, h, "mach_item" + elementId);
         }
 
         /// <summary>每秒推进机器配方的轮播索引：配方组间独立，模块数多个时也单独轮。</summary>
@@ -2856,7 +2862,8 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>画容器网格：形状码 7 列一行，'1' 画格框，'0' 留空。</summary>
-        private static void DrawGridShape(CustomUIBuilder builder)
+        private static void DrawGridShape(CustomUIBuilder builder,
+                                          System.Func<int, string> itemFor = null, int idBase = 0)
         {
             string shape = MachinePanels.ContainerShape;
             var frame = MachineSlotSprite();
@@ -2887,7 +2894,18 @@ namespace ItemCatalog.UI
                 {
                     int idx = r * MachinePanels.ShapeCols + c;
                     if (idx < shape.Length && shape[idx] == '1')
-                        builder.AddImage(frame, 18f, 18f, "mach_cell_" + r + "_" + c);
+                    {
+                        string itemId = itemFor == null ? null : itemFor(idx);
+                        var sprite = string.IsNullOrEmpty(itemId) ? null
+                            : (CatalogWindow.IconFor(itemId) ?? CatalogWindow.CompositeIconFor(itemId));
+                        if (sprite != null)
+                        {
+                            float w, h;
+                            CatalogWindow.FitIcon(sprite, 18f, out w, out h);
+                            builder.AddImage(sprite, w, h, "mach_cellitem_" + idBase + "_" + idx);
+                        }
+                        else builder.AddImage(frame, 18f, 18f, "mach_cell_" + r + "_" + c);
+                    }
                     else
                         builder.AddSpace(18f);
                 }
