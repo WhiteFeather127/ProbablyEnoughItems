@@ -232,10 +232,6 @@ namespace ItemCatalog.UI
         private static int _vanillaVariant;   // 当前档内轮播到第几条配方
 
         // 机器页自适应高度用的实测值（布局跑完才有，只增不减）
-        private static float _chromeMeasured;   // 实测「窗口顶边→bodyHost顶边」，即标题栏+各层 padding
-        private static float _measureChrome;    // 标题栏实测高度 = 窗口高 − 内容区高
-        private static float _measurePagerH;    // 翻页条实测高度
-        private static int _measurePass;        // 收敛轮次，防止反复重画
         private static RectTransform _machineTopRow;    // 机器页顶部行（配方名 + 机器图标）
         private static RectTransform _machinePagerRow;  // 机器页底部翻页条
 
@@ -383,10 +379,6 @@ namespace ItemCatalog.UI
             _machineStrips.Clear();
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaVariant = 0;
-            _measureChrome = 0f;   // 换物品后重新实测（同一窗口内可复用，但换了窗口就重来）
-            _measurePagerH = 0f;
-            _measurePass = 0;
-            _chromeMeasured = 0f;   // 换物品后重新实测标题栏+padding
             _tagStripSeq = 0;
             SourceSeed = null;
             SourceWater = null;
@@ -977,40 +969,6 @@ namespace ItemCatalog.UI
             Render();
         }
 
-        /// <summary>
-        /// 从**窗口顶边**量到「最后一个控件的底边」的距离——窗口高度就用它。
-        /// 不估算 preferred/chrome，纯看实际排布出来的最低点：
-        /// 窗口底部正好贴在最后一个控件下面，既不留空白也不会把它裁掉。
-        /// 只遍历 _bodyHost 的直接子级（大类行 / 类型标签 / 内容列 / 翻页条），
-        /// 它们都在布局流里、不会溢出；面板所在的 host 高度已被限制，不会撑破内容列。
-        /// </summary>
-        private static float MeasureBodyBottom()
-        {
-            var win = _window == null ? null : _window.Rect;
-            if (win == null || _bodyHost == null) return 0f;
-
-            try
-            {
-                float sy = Mathf.Abs(win.lossyScale.y) > 0.001f ? win.lossyScale.y : 1f;
-
-                var wc = new Vector3[4];
-                var bc = new Vector3[4];
-                win.GetWorldCorners(wc);
-                _bodyHost.GetWorldCorners(bc);
-
-                // 窗口顶边 → bodyHost 顶边：标题栏 + ContentRoot/Content 各层 padding
-                float topGap = (wc[1].y - bc[1].y) / sy;
-
-                // 内容高度用 preferred（首选值，稳定）：用 bodyHost 实际高度会形成
-                // 「窗口变大 → bodyHost 被拉伸 → 底边更低 → 窗口再变大」的循环。
-                float pref = UnityEngine.UI.LayoutUtility.GetPreferredHeight(_bodyHost);
-
-                if (topGap < 4f || topGap > 400f) return 0f;
-                if (pref < 50f || pref > 4000f) return 0f;
-                return pref + topGap;
-            }
-            catch { return 0f; }
-        }
 
 
         /// <summary>
@@ -1116,7 +1074,6 @@ namespace ItemCatalog.UI
                 builder.End();
                 CustomUIBuilder.RebuildLayout(_bodyHost);
                 ApplyContentHeight();
-                DumpMachineLayout();
                 SyncHighlights();   // 窗口定稿后再对齐，避免布局重排把格子挪走
             }
             catch (Exception e)
@@ -1307,9 +1264,6 @@ namespace ItemCatalog.UI
 
             _category = next;
             _page = 0;
-            _measureChrome = 0f;   // 换页重新实测，别沿用上一页的标题栏/翻页条尺寸
-            _measurePass = 0;
-            _chromeMeasured = 0f;  // 标题栏间距也重新量（否则每次切回机器页都会再减一点）
             Render();
         }
 
@@ -1464,54 +1418,7 @@ namespace ItemCatalog.UI
                     }
                 }
 
-                // 诊断：窗口 root 的每个直接子级（标题栏 / 内容区）的实际高度与 preferred，
-                // 用来回答「标题栏差额到底从哪来」。
-                if (ModEntry.Log != null && _window.Rect != null)
-                {
-                    try
-                    {
-                        var wr = _window.Rect;
-                        var sb = new System.Text.StringBuilder();
-                        sb.Append("[win-children] winH=").Append(wr.rect.height);
-                        for (int ci = 0; ci < wr.childCount; ci++)
-                        {
-                            var ch = wr.GetChild(ci) as RectTransform;
-                            if (ch == null) continue;
-                            var le = ch.GetComponent<UnityEngine.UI.LayoutElement>();
-                            sb.Append(" | ").Append(ci).Append(':').Append(ch.name)
-                              .Append(" h=").Append(ch.rect.height.ToString("F0"))
-                              .Append(" pref=").Append(le == null ? "noLE" : le.preferredHeight.ToString("F0"))
-                              .Append(" flex=").Append(le == null ? "-" : le.flexibleHeight.ToString("F1"))
-                              .Append(" calcPref=")
-                              .Append(UnityEngine.UI.LayoutUtility.GetPreferredHeight(ch).ToString("F0"));
-                        }
-                        ModEntry.Log.Log(sb.ToString());
-                    }
-                    catch { }
-                }
 
-                // 诊断：所有页面都打一次布局实测，用来对比「普通页面为什么自适应没问题」。
-                if (ModEntry.Log != null && _window.Rect != null && _window.ContentRoot != null)
-                {
-                    try
-                    {
-                        float sy2 = Mathf.Abs(_window.Rect.lossyScale.y) > 0.001f
-                            ? _window.Rect.lossyScale.y : 1f;
-                        var w2 = new Vector3[4];
-                        var b2 = new Vector3[4];
-                        _window.Rect.GetWorldCorners(w2);
-                        _bodyHost.GetWorldCorners(b2);
-                        float wH = _window.Rect.rect.height;
-                        float cH = _window.ContentRoot.rect.height;
-                        ModEntry.Log.Log("[page-layout] page=" + (machinePage ? "machine" : "other")
-                                         + " win=" + wH + " cr=" + cH
-                                         + " winMinusCr=" + (wH - cH)
-                                         + " topGap=" + ((w2[1].y - b2[1].y) / sy2)
-                                         + " preferred=" + preferred
-                                         + " chromeConst=" + WindowChrome);
-                    }
-                    catch { }
-                }
 
             }
             catch (Exception e)
@@ -2967,34 +2874,6 @@ namespace ItemCatalog.UI
                                  + " rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
         }
 
-        /// <summary>
-        /// 布局定稿后打印机器页三段的真实世界矩形，用来定位「面板位置靠上 / 遮挡 / 下方留空」。
-        /// 只在机器页且面板存在时输出，其它页无开销。
-        /// </summary>
-        private static void DumpMachineLayout()
-        {
-            if (_vanillaMachine == null || ModEntry.Log == null) return;
-            var panel = _vanillaMachine.AttachedRect;
-            if (panel == null) return;
-            var host = panel.parent as RectTransform;
-
-            try
-            {
-                var root = _window == null ? null : _window.Rect;
-                var cr = _window == null ? null : _window.ContentRoot;
-                ModEntry.Log.Log("[mach-layout] win=" + WorldRect(root)
-                                 + " cr=" + WorldRect(cr)
-                                 + " crLe=" + LayoutInfo(cr)
-                                 + " body=" + WorldRect(_bodyHost)
-                                 + " bodyLe=" + LayoutInfo(_bodyHost)
-                                 + " bodyParent=" + (_bodyHost.parent == null ? "null" : _bodyHost.parent.name)
-                                 + " bodyParentGroups=" + GroupInfo(_bodyHost.parent as RectTransform)
-                                 + " host=" + WorldRect(host)
-                                 + " panel=" + WorldRect(panel)
-                                 + " preferred=" + UnityEngine.UI.LayoutUtility.GetPreferredHeight(_bodyHost));
-            }
-            catch (Exception e) { Warn("dump layout: " + e.Message); }
-        }
 
         private static string WorldRect(RectTransform rect)
         {
