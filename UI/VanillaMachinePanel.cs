@@ -106,6 +106,11 @@ namespace ItemCatalog.UI
                 rect.anchorMax = new Vector2(0.5f, 0.5f);
                 rect.pivot = new Vector2(0.5f, 0.5f);
                 rect.anchoredPosition = Vector2.zero;
+                // 明确设尺寸：handler 是空布局壳，rect.size 常为 0，
+                // 不设 sizeDelta 面板会缩成一点。用 Validate() 算好的像素尺寸。
+                float w = _window != null && _window.widthPixels > 1f ? _window.widthPixels : 200f;
+                float h = _window != null && _window.heightPixels > 1f ? _window.heightPixels : 300f;
+                rect.sizeDelta = new Vector2(w, h);
 
                 // 面板自己也不参与任何布局（防御：万一父级还有别的布局组件）
                 var le = rect.GetComponent<UnityEngine.UI.LayoutElement>();
@@ -152,20 +157,29 @@ namespace ItemCatalog.UI
                 // 只改缩放，anchor/pivot 已在 AttachContentTo 设成正中心，这里不碰
                 _attachedRect.localScale = new Vector3(ratio, ratio, 1f);
 
+                // 用 Validate() 算好的 widthPixels/heightPixels 作为面板真实尺寸——
+                // _attachedRect（childElement.handler）是空布局壳，rect.size 常为 0，
+                // 之前用它算高度 → host≈0 → 窗口特别矮。
+                float nativeW = _window != null && _window.widthPixels > 1f
+                    ? _window.widthPixels : _attachedRect.rect.width;
+                float nativeH = _window != null && _window.heightPixels > 1f
+                    ? _window.heightPixels : _attachedRect.rect.height;
+                float scaledHeight = nativeH * ratio;
+
                 // host 的布局组已移除，ApplyContentHeight 靠 host 自己的 LayoutElement
-                // preferredHeight 量高度。设成缩放后的面板视觉高度，窗口就正好包住面板。
-                // 面板本体是 ignoreLayout 的，不干扰 host 高度。
-                float scaledHeight = _attachedRect.rect.height * ratio;
+                // preferredHeight 量高度。设成缩放后的面板视觉高度，窗口正好包住面板。
                 var hostLe = host.GetComponent<UnityEngine.UI.LayoutElement>();
                 if (hostLe == null) hostLe = host.gameObject.AddComponent<UnityEngine.UI.LayoutElement>();
-                hostLe.minWidth = hostLe.preferredWidth = _attachedRect.rect.width * ratio;
+                hostLe.minWidth = hostLe.preferredWidth = nativeW * ratio;
                 hostLe.minHeight = hostLe.preferredHeight = scaledHeight;
                 hostLe.flexibleHeight = 0f;
 
                 if (ModEntry.Log != null)
-                    ModEntry.Log.Log("[vanilla-machine] canvas scale ours=" + ours
-                                     + " game=" + game + " ratio=" + ratio
-                                     + " height=" + scaledHeight);
+                    ModEntry.Log.Log("[vanilla-machine] canvas ours=" + ours + " game=" + game
+                                     + " ratio=" + ratio + " native=" + nativeW + "x" + nativeH
+                                     + " rect=" + _attachedRect.rect.size
+                                     + " host=" + host.rect.size
+                                     + " scaledH=" + scaledHeight);
                 return scaledHeight;
             }
             catch (Exception e) { Warn("canvas scale: " + e.Message); return 0f; }
