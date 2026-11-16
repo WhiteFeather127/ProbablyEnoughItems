@@ -964,11 +964,48 @@ namespace ItemCatalog.UI
 
             if (_window != null)
             {
+                PinTitleBar(_window);   // 只固定高度/去掉弹性，不动位置尺寸
                 try { CustomUIBuilder.RebuildLayout(_window.ContentRoot); }
                 catch { }
             }
 
             Render();
+        }
+
+        /// <summary>
+        /// 固定窗口标题栏：只设 LayoutElement 的三个高度属性（min/preferred/flexible），
+        /// **位置、尺寸、锚点、pivot、padding 一概不动**。
+        ///
+        /// 日志实测窗口 1066 里 ContentRoot 只拿到 488，差 578 全被标题栏吃掉——
+        /// 因为标题栏的 flexibleHeight 默认会吸收窗口所有多余空间。
+        /// 把 flexibleHeight 归 0、高度钉成常量，它就不会再抢内容的空间。
+        /// </summary>
+        private static void PinTitleBar(CustomUIWindow window)
+        {
+            if (window == null) return;
+            var root = window.Rect;
+            var content = window.ContentRoot;
+            if (root == null || content == null || root == content) return;
+
+            try
+            {
+                for (int i = 0; i < root.childCount; i++)
+                {
+                    var child = root.GetChild(i) as RectTransform;
+                    if (child == null || child == content) continue;
+
+                    var le = EnsureLayoutElement(child);
+                    float wasFlex = le.flexibleHeight;
+                    le.minHeight = MachineTitleBarH;
+                    le.preferredHeight = MachineTitleBarH;
+                    le.flexibleHeight = 0f;      // 不再吸收多余空间
+                    if (ModEntry.Log != null)
+                        ModEntry.Log.Log("[pin-title] fixed=" + MachineTitleBarH
+                                         + " wasFlex=" + wasFlex);
+                    break;
+                }
+            }
+            catch (Exception e) { Warn("pin title: " + e.Message); }
         }
 
         /// <summary>窗口被游戏关掉（Esc / 点 X）时，别留下悬空提示框和拖拽登记。</summary>
