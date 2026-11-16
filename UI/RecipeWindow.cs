@@ -975,11 +975,41 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
+        /// 量关闭按钮的真实高度：标题栏高度以它为基准，
+        /// 这样按钮永远完整显示、也不会因为布局组压缩而被压扁。
+        /// 排除内容区里的按钮（翻页 / 分类切换等）。
+        /// </summary>
+        private static float CloseButtonHeight(CustomUIWindow window)
+        {
+            if (window == null) return 0f;
+            var root = window.Rect;
+            var content = window.ContentRoot;
+            if (root == null) return 0f;
+
+            try
+            {
+                var buttons = root.GetComponentsInChildren<UnityEngine.UI.Button>(true);
+                for (int i = 0; i < buttons.Length; i++)
+                {
+                    var b = buttons[i];
+                    if (b == null) continue;
+                    var rt = b.transform as RectTransform;
+                    if (rt == null) continue;
+                    if (content != null && rt.IsChildOf(content)) continue;   // 内容区里的不算
+
+                    float h = rt.rect.height;
+                    if (h >= 16f && h <= 120f) return h;
+                }
+            }
+            catch { }
+            return 0f;
+        }
+
+        /// <summary>
         /// 固定标题栏高度：只设 LayoutElement 的 min/preferred/flexible 三项，
         /// 不改 anchor / pivot / 位置 / padding。
         ///
-        /// 高度必须用**自然首选高度**：用 rect.height 会读到被窗口压扁后的值，
-        /// 窗口一小它就更小，越锁越矮（「窗口越小标题栏越矮」就是这个）。
+        /// 高度取「关闭按钮实测高度 + 上下留白」，保证按钮完整且不会过高。
         /// </summary>
         private static void PinTitleBar(CustomUIWindow window)
         {
@@ -995,11 +1025,12 @@ namespace ItemCatalog.UI
                     var child = root.GetChild(i) as RectTransform;
                     if (child == null || child == content) continue;
 
-                    // 取当前 rect.height：PinTitleBar 只在窗口刚创建（还是最小高度、
-                    // 标题栏没被压缩）时调用，此时的值最接近真实设计高度。
-                    // 不用 GetPreferredHeight —— 它会递归累加子级，算得比实际偏高（用户反馈「高了」）。
-                    float want = child.rect.height;
-                    if (want < 40f || want > 200f) want = MachineTitleBarH;
+                    // 以**关闭按钮的实测高度**为基准（用户指定）：按钮完整显示即可，
+                    // 不必给整条标题栏更高；再加 8px 上下留白。
+                    // GetPreferredHeight 会递归累加子级偏高，rect.height 又随窗口变化，都不如按钮可靠。
+                    float btnH = CloseButtonHeight(window);
+                    float want = btnH > 16f ? btnH + 8f : child.rect.height;
+                    if (want < 30f || want > 200f) want = MachineTitleBarH;
 
                     _chromeLocked = want;   // 缓存下来，窗口高度也用它，两边口径一致
 
