@@ -100,20 +100,30 @@ mach_furnace_high,High purity ingot
 mach_furnace_fair,Fair purity ingot
 mach_furnace_low,Low purity ingot
 mach_furnace_very_low,Very low purity ingot
-mach_furnace_junk,Junk recycling (junk module)
-mach_note_perfect,High ore + advanced flux, quality module adds another tier
-mach_note_perfect_alt,All ore + quality module; blast module costs a tier but melts extra
-mach_note_flux,Ore majority + flux guarantees +1 tier
-mach_note_quality,All ore + quality module bonus
+mach_furnace_junk,Junk processing
+mach_note_perfect,Two ore +2 and advanced flux +1; still needs quality +2 (total quality ≥200%)
+mach_note_perfect_alt,Three ore +2, blast -1 and advanced flux +1; still needs quality +2; two ingots
+mach_note_perfect_core,Two ore +2; needs quality +200% → perfect
+mach_note_perfect_core_blast,Three ore +2; blast -1; needs quality +300% → perfect; two ingots
+mach_note_perfect_flux_core,Two ore +2; flux only floors at +1 and does not stack; still needs quality +200% → perfect
+mach_note_uncapped,Two ore +2; needs quality +100% → very high
+mach_note_capped2,Two ore +2; two capped neural cores +1 → very high
+mach_note_blast_core1,Three ore +2; blast -1; needs quality +100% → high; two ingots
+mach_note_blast_core2,Three ore +2; blast -1; needs quality +200% → very high; two ingots
+mach_note_flux,Two ore +2; flux guarantees +1 (consumed)
+mach_note_quality,Quality modules only add a tier at ≥100% total
 mach_note_ore2,Two ore → +2 tiers baseline
-mach_note_ore_flux,One ore + flux
+mach_note_ore_flux,One ore +1; flux guarantees +1 (consumed)
 mach_note_ore1,Ore + scrap → +1 tier baseline
-mach_note_flux2,Scrap + flux also adds a tier
+mach_note_flux2,Scrap + flux guarantees +1 (consumed)
 mach_note_scrap,Pure scrap → base tier
-mach_note_blast,Blast melts extra but costs a tier
-mach_note_blast_low,Blast module -1 tier, extra input
-mach_note_blast_flux,Flux cancels the blast penalty
-mach_note_junk,With junk module, junk melts into scrap
+mach_note_blast,Blast costs a tier but yields two ingots per cycle
+mach_note_blast_low,Blast costs a tier; yields two ingots
+mach_note_blast_flux,Three ore +2; blast -1 offset by flux +1; two ingots
+mach_note_adv_flux,Two ore +2; advanced flux guarantees +1 (not consumed by code)
+mach_note_adv_flux_blast,Three ore +2; blast -1 offset by advanced flux +1; two ingots
+mach_note_junk,With junk module: 6 junk → 4 scrap
+purity_suffix, ({0})
 mach_inputs,Inputs
 mach_modules,Modules
 mach_outputs,Products

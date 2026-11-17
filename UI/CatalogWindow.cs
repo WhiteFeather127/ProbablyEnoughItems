@@ -32,6 +32,9 @@ namespace ItemCatalog.UI
         private static RectTransform _inventoryRect;
         private static int _page;
 
+        /// <summary>整窗输入挡板（透明 Image + 空 TreeNodeRender），见 EnsureInputBlocker。</summary>
+        private static GameObject _inputBlocker;
+
         private static int _columns = 6;
         private static int _rows = 7;
         private static int _perPage = 42;
@@ -252,6 +255,7 @@ namespace ItemCatalog.UI
         {
             if (_window != null && _window.IsAlive) _window.Close();
             _window = null;
+            _inputBlocker = null;
             _gridHost = null;
             SpriteCache.Clear();
 
@@ -279,6 +283,14 @@ namespace ItemCatalog.UI
             }
 
             long buildMs = watch.ElapsedMilliseconds;
+
+            // 搅拌机可搅拌清单：手写表优先，BLENDABLE_TAG 自动补齐（后加载的模组物品也能收录）
+            try { MachinePanels.DiscoverBlenderInputs(); }
+            catch (Exception e) { Warn("warmup: blender discovery failed: " + e.Message); }
+
+            // 熔炉：探测当前版本/补丁实际接受的输入与模块，校验档位覆盖
+            try { MachinePanels.DiscoverFurnaceRecipes(); }
+            catch (Exception e) { Warn("warmup: furnace discovery failed: " + e.Message); }
 
             // 变体来源只有接口提供者与硬编码生成器表，预热阶段不做任何探测。
             var items = CatalogDataBuilder.Visible;
@@ -427,6 +439,7 @@ namespace ItemCatalog.UI
             DestroyCompositeStage();
 
             _window = null;
+            _inputBlocker = null;
             _gridHost = null;
             SpriteCache.Clear();
             _tooltipManager = null;
@@ -487,6 +500,15 @@ namespace ItemCatalog.UI
             {
                 CatalogDataBuilder.EnsureBuilt();
             }
+
+            // 目录可能有增量（后加载模组）：按需重扫可搅拌清单；generation 没变时直接返回
+            try { MachinePanels.DiscoverBlenderInputs(); }
+            catch (Exception e) { Warn("blender discovery: " + e.Message); }
+
+            // 熔炉输入/模块白名单同理，generation 没变时直接返回
+            try { MachinePanels.DiscoverFurnaceRecipes(); }
+            catch (Exception e) { Warn("furnace discovery: " + e.Message); }
+
             _page = 0;
             _inventoryRect = AnchorOverride != null ? AnchorOverride : AnchorTarget.Resolve();
 
@@ -562,6 +584,7 @@ namespace ItemCatalog.UI
 
             _window = builder.Show();
             ApplyPlacement(_window, _inventoryRect);
+            EnsureInputBlocker();
             Render();
 
             // 常驻节拍器：页面不悬停也持续刷新
@@ -697,10 +720,53 @@ namespace ItemCatalog.UI
             }
         }
 
+        /// <summary>
+        /// 窗口层级遮挡：拖拽落点用 RenderHandler.RaycastElement 从前往后找
+        /// TreeNodeRender。图鉴正文是自定义 UI（没有 TreeNodeRender），射线会穿过去
+        /// 命中窗口后面的游戏容器（拖拽释放会掉进背后的箱子/货架）。
+        /// 这里在窗口底层垫一张透明、可射线、带空 TreeNodeRender 的整窗挡板，
+        /// 碰到它就停止，后面的东西收不到操作。与详情窗口用同一套做法。
+        /// </summary>
+        private static void EnsureInputBlocker()
+        {
+            if (_window == null || !_window.IsAlive) return;
+            if (_inputBlocker != null) return;
+
+            var root = _window.Rect;
+            if (root == null) return;
+
+            try
+            {
+                var go = new GameObject("catalog:inputBlocker",
+                    typeof(RectTransform), typeof(UnityEngine.UI.Image), typeof(TreeNodeRender));
+
+                var rect = (RectTransform)go.transform;
+                rect.SetParent(root, false);
+                rect.SetAsFirstSibling();          // 画在所有窗口内容之后方（层级最低）
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.offsetMin = Vector2.zero;
+                rect.offsetMax = Vector2.zero;
+                rect.localScale = Vector3.one;
+
+                var image = go.GetComponent<UnityEngine.UI.Image>();
+                image.color = new Color(0f, 0f, 0f, 0f);   // 全透明，但 raycastTarget=true
+                image.raycastTarget = true;
+
+                var ignore = go.AddComponent<UnityEngine.UI.LayoutElement>();
+                ignore.ignoreLayout = true;
+
+                _inputBlocker = go;
+            }
+            catch (Exception e) { Warn("input blocker: " + e.Message); }
+        }
+
         private static void Render()
         {
             var manager = CustomUIManager.Instance;
             if (manager == null || _window == null || !_window.IsAlive || _gridHost == null) return;
+
+            EnsureInputBlocker();
 
 
             var items = FilterItems();
@@ -2131,6 +2197,88 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>拖起：物品先寄存在图鉴自己的窗口里，再交给原版拖拽。</summary>
+        /// <summary>
+        /// 详情窗口的机器面板用：作弊模式下按 id 走图鉴的拿取流程，
+        /// 复制一份物品交给原版拖拽；预览里的原样本不动，继续轮播。
+        /// </summary>
+        internal static void BeginTakeDrag(GameItem sample)
+        {
+            if (!TakeMode || _dragging || sample == null) return;
+
+            GameItem copy = null;
+            try { copy = DirectoryMaster.Item(sample.identifier, false); }
+            catch (Exception e) { Warn("take copy '" + sample.identifier + "': " + e.Message); }
+            if (copy == null) return;
+
+            try { GeneralHelper.SetItemOwned(copy, true); } catch { }
+
+            // 容器样本（例如搅拌机里灌好成分的瓶子）要把内容物一起复制，
+            // 否则拖出来只是工厂新造的空瓶。
+            try
+            {
+                if (sample.IsTag("LIQUID_CONTAINER_TAG"))
+                    CopyLiquidContents(sample, copy);
+            }
+            catch (Exception e) { Warn("copy container: " + e.Message); }
+
+            try
+            {
+                if (sample.IsTag("INGOT_PURITY_TAG"))
+                {
+                    string purity = IngotPurityHelper.GetPurity(sample);
+                    if (!string.IsNullOrEmpty(purity))
+                    {
+                        IngotPurityHelper.SetPurity(copy, purity);
+                    }
+                }
+            }
+            catch (Exception e) { Warn("copy purity: " + e.Message); }
+
+            BeginDragItem(copy, null);
+        }
+
+        /// <summary>
+        /// 把样本容器的液体内容复制到拿取副本上。
+        /// 逐液体 CURRENT_PART_* 是绝对量；温度与水源特性一并复制，
+        /// 否则拖出来的瓶子会变成空瓶（工厂默认就是空的）。
+        /// </summary>
+        private static void CopyLiquidContents(GameItem sample, GameItem copy)
+        {
+            if (sample == null || copy == null) return;
+
+            try
+            {
+                var liquids = Liquid.Liquids;
+                if (liquids == null) return;
+
+                for (int i = 0; i < liquids.Count; i++)
+                {
+                    var liquid = liquids[i];
+                    if (liquid == null) continue;
+
+                    int value = sample.GetTagReadonly(liquid.currentPart).GetInt();
+                    copy.ModifyTag(liquid.currentPart, delegate(TagState state)
+                    {
+                        state.Enable().SetInt(value);
+                    }, false);
+                }
+
+                // 温度由原版容器初始化时写入；没有该标签就不复制
+                if (sample.IsTag("CONTAINER_TEMP_TAG"))
+                {
+                    double temp = sample.GetTagReadonly("CONTAINER_TEMP_TAG").GetDouble();
+                    copy.ModifyTag("CONTAINER_TEMP_TAG", delegate(TagState state)
+                    {
+                        state.Enable().SetDouble(temp);
+                    }, false);
+                }
+
+                try { WaterFeatureHelper.UpdateWaterFeature(copy, false); } catch { }
+                try { SpriteHelper.UpdateWaterContainerSprite(copy); } catch { }
+            }
+            catch (Exception e) { Warn("copy liquids: " + e.Message); }
+        }
+
         private static void BeginDrag(ItemEntry entry)
         {
             if (entry == null) return;
@@ -2138,9 +2286,23 @@ namespace ItemCatalog.UI
             var item = BuildItemForTake(entry);
             if (item == null) return;
 
+            BeginDragItem(item, entry);
+        }
+
+        /// <summary>把已经造好的物品放进 dummy 容器并交给原版拖拽。</summary>
+        private static void BeginDragItem(GameItem item, ItemEntry entry)
+        {
+            if (item == null) return;
+
+            string id = entry != null ? entry.Id : item.identifier;
+
             // 放进图鉴自己的窗口：物品因此有了真实的 parentInventory 和渲染节点，
             // 原版 StartDrag() 才拎得动
-            if (!PlaceInDummyStorage(item, entry.Id)) return;
+            if (!PlaceInDummyStorage(item, id))
+            {
+                try { item.Destroy(); } catch { }
+                return;
+            }
 
             _dragEntry = entry;
             _dragItem = item;
@@ -2158,8 +2320,8 @@ namespace ItemCatalog.UI
             TryStartVanillaDrag();
 
             // 原版接管了就不画幽灵图（否则会和原版的拖拽视觉重影）；
-            // 没接管才用幽灵图兜底。
-            if (!_vanillaDragStarted) ShowGhost(entry);
+            // 没接管才用幽灵图兜底；机器面板的样本没有 ItemEntry，跳过幽灵图。
+            if (!_vanillaDragStarted && entry != null) ShowGhost(entry);
         }
 
         /// <summary>
@@ -2670,8 +2832,9 @@ namespace ItemCatalog.UI
 
             if (item != null && !vanillaMoved)
             {
-                // 落在容器上就搬进去；没落在任何容器上 = 取消，物品由下面的清理销毁
-                if (hasZone) MoveExistingItem(item, entry, zone);
+                // 落在容器上就搬进去；没落在任何容器上 = 取消，物品由下面的清理销毁。
+                // 机器面板的样本没有 ItemEntry，手动落点依赖条目数据，跳过（交给原版拖拽）。
+                if (hasZone && entry != null) MoveExistingItem(item, entry, zone);
             }
 
             // 松手统一清场：dummy 网格里任何临时残留都销毁；
@@ -5634,7 +5797,7 @@ namespace ItemCatalog.UI
             return factory != null;
         }
 
-        private static GameItem CreatePreviewItem(string id)
+        internal static GameItem CreatePreviewItem(string id)
         {
             if (string.IsNullOrEmpty(id)) return null;
 

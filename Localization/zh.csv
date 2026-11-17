@@ -102,20 +102,30 @@ mach_furnace_high,高纯度金属锭
 mach_furnace_fair,一般纯度金属锭
 mach_furnace_low,低纯度金属锭
 mach_furnace_very_low,极低纯度金属锭
-mach_furnace_junk,废料回收（需垃圾模块）
-mach_note_perfect,高纯矿石 + 高级助熔剂，品质模块再提一档
-mach_note_perfect_alt,全矿石 + 品质模块；爆燃模块虽 -1 档但每周期多熔一份
-mach_note_flux,矿石占多数 + 助熔剂保证 +1 档
-mach_note_quality,全矿石 + 品质模块的加成
+mach_furnace_junk,垃圾处理
+mach_note_perfect,两矿 +2、高级助熔剂 +1，再需品质加成 +2（总品质 ≥200%）
+mach_note_perfect_alt,三矿 +2，爆燃 -1、高级助熔剂 +1，再需品质加成 +2；双锭
+mach_note_perfect_core,两矿 +2，需品质加成 +200% → 完美
+mach_note_perfect_core_blast,三矿 +2，爆燃 -1，需品质加成 +300% → 完美；双锭
+mach_note_perfect_flux_core,两矿 +2；助熔剂只保底 +1、不叠加，仍需质量加成 +200% → 完美
+mach_note_uncapped,两矿 +2，需品质加成 +100% → 极高
+mach_note_capped2,两矿 +2，两个封顶神经核心 +1 → 极高
+mach_note_blast_core1,三矿 +2，爆燃 -1，需品质加成 +100% → 高；双锭
+mach_note_blast_core2,三矿 +2，爆燃 -1，需品质加成 +200% → 极高；双锭
+mach_note_flux,两矿 +2，助熔剂保底 +1（会被消耗）
+mach_note_quality,品质模块总加成 ≥100% 才 +1 档
 mach_note_ore2,两份矿石 → 基础 +2 档
-mach_note_ore_flux,一份矿石 + 助熔剂
+mach_note_ore_flux,一矿 +1，助熔剂保底 +1（会被消耗）
 mach_note_ore1,矿石与废金属各一份 → 基础 +1 档
-mach_note_flux2,废金属 + 助熔剂也能提一档
+mach_note_flux2,废金属 + 助熔剂保底 +1（会被消耗）
 mach_note_scrap,纯废金属 → 基础档
-mach_note_blast,爆燃模块多熔一份但 -1 档
-mach_note_blast_low,爆燃模块 -1 档；仍可多熔一份投料
-mach_note_blast_flux,助熔剂与爆燃模块互相抵消
-mach_note_junk,装上垃圾模块后，垃圾可以直接熔成废金属
+mach_note_blast,爆燃 -1 档，但每周期产出双锭
+mach_note_blast_low,爆燃 -1 档，产出双锭
+mach_note_blast_flux,三矿 +2，爆燃 -1、助熔剂 +1 抵消；双锭
+mach_note_adv_flux,两矿 +2，高级助熔剂保底 +1（代码不消耗）
+mach_note_adv_flux_blast,三矿 +2，爆燃 -1、高级助熔剂 +1；双锭
+mach_note_junk,装上垃圾模块后，6 个垃圾 → 4 份废金属
+purity_suffix,（{0}）
 mach_inputs,投入
 mach_modules,模块
 mach_outputs,产物
