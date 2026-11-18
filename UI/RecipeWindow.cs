@@ -2812,7 +2812,7 @@ namespace ItemCatalog.UI
         /// 把对应的机器配方组加进来。只收录有原版面板外壳的机器
         /// （熔炉、搅拌机）；新增机器时把 id 加进 <see cref="KnownMachines"/>。
         /// </summary>
-        private static readonly string[] KnownMachines = { "furnace", "blender", "chem_finisher" };
+        private static readonly string[] KnownMachines = { "furnace", "blender", "chem_finisher", "evaporator" };
 
         private static void AddMachineRecipeCategories()
         {
@@ -3651,13 +3651,7 @@ namespace ItemCatalog.UI
                 builder.End();
             }
 
-            // 蒸发器没有固定配方：页面只标记能蒸出哪些成分，不画原版面板。
-            if (string.Equals(machineId, "evaporator", StringComparison.Ordinal))
-            {
-                RenderEvaporatorInfo(builder);
-                return;
-            }
-
+            // 蒸发器没有固定配方：每个可蒸出的液体一页，页面画「容器 + 馏出」两个原版槽。
             // 第一步：造原版窗口外壳（还没挂、没放物品），先拿到它缩放后的真实尺寸
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaMachine = new VanillaMachinePanel();
@@ -3669,6 +3663,8 @@ namespace ItemCatalog.UI
                 built = _vanillaMachine.BuildBlenderShell();
             else if (string.Equals(machineId, "chem_finisher", StringComparison.Ordinal))
                 built = _vanillaMachine.BuildChemFinisherShell();
+            else if (string.Equals(machineId, "evaporator", StringComparison.Ordinal))
+                built = _vanillaMachine.BuildEvaporatorShell();
 
             if (!built)
             {
@@ -4101,26 +4097,6 @@ namespace ItemCatalog.UI
             }
 
             return Loc(group.TitleKey, group.TitleFallback);
-        }
-
-        /// <summary>
-        /// 蒸发器页：只标记能蒸出的成分（液体名带下划线，左右键追溯）。
-        /// 依据 MachineEvaporator/&lt;Evaporator&gt;b__7：只有 <c>Liquid.isEvaporative</c>
-        /// 的成分会被蒸出，具体是哪些由游戏数据决定，不维护名单。
-        /// </summary>
-        private static void RenderEvaporatorInfo(CustomUIBuilder builder)
-        {
-            builder.AddLabel(Loc("mach_evap_components", "可蒸出的成分"), "mach_evap_components");
-
-            var ids = MachinePanels.EvaporativeLiquidIds();
-            for (int i = 0; i < ids.Count; i++)
-            {
-                builder.BeginRow(2f, TextAnchor.MiddleLeft);
-                builder.AddLabel("<u>" + LiquidManager.NameOf(ids[i]) + "</u>", "mach_evap_comp" + i);
-                SetCompositionFont(builder.Last);
-                AttachLiquidLookup(builder.Last, ids[i]);
-                builder.End();
-            }
         }
 
         /// <summary>

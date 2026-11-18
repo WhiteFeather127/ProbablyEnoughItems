@@ -43,8 +43,11 @@ namespace ItemCatalog.UI
         private GameGridInventory _inputGrid;
         private GameGridInventory _outputGrid;
 
-        // 搅拌机的容器槽（GameSlotInventory，原版放液体容器的那一格）
+        // 搅拌机 / 化学制剂成型机 / 蒸发器的容器槽（GameSlotInventory，原版放液体容器的那一格）
         private GameSlotInventory _containerSlot;
+
+        /// <summary>蒸发器的馏出槽：蒸馏出来的液体会装进这里的容器。</summary>
+        private GameSlotInventory _distillateSlot;
 
         /// <summary>只有 Fill 自己往预览格塞物品时允许入格；外部拖拽一律拒绝。</summary>
         private bool _filling;
@@ -245,6 +248,51 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
+        /// 造蒸发器的原版窗口外壳（不含物品）。照 MachineEvaporator.CreateMachineInventoryWindow：
+        /// 容器（单槽，原版带 water_container4 xl 底图）+ 馏出（同一种水槽）。
+        /// 电池 / 模块 / 纸条不参与展示。
+        /// </summary>
+        internal bool BuildEvaporatorShell()
+        {
+            try
+            {
+                _containerSlot = new GameSlotInventory();
+                _distillateSlot = new GameSlotInventory();
+
+                _containerSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _distillateSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+
+                // 和原版 SetupWaterSlot 一致：两个槽都垫大号液体容器底图
+                try { _containerSlot.SetBackgroundFadeSprite("Items/water_container4", "xl", 0.5f, 0.5f); }
+                catch { }
+                try { _distillateSlot.SetBackgroundFadeSprite("Items/water_container4", "xl", 0.5f, 0.5f); }
+                catch { }
+
+                var panels = new[]
+                {
+                    MachineHelper.Panel(MechLabel("mech_evaporator_label_container", "容器"), _containerSlot, "container", true),
+                    MachineHelper.Panel(MechLabel("mech_evaporator_label_distillate", "馏出"), _distillateSlot, "distillate", true)
+                };
+
+                var row = new MachineryPanelRow(panels);
+                row.SetColumns(2);
+
+                _window = new PixelWindow(false, null, WindowStyle.Machinery);
+                _window.Attach(row);
+                _window.Validate();
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] evaporator shell size="
+                                     + _window.widthPixels + "x" + _window.heightPixels);
+                return _window != null;
+            }
+            catch (Exception e)
+            {
+                Warn("build evaporator shell: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// 实测面板里**内容**的真实高度（世界包围盒）。
         /// 面板的 heightPixels 含底部留白（面板行 padding / yPadding），
         /// 按 rect 高度布局会让内容只占上半部分，多出来的空白就落在面板与翻页条之间。
@@ -423,8 +471,8 @@ namespace ItemCatalog.UI
                 if (outputs != null)
                     for (int i = 0; i < outputs.Length; i++) Accept(_outputGrid, outputs[i], purity);
 
-                // 搅拌机 / 化学制剂成型机：容器槽放一只液体容器（默认 bottled_water）。
-                // 搅拌机把投入的液体成分灌进去；化学制剂成型机按配方表灌入活性成分。
+                // 搅拌机 / 化学制剂成型机 / 蒸发器：容器槽放一只液体容器（默认 bottled_water）。
+                // 搅拌机把投入的液体成分灌进去；化学制剂成型机与蒸发器按配方灌入指定液体。
                 if (!string.IsNullOrEmpty(container) && _containerSlot != null)
                 {
                     var liquidContainer = CatalogWindow.CreatePreviewItem(container);
@@ -440,6 +488,18 @@ namespace ItemCatalog.UI
                             BlendIntoPreview(liquidContainer, inputs[0]);
 
                         Accept(_containerSlot, liquidContainer);
+                    }
+                }
+
+                // 蒸发器：馏出槽里也放一只容器，装的就是蒸出来的那种液体。
+                if (_distillateSlot != null && !string.IsNullOrEmpty(container) &&
+                    !string.IsNullOrEmpty(containerLiquid))
+                {
+                    var distillate = CatalogWindow.CreatePreviewItem(container);
+                    if (distillate != null)
+                    {
+                        FillContainerPreview(distillate, containerLiquid, containerVolume);
+                        Accept(_distillateSlot, distillate);
                     }
                 }
             }
@@ -483,6 +543,13 @@ namespace ItemCatalog.UI
         private static void FillContainerPreview(GameItem container, string liquidId, int volume)
         {
             if (container == null || string.IsNullOrEmpty(liquidId)) return;
+
+            // volume <= 0 表示「按容器容量装满」（蒸发器页只要看得出装的是什么液体）。
+            if (volume <= 0)
+            {
+                try { volume = container.GetTagReadonly("LIQUID_CONTAINER_CAPACITY").GetInt(); }
+                catch { volume = 0; }
+            }
             if (volume <= 0) volume = 1000;
 
             try
@@ -910,6 +977,7 @@ namespace ItemCatalog.UI
                 _inputGrid = null;
                 _outputGrid = null;
                 _containerSlot = null;
+                _distillateSlot = null;
                 if (_window != null && _window.rectTransform != null)
                     UnityEngine.Object.Destroy(_window.rectTransform.gameObject);
             }

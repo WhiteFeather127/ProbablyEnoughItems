@@ -130,7 +130,6 @@ mach_inputs,Inputs
 mach_modules,Modules
 mach_outputs,Products
 mach_evap_output,Distillation output
-mach_evap_components,Distillable components
 mach_trap_output,Trap output
 mach_note_evap,Dry an alcoholic container: solvent recovery module + alcohol
 mach_note_evap_beer,Any alcoholic container yields alcohol

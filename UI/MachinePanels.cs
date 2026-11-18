@@ -457,29 +457,37 @@ namespace ItemCatalog.UI
         ///   · 只有 <c>Liquid.isEvaporative</c> 的成分会被蒸出（当前是水 / 酒精 / 脂粘合剂）；
         ///   · 馏出量 = 蒸出量 × 质量加成% / 100，质量加成被钳在 0..100；
         ///   · 装了溶剂回收模块时只有酒精能进馏出瓶。
-        /// 页面只标记「能蒸出什么成分」，不写质量要求。
+        /// 每个可蒸出的液体一页：机器页画原版「容器 + 馏出」两个槽，
+        /// 投入容器里装该液体，馏出槽里装蒸出来的同一种液体（体积按容器容量装满，便于辨认）。
         /// </summary>
         private static readonly RecipeGroup[] EvaporatorGroups = BuildEvaporatorGroups();
 
         private static RecipeGroup[] BuildEvaporatorGroups()
         {
             var ids = EvaporativeLiquidIds();
-            var entries = new string[ids.Count];
-            for (int i = 0; i < ids.Count; i++)
-                entries[i] = LiquidCatalog.EntryPrefix + ids[i];
+            var groups = new RecipeGroup[ids.Count];
 
-            return new[]
+            for (int i = 0; i < ids.Count; i++)
             {
-                new RecipeGroup
+                string entry = LiquidCatalog.EntryPrefix + ids[i];
+
+                groups[i] = new RecipeGroup
                 {
-                    TitleKey = "mach_evap_output", TitleFallback = "蒸馏产出",
+                    // 标题直接用液体名（水 / 酒精 / 脂粘合剂）
+                    TitleItemId = entry,
+                    TitleKey = "mach_evap_output",
+                    TitleFallback = "蒸馏产出",
                     Variants = new[]
                     {
-                        // 输入 / 产出都是这些液体的条目：液体页正反查都能看到蒸发器
-                        new Recipe(entries, null, entries, null, null)
+                        // 输入 / 产出登记液体条目：液体页正反查都能看到蒸发器。
+                        // 面板上没有输入 / 产物网格，这两个列表只参与反查匹配。
+                        new Recipe(new[] { entry }, null, new[] { entry },
+                                   null, null, 0, LiquidManager.ContainerId, ids[i])
                     }
-                }
-            };
+                };
+            }
+
+            return groups;
         }
 
         /// <summary>能蒸出的液体 id：直接读游戏的 <c>Liquid.isEvaporative</c>，不维护名单。</summary>
