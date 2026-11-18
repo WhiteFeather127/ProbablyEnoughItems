@@ -948,13 +948,20 @@ namespace ItemCatalog.UI
         /// </summary>
         private static void AddReactionCategory()
         {
-            if (_entry == null || !LiquidCatalog.IsLiquidEntry(_entry.Id)) return;
+            string liquidId = QueryLiquidId();
+            if (string.IsNullOrEmpty(liquidId)) return;
 
-            string liquidId = _entry.Id.Substring(LiquidCatalog.EntryPrefix.Length);
             var reactions = LiquidReactions.For(liquidId, _asUse);
             if (reactions.Count == 0) return;
 
             _categories.Add(new Category { Kind = CatReaction, Reactions = reactions });
+        }
+
+        /// <summary>当前查询的是液体条目（liquid:xxx）时返回它的液体 id，否则 null。</summary>
+        private static string QueryLiquidId()
+        {
+            if (_entry == null || !LiquidCatalog.IsLiquidEntry(_entry.Id)) return null;
+            return _entry.Id.Substring(LiquidCatalog.EntryPrefix.Length);
         }
 
         /// <summary>
@@ -3755,6 +3762,8 @@ namespace ItemCatalog.UI
 
             FillVanillaMachine(recipe, group.Purity);
             _vanillaMachine.HighlightItem(_entry == null ? null : _entry.Id);
+            // 查询的是液体条目时，装着它的容器槽标绿（成分由液体管理器判定）
+            _vanillaMachine.HighlightLiquid(QueryLiquidId());
 
             // 搅拌机 / 化学制剂成型机 / 蒸发器：面板下面按成分检测器的格式列出液体成分（一行一种 + 总体积）
             if (HasMachineComposition(machineId))
@@ -3968,6 +3977,8 @@ namespace ItemCatalog.UI
 
             _vanillaMachine.FillReaction(reactantIds, reactantMl,
                                          reaction.Products, reaction.ProductMl);
+            // 装着所查询液体的那一侧容器标绿（反应物或产物，可能两侧都有）
+            _vanillaMachine.HighlightLiquid(QueryLiquidId());
 
             // 两个容器下面分别列成分：左 = 反应物，右 = 产物
             builder.BeginRow(12f, UnityEngine.TextAnchor.UpperLeft);
@@ -4250,6 +4261,7 @@ namespace ItemCatalog.UI
             {
                 FillVanillaMachine(recipe, group.Purity);
                 _vanillaMachine.HighlightItem(_entry == null ? null : _entry.Id);
+                _vanillaMachine.HighlightLiquid(QueryLiquidId());
             }
             catch (Exception e) { Warn("machine roll: " + e.Message); }
         }

@@ -735,17 +735,46 @@ namespace ItemCatalog.UI
                 if (element == null) continue;
                 if (!string.Equals(element.identifier, id, StringComparison.Ordinal)) continue;
 
-                var inventory = element.parentInventory;
-                if (inventory == null) continue;
-
-                try
-                {
-                    var slot = inventory.GetIncompleteItemInventorySlot(element);
-                    var nodes = inventory.HighlightSlot(slot, RenderHandler.BackgroundColor.Green, true);
-                    if (nodes != null) _matchHighlights.AddRange(nodes);
-                }
-                catch (Exception e) { Warn("highlight item: " + e.Message); }
+                HighlightElement(element);
             }
+        }
+
+        /// <summary>
+        /// 容器里含有某种液体时把它标绿（成分判定交给液体管理器）。
+        /// 机器页查询的是液体条目（liquid:xxx）时用：容器样本是 bottled_water，
+        /// 按物品 id 匹配不到，必须按 CURRENT_PART 成分匹配。
+        /// 不清旧绿底——调用方通常先 HighlightItem，叠加即可。
+        /// </summary>
+        internal void HighlightLiquid(string liquidId)
+        {
+            if (string.IsNullOrEmpty(liquidId)) return;
+
+            for (int i = 0; i < _samples.Count; i++)
+            {
+                var element = _samples[i] as GameItemElement;
+                if (element == null) continue;
+
+                bool contains = false;
+                try { contains = LiquidManager.Parts(element).ContainsKey(liquidId); }
+                catch { }
+                if (!contains) continue;
+
+                HighlightElement(element);
+            }
+        }
+
+        private void HighlightElement(GameItemElement element)
+        {
+            var inventory = element == null ? null : element.parentInventory;
+            if (inventory == null) return;
+
+            try
+            {
+                var slot = inventory.GetIncompleteItemInventorySlot(element);
+                var nodes = inventory.HighlightSlot(slot, RenderHandler.BackgroundColor.Green, true);
+                if (nodes != null) _matchHighlights.AddRange(nodes);
+            }
+            catch (Exception e) { Warn("highlight element: " + e.Message); }
         }
 
         private void ClearSamples()
