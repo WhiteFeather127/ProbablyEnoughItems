@@ -452,30 +452,57 @@ namespace ItemCatalog.UI
         };
 
         /// <summary>
-        /// 蒸发器：把容器里的液体蒸干，产出溶剂回收模块 + 酒精。
-        /// 依据 MachineEvaporator/<>c__DisplayClass0_0::&lt;Evaporator&gt;b__7
-        /// （AddLiquid("alcohol") + 生成 evaporator_module_solvent_recovery）。
-        /// 投料是装了酒的液体容器（游戏按 LIQUID_CONTAINER_TAG 收），
-        /// 具体哪个容器由玩家决定，所以这里用标签格之外的「酒类容器」概括。
+        /// 蒸发器：没有固定配方表——任何装了可蒸发液体的容器都能蒸。
+        /// 依据 MachineEvaporator/&lt;Evaporator&gt;b__7（反编译）：
+        ///   · 只有 <c>Liquid.isEvaporative</c> 的成分会被蒸出（当前是水 / 酒精 / 脂粘合剂）；
+        ///   · 馏出量 = 蒸出量 × 质量加成% / 100，质量加成被钳在 0..100；
+        ///   · 装了溶剂回收模块时只有酒精能进馏出瓶。
+        /// 所以页面只回答两件事：能蒸出什么成分、完美（100% 回收）要多少质量加成。
         /// </summary>
-        private static readonly RecipeGroup[] EvaporatorGroups =
+        private static readonly RecipeGroup[] EvaporatorGroups = BuildEvaporatorGroups();
+
+        private static RecipeGroup[] BuildEvaporatorGroups()
         {
-            new RecipeGroup
+            var ids = EvaporativeLiquidIds();
+            var entries = new string[ids.Count];
+            for (int i = 0; i < ids.Count; i++)
+                entries[i] = LiquidCatalog.EntryPrefix + ids[i];
+
+            return new[]
             {
-                TitleKey = "mach_evap_output", TitleFallback = "蒸馏产出",
-                Variants = new[]
+                new RecipeGroup
                 {
-                    new Recipe(new[] { "alcohol" },
-                               new[] { "evaporator_module_solvent_recovery" },
-                               new[] { "evaporator_module_solvent_recovery", "alcohol" },
-                               "mach_note_evap", "把含酒精的容器蒸干：留下溶剂回收模块，馏出酒精"),
-                    new Recipe(new[] { "red_beer" },
-                               null,
-                               new[] { "evaporator_module_solvent_recovery", "alcohol" },
-                               "mach_note_evap_beer", "任何含酒精的液体容器都能蒸出酒精")
+                    TitleKey = "mach_evap_output", TitleFallback = "蒸馏产出",
+                    Variants = new[]
+                    {
+                        // 输入 / 产出都是这些液体的条目：液体页正反查都能看到蒸发器
+                        new Recipe(entries, null, entries, null, null, 100)
+                    }
+                }
+            };
+        }
+
+        /// <summary>能蒸出的液体 id：直接读游戏的 <c>Liquid.isEvaporative</c>，不维护名单。</summary>
+        internal static List<string> EvaporativeLiquidIds()
+        {
+            var ids = new List<string>();
+
+            try
+            {
+                var liquids = Liquid.Liquids;
+                if (liquids == null) return ids;
+
+                for (int i = 0; i < liquids.Count; i++)
+                {
+                    var liquid = liquids[i];
+                    if (liquid == null || !liquid.isEvaporative) continue;
+                    if (!string.IsNullOrEmpty(liquid.identifier)) ids.Add(liquid.identifier);
                 }
             }
-        };
+            catch { }
+
+            return ids;
+        }
 
         /// <summary>
         /// 捕鼠夹：放食物后周期产出加工奶酪（并捕鼠，老鼠是活体不是配方产物）。
