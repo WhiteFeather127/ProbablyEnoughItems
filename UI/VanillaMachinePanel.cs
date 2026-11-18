@@ -202,6 +202,49 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
+        /// 造化学制剂成型机的原版窗口外壳（不含物品）。照 MachineChemFinisher.CreateMachineInventoryWindow：
+        /// 容器（单槽，原版带 water_container4 xl 底图）+ 产出（6×4 网格）。
+        /// 模块 / 电池 / 控制不参与配方展示，和搅拌机一样只保留与配方直接相关的槽。
+        /// </summary>
+        internal bool BuildChemFinisherShell()
+        {
+            try
+            {
+                _containerSlot = new GameSlotInventory();
+                _outputGrid = new GameGridInventory(6, 4);
+
+                _containerSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _outputGrid.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+
+                // 和原版 SetupWaterSlot 一致：容器槽垫一张大号液体容器底图
+                try { _containerSlot.SetBackgroundFadeSprite("Items/water_container4", "xl", 0.5f, 0.5f); }
+                catch { }
+
+                var panels = new[]
+                {
+                    MachineHelper.Panel(MechLabel("mech_chem_finisher_label_container", "容器"), _containerSlot, "container", true),
+                    MachineHelper.Panel(MechLabel("mech_chem_finisher_label_output", "产出"), _outputGrid, "output", true)
+                };
+
+                var row = new MachineryPanelRow(panels);
+                row.SetColumns(2);
+
+                _window = new PixelWindow(false, null, WindowStyle.Machinery);
+                _window.Attach(row);
+                _window.Validate();
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] chem_finisher shell size="
+                                     + _window.widthPixels + "x" + _window.heightPixels);
+                return _window != null;
+            }
+            catch (Exception e)
+            {
+                Warn("build chem_finisher shell: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// 实测面板里**内容**的真实高度（世界包围盒）。
         /// 面板的 heightPixels 含底部留白（面板行 padding / yPadding），
         /// 按 rect 高度布局会让内容只占上半部分，多出来的空白就落在面板与翻页条之间。
@@ -365,7 +408,8 @@ namespace ItemCatalog.UI
         /// 走完整流程后物品渲染节点按格子坐标摆放，tooltip 也由原版 GameItem 接管。
         /// </summary>
         internal void Fill(string[] inputs, string[] modules, string[] outputs,
-                           string purity = null, string container = null)
+                           string purity = null, string container = null,
+                           string containerLiquid = null, int containerVolume = 0)
         {
             ClearSamples();
 
@@ -379,8 +423,8 @@ namespace ItemCatalog.UI
                 if (outputs != null)
                     for (int i = 0; i < outputs.Length; i++) Accept(_outputGrid, outputs[i], purity);
 
-                // 搅拌机：容器槽放一只液体容器（默认 bottled_water），
-                // 并把投入的液体成分灌进去——否则预览出来只是一只空瓶。
+                // 搅拌机 / 化学制剂成型机：容器槽放一只液体容器（默认 bottled_water）。
+                // 搅拌机把投入的液体成分灌进去；化学制剂成型机按配方表灌入活性成分。
                 if (!string.IsNullOrEmpty(container) && _containerSlot != null)
                 {
                     var liquidContainer = CatalogWindow.CreatePreviewItem(container);
@@ -390,7 +434,9 @@ namespace ItemCatalog.UI
                     }
                     else
                     {
-                        if (inputs != null && inputs.Length > 0)
+                        if (!string.IsNullOrEmpty(containerLiquid))
+                            FillContainerPreview(liquidContainer, containerLiquid, containerVolume);
+                        else if (inputs != null && inputs.Length > 0)
                             BlendIntoPreview(liquidContainer, inputs[0]);
 
                         Accept(_containerSlot, liquidContainer);
@@ -428,6 +474,24 @@ namespace ItemCatalog.UI
             {
                 if (chemical != null) { try { chemical.Destroy(); } catch { } }
             }
+        }
+
+        /// <summary>
+        /// 按配方表把指定液体灌进容器样本（化学制剂成型机）。
+        /// 直接写液体标签，不走 AddLiquid 的随机纯度 / 温度管线——和液体管理器造代表瓶一致。
+        /// </summary>
+        private static void FillContainerPreview(GameItem container, string liquidId, int volume)
+        {
+            if (container == null || string.IsNullOrEmpty(liquidId)) return;
+            if (volume <= 0) volume = 1000;
+
+            try
+            {
+                ChemicalHelper.SetChemContentUL(container, liquidId, volume);
+                try { WaterFeatureHelper.UpdateWaterFeature(container, false); } catch { }
+                try { SpriteHelper.UpdateWaterContainerSprite(container); } catch { }
+            }
+            catch (Exception e) { Warn("fill container preview '" + liquidId + "': " + e.Message); }
         }
 
         /// <summary>当前配方预览里容器槽中的样本（没有则 null）。</summary>

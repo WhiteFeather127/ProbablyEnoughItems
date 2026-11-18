@@ -234,6 +234,14 @@ namespace ItemCatalog.UI
             internal string Container;
 
             /// <summary>
+            /// 容器里预先灌入的液体 id（化学制剂成型机用）：容器预览按这个液体装填，
+            /// 量和游戏配方表的 requiredVolume 一致（单位 1/1000 ml）。
+            /// </summary>
+            internal string ContainerLiquid;
+
+            internal int ContainerVolume;
+
+            /// <summary>
             /// 达成这一条配方还需要的模块品质加成（百分比）。
             /// 熔炉页顶部显示「需品质加成 +X%」，和下面的材料 / 助熔剂一起轮播。
             /// </summary>
@@ -241,7 +249,8 @@ namespace ItemCatalog.UI
 
             internal Recipe(string[] inputs, string[] modules, string[] outputs,
                             string noteKey, string noteFallback,
-                            int requiredQualityPercent = 0, string container = null)
+                            int requiredQualityPercent = 0, string container = null,
+                            string containerLiquid = null, int containerVolume = 0)
             {
                 Inputs = inputs ?? empty;
                 Modules = modules ?? empty;
@@ -250,6 +259,8 @@ namespace ItemCatalog.UI
                 NoteFallback = noteFallback;
                 RequiredQualityPercent = requiredQualityPercent;
                 Container = container;
+                ContainerLiquid = containerLiquid;
+                ContainerVolume = containerVolume;
             }
         }
 
@@ -565,6 +576,57 @@ namespace ItemCatalog.UI
         }
 
         private static RecipeGroup[] BlenderGroups = BuildBlenderGroups(BlenderInputs);
+
+        /// <summary>
+        /// 化学制剂成型机：配方直接读游戏公开表 <c>ChemFinisherRecipe.chemFinisherRecipes</c>
+        /// （梦尘 / 梦魇尘 / 咖啡因片 / 氰化物片 / 避孕药 / 芬太片 / 粉色注射剂）。
+        /// 每条 = 容器里装入活性成分（requiredVolume，单位 1/1000 ml）后压制成型；
+        /// 所有配方都要求容器干燥（isRequireDry）。
+        /// 投入用液体条目（liquid:*），容器槽放灌好该液体的 bottled_water。
+        /// </summary>
+        private static RecipeGroup[] BuildChemFinisherGroups()
+        {
+            var groups = new List<RecipeGroup>();
+
+            try
+            {
+                var list = ChemFinisherRecipe.chemFinisherRecipes;
+                if (list == null) return groups.ToArray();
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var recipe = list[i];
+                    if (recipe == null || string.IsNullOrEmpty(recipe.identifier)) continue;
+
+                    string liquid = recipe.activeIngredientId;
+                    string[] inputs = string.IsNullOrEmpty(liquid)
+                        ? empty
+                        : new[] { LiquidCatalog.EntryPrefix + liquid };
+
+                    groups.Add(new RecipeGroup
+                    {
+                        TitleItemId = recipe.identifier,
+                        TitleKey = "mach_chem_finisher_recipe",
+                        TitleFallback = "化学制剂",
+                        Variants = new[]
+                        {
+                            new Recipe(inputs, null, new[] { recipe.identifier },
+                                       null, null, 0, LiquidManager.ContainerId,
+                                       liquid, recipe.requiredVolume)
+                        }
+                    });
+                }
+            }
+            catch (Exception e)
+            {
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Warning("[chem-finisher] recipes: " + e.Message);
+            }
+
+            return groups.ToArray();
+        }
+
+        private static readonly RecipeGroup[] ChemFinisherGroups = BuildChemFinisherGroups();
 
         /// <summary>
         /// 自动补齐可搅拌清单：扫描目录快照里每件物品的 BLENDABLE_TAG，
@@ -916,7 +978,8 @@ namespace ItemCatalog.UI
                 { "furnace", FurnaceGroups },
                 { "evaporator", EvaporatorGroups },
                 { "mouse_trap", MouseTrapGroups },
-                { "blender", BlenderGroups }
+                { "blender", BlenderGroups },
+                { "chem_finisher", ChemFinisherGroups }
             };
 
         /// <summary>这台机器的静态产出配方组；没有静态数据时返回 null。</summary>

@@ -2812,7 +2812,7 @@ namespace ItemCatalog.UI
         /// 把对应的机器配方组加进来。只收录有原版面板外壳的机器
         /// （熔炉、搅拌机）；新增机器时把 id 加进 <see cref="KnownMachines"/>。
         /// </summary>
-        private static readonly string[] KnownMachines = { "furnace", "blender" };
+        private static readonly string[] KnownMachines = { "furnace", "blender", "chem_finisher" };
 
         private static void AddMachineRecipeCategories()
         {
@@ -3660,6 +3660,8 @@ namespace ItemCatalog.UI
                 built = _vanillaMachine.BuildFurnaceShell();
             else if (string.Equals(machineId, "blender", StringComparison.Ordinal))
                 built = _vanillaMachine.BuildBlenderShell();
+            else if (string.Equals(machineId, "chem_finisher", StringComparison.Ordinal))
+                built = _vanillaMachine.BuildChemFinisherShell();
 
             if (!built)
             {
@@ -3677,9 +3679,9 @@ namespace ItemCatalog.UI
             // WindowChrome、顶部行、翻页条与间距，剩下的全给面板。
             float panelMaxH = MaxMachinePanelHeight();
 
-            // 搅拌机在面板下面还要写成分，先把这部分高度留出来
-            if (string.Equals(machineId, "blender", StringComparison.Ordinal))
-                panelMaxH -= BlenderCompositionHeight(recipe);
+            // 搅拌机 / 化学制剂成型机在面板下面还要写成分，先把这部分高度留出来
+            if (HasMachineComposition(machineId))
+                panelMaxH -= MachineCompositionHeight(recipe);
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
@@ -3720,8 +3722,8 @@ namespace ItemCatalog.UI
             FillVanillaMachine(recipe, group.Purity);
             _vanillaMachine.HighlightItem(_entry == null ? null : _entry.Id);
 
-            // 搅拌机：面板下面按成分检测器的格式列出液体成分（一行一种 + 总体积）
-            if (string.Equals(machineId, "blender", StringComparison.Ordinal))
+            // 搅拌机 / 化学制剂成型机：面板下面按成分检测器的格式列出液体成分（一行一种 + 总体积）
+            if (HasMachineComposition(machineId))
             {
                 // 成分随品质变化的化学产品（药）只写总量 + 主要成分名
                 bool summaryOnly = IsVariableCompositionDrug(recipe);
@@ -3742,15 +3744,26 @@ namespace ItemCatalog.UI
         }
 
 
+        /// <summary>哪些机器的面板下面还要列容器成分（容器里真有液体可读）。</summary>
+        private static bool HasMachineComposition(string machineId)
+        {
+            return string.Equals(machineId, "blender", StringComparison.Ordinal)
+                   || string.Equals(machineId, "chem_finisher", StringComparison.Ordinal);
+        }
+
         /// <summary>
-        /// 搅拌机成分区高度：第一行总体积 + 每种液体一行（字号 15）。
-        /// 化学产品只写总量 + 主要成分名，固定两行。
+        /// 机器成分区高度：第一行总体积 + 每种液体一行（字号 15）。
+        /// 化学产品只写总量 + 主要成分名，固定两行；化学制剂成型机按配方表只灌一种活性成分，也是两行。
         /// </summary>
-        private static float BlenderCompositionHeight(MachinePanels.Recipe recipe)
+        private static float MachineCompositionHeight(MachinePanels.Recipe recipe)
         {
             int lines;
 
-            if (IsVariableCompositionDrug(recipe))
+            if (recipe != null && !string.IsNullOrEmpty(recipe.ContainerLiquid))
+            {
+                lines = 2;
+            }
+            else if (IsVariableCompositionDrug(recipe))
             {
                 lines = 2;
             }
@@ -3857,7 +3870,8 @@ namespace ItemCatalog.UI
         private static void FillVanillaMachine(MachinePanels.Recipe recipe, string purity = null)
         {
             if (_vanillaMachine == null || recipe == null) return;
-            _vanillaMachine.Fill(recipe.Inputs, recipe.Modules, recipe.Outputs, purity, recipe.Container);
+            _vanillaMachine.Fill(recipe.Inputs, recipe.Modules, recipe.Outputs, purity,
+                                 recipe.Container, recipe.ContainerLiquid, recipe.ContainerVolume);
         }
 
         private static void RenderMachineRecipeStrip(MachineRecipeStrip strip)
