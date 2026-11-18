@@ -835,16 +835,6 @@ namespace ItemCatalog.UI
             _categories = new List<Category>();
             if (_entry == null) return;
 
-            // 液体条目（搜索里代表液体的瓶子）：来源 = 有效成分为它的化学产品。
-            // 第一版只做这一条关系，其它分类对合成 id 没有意义。
-            if (LiquidCatalog.IsLiquidEntry(_entry.Id))
-            {
-                var liquidUses = LiquidCatalog.SourceUses(_entry.Id);
-                if (liquidUses.Count > 0)
-                    _categories.Add(new Category { Kind = CatUse, Uses = liquidUses });
-                return;
-            }
-
             // 同一套大类，**页面内容按打开方向取**：左键=来源方向（谁卖它 / 从哪得到它），
             // 右键=用途方向（谁收它 / 它参与什么）。方向标注（ApplyDirectionLabel）
             // 与之一致。两个方向查到的是同一个页面结构，内容各是各的。
@@ -3302,63 +3292,28 @@ namespace ItemCatalog.UI
             }
 
             builder.AddLabel(ModEntry.T("rec_result"), "rec_result");
+            RenderItemGrid(builder, use.Produces, 700);
 
             if (string.Equals(use.Kind, "dissolve", StringComparison.Ordinal))
             {
-                // 可溶化学品：画一只灌好成分的瓶子 + 成分文本
-                RenderDissolveResult(builder, use);
-            }
-            else
-            {
-                RenderItemGrid(builder, use.Produces, 700);
-
-                if (!string.IsNullOrEmpty(use.Note))
-                    builder.AddLabel(ModEntry.T(use.Note), "use_note");
-            }
-        }
-
-        /// <summary>
-        /// 可溶化学品的去处页：用液体管理器的默认容器装好成分并画出来，
-        /// 下面写和搅拌机相同的成分文本（第一行总体积，之后各成分/主要成分名）。
-        /// </summary>
-        private static void RenderDissolveResult(CustomUIBuilder builder, UseInfo use)
-        {
-            string id = use != null && use.Sources != null && use.Sources.Length > 0
-                ? use.Sources[0] : null;
-
-            // 产物就是代表该液体主成分的液体条目：和窗口里其他物品一样，
-            // 直接调 RenderGoods（内部走目录条目 + CompositeIconFor + BindCell）。
-            string liquidEntry = CatalogWindow.LiquidEntryIdForChemical(id);
-            if (string.IsNullOrEmpty(liquidEntry)) return;
-
-            // 单格也要占一个和网格格子一样的正方形：RenderGoods 里的 FitIcon
-            // 会按精灵真实比例算宽高，容器精灵是长方形，不套方框就会把布局撑成长条。
-            builder.BeginColumn(0f, UnityEngine.TextAnchor.MiddleCenter);
-            var cellBox = builder.CurrentContainer;
-            if (cellBox != null)
-            {
-                var boxLayout = EnsureLayoutElement(cellBox);
-                boxLayout.minWidth = CellWidth;
-                boxLayout.preferredWidth = CellWidth;
-                boxLayout.minHeight = CellHeight;
-                boxLayout.preferredHeight = CellHeight;
-                boxLayout.flexibleWidth = 0f;
-                boxLayout.flexibleHeight = 0f;
-            }
-
-            RenderGoods(builder, liquidEntry, false, 9000, false);
-            builder.End();
-
-            string composition = CatalogWindow.DissolveComposition(id);
-            if (!string.IsNullOrEmpty(composition))
-            {
-                builder.AddLabel(composition, "use_dissolve_composition");
-                var label = builder.Last;
-                if (label != null && label.text != null)
+                // 两个方向共用同一份内容：产物的成分说明
+                string product = use.Produces != null && use.Produces.Length > 0
+                    ? use.Produces[0] : null;
+                string composition = CatalogWindow.LiquidComposition(product);
+                if (!string.IsNullOrEmpty(composition))
                 {
-                    label.text.fontSize = 13f;
-                    label.text.alignment = TextAlignmentOptions.Left;
+                    builder.AddLabel(composition, "use_dissolve_composition");
+                    var label = builder.Last;
+                    if (label != null && label.text != null)
+                    {
+                        label.text.fontSize = 13f;
+                        label.text.alignment = TextAlignmentOptions.Left;
+                    }
                 }
+            }
+            else if (!string.IsNullOrEmpty(use.Note))
+            {
+                builder.AddLabel(ModEntry.T(use.Note), "use_note");
             }
         }
 

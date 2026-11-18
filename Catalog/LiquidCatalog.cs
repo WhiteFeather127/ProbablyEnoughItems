@@ -130,40 +130,6 @@ namespace ItemCatalog.Catalog
         }
 
         /// <summary>
-        /// 这种液体的来源：第一版只收化学产品（药）里有效成分为它的物品。
-        /// 生成一条「药 → 液体瓶」的使用记录，来源页就能从液体查到药。
-        /// </summary>
-        internal static List<UseInfo> SourceUses(string liquidEntryId)
-        {
-            var result = new List<UseInfo>();
-            if (!IsLiquidEntry(liquidEntryId)) return result;
-
-            string liquidId = liquidEntryId.Substring(EntryPrefix.Length);
-            LiquidManager.TagItems();
-
-            var items = CatalogDataBuilder.Visible;
-
-            for (int i = 0; i < items.Count; i++)
-            {
-                var entry = items[i];
-                var item = entry == null ? null : entry.Item;
-                if (item == null) continue;
-
-                // 物品管理器里的液体标签（不是游戏标签）
-                if (!string.Equals(entry.LiquidTag, liquidId, StringComparison.Ordinal)) continue;
-
-                result.Add(new UseInfo
-                {
-                    Sources = new[] { entry.Id },
-                    Kind = "extract",
-                    Produces = new[] { liquidEntryId }
-                });
-            }
-
-            return result;
-        }
-
-        /// <summary>
         /// 物品管理器里这种液体的代表总量：取所有主成分为它的物品里最大的那份
         /// （例如避孕药里的 1 ml 避孕激素），没有来源时退回 1 ml。
         /// </summary>

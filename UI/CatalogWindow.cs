@@ -437,7 +437,6 @@ namespace ItemCatalog.UI
             _compositeSprites.Clear();
             _compositeByCell.Clear();
             DestroyCompositeStage();
-            _dissolveText.Clear();
             LiquidCatalog.Reset();
 
             _window = null;
@@ -3164,87 +3163,17 @@ namespace ItemCatalog.UI
 
         // ------------------------------------------------------- 容器成分
 
-        /// <summary>可溶化学品 → 代表它的液体条目 id（主成分的瓶子）。</summary>
-        internal static string LiquidEntryIdForChemical(string chemicalId)
-        {
-            var entry = RecipeIndex.FindEntry(chemicalId);
-            if (entry == null) return null;
-
-            LiquidManager.TagItems();
-
-            string liquidId = entry.LiquidTag;
-            return string.IsNullOrEmpty(liquidId) ? null : LiquidCatalog.EntryPrefix + liquidId;
-        }
-
-        private static readonly Dictionary<string, string> _dissolveText =
-            new Dictionary<string, string>(StringComparer.Ordinal);
-
         /// <summary>
-        /// 使用页成分文本：化学产品按实验室纯级取成分（和搅拌机一致），
-        /// 其它可溶物直接读自己的液体标签。
+        /// 液体条目的成分说明（两个方向共用）：第一行总体积，第二行液体名。
+        /// 直接读 LiquidCatalog 的代表瓶子，不再从化学品现造实例。
         /// </summary>
-        internal static string DissolveComposition(string chemicalId)
+        internal static string LiquidComposition(string liquidEntryId)
         {
-            if (string.IsNullOrEmpty(chemicalId)) return null;
+            var entry = LiquidCatalog.Find(liquidEntryId);
+            var item = entry == null ? null : entry.Item;
+            if (item == null) return null;
 
-            string cached;
-            if (_dissolveText.TryGetValue(chemicalId, out cached)) return cached;
-
-            string text = null;
-
-            if (IsFullPurityItem(chemicalId))
-            {
-                string mainName;
-                var bottle = CreateDissolveBottle(chemicalId, true, out mainName);
-                if (bottle != null)
-                {
-                    text = FormatContainerComposition(bottle, true, mainName);
-                    try { bottle.Destroy(); } catch { }
-                }
-            }
-            else
-            {
-                var entry = RecipeIndex.FindEntry(chemicalId);
-                var item = entry == null ? null : entry.Item;
-                text = FormatContainerComposition(item, false, null);
-            }
-
-            _dissolveText[chemicalId] = text;
-            return text;
-        }
-
-        /// <summary>造一只真正装入化学品的默认容器（成分计算用，用完销毁）。</summary>
-        private static GameItem CreateDissolveBottle(string chemicalId, bool fullPurity, out string mainName)
-        {
-            mainName = null;
-            GameItem bottle = null;
-            GameItem chemical = null;
-            try
-            {
-                bottle = CreatePreviewItem(LiquidManager.ContainerId);
-                if (bottle == null) return null;
-
-                chemical = CreatePreviewItem(chemicalId);
-                if (chemical == null) { bottle.Destroy(); return null; }
-                if (!chemical.IsTag("SOLUBLE_TAG")) { chemical.Destroy(); bottle.Destroy(); return null; }
-
-                if (fullPurity)
-                {
-                    ApplyFullPurity(chemical, chemicalId);
-                    mainName = MainIngredientName(chemical);
-                }
-
-                ChemicalHelper.DissolveInto(chemical, bottle);
-                chemical = null;   // DissolveInto 内部已经 Destroy
-                return bottle;
-            }
-            catch (Exception e)
-            {
-                Warn("dissolve bottle '" + chemicalId + "': " + e.Message);
-                if (chemical != null) { try { chemical.Destroy(); } catch { } }
-                if (bottle != null) { try { bottle.Destroy(); } catch { } }
-                return null;
-            }
+            return FormatContainerComposition(item, true, entry.DisplayName);
         }
 
         /// <summary>
@@ -3315,19 +3244,6 @@ namespace ItemCatalog.UI
             }
 
             return sb.ToString();
-        }
-
-        /// <summary>有效成分名：游戏把液体 id 写在 ACTIVATE_INGREDIENT_TAG。</summary>
-        internal static string MainIngredientName(GameItem item)
-        {
-            if (item == null) return null;
-
-            try
-            {
-                string liquidId = item.GetTagReadonly("ACTIVATE_INGREDIENT_TAG").GetString();
-                return string.IsNullOrEmpty(liquidId) ? null : LiquidName(liquidId);
-            }
-            catch { return null; }
         }
 
         // ------------------------------------------------------- 容器成分

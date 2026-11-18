@@ -198,10 +198,12 @@ namespace ItemCatalog.Catalog
         /// <summary>
         /// 可溶化学品 → 液体容器：游戏里直接对容器使用就会溶进去（DissolveInto），
         /// 按 SOLUBLE_TAG 自动补一条使用记录，模组新增的可溶物品也会自动收录。
-        /// 渲染时使用页会画一只灌好成分的瓶子（见 RecipeWindow.RenderDissolveResult）。
+        /// 记录同时登记在来源（药）与产物（液体瓶）两侧，两个方向查到的是同一条。
         /// </summary>
         private static void AppendDissolveUses()
         {
+            LiquidManager.TagItems();
+
             var items = CatalogDataBuilder.Visible;
             if (items == null) return;
 
@@ -218,18 +220,29 @@ namespace ItemCatalog.Catalog
 
                 if (HasDissolveUse(entry.Id)) continue;
 
+                // 产物 = 代表该液体主成分的液体条目，两个方向查到的都是同一条记录
+                string product = string.IsNullOrEmpty(entry.LiquidTag)
+                    ? null
+                    : LiquidCatalog.EntryPrefix + entry.LiquidTag;
+
                 var info = new UseInfo
                 {
                     Sources = new[] { entry.Id },
                     SourceTags = new string[0],
                     Kind = "dissolve",
-                    Produces = new string[0],
+                    Produces = string.IsNullOrEmpty(product) ? new string[0] : new[] { product },
                     Note = null
                 };
 
                 _all.Add(info);
                 Append(_using, entry.Id, info);
                 AppendAlias(_using, entry.Id, info);
+
+                if (!string.IsNullOrEmpty(product))
+                {
+                    Append(_producing, product, info);
+                    AppendAlias(_producing, product, info);
+                }
             }
         }
 
