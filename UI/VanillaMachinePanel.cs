@@ -686,6 +686,23 @@ namespace ItemCatalog.UI
             }
         }
 
+        /// <summary>成分反应页产物槽里的样本（没有则 null）。</summary>
+        internal GameItem ProductSample
+        {
+            get
+            {
+                if (_productSlot == null) return null;
+
+                for (int i = 0; i < _samples.Count; i++)
+                {
+                    var it = _samples[i];
+                    if (it != null && it.parentInventory == _productSlot) return it;
+                }
+
+                return null;
+            }
+        }
+
         private bool AllowOnlyWhileFilling(GameItem item, GameInventory inventory)
         {
             return _filling;

@@ -22,6 +22,9 @@ namespace ItemCatalog.Catalog
         internal string Solvent;
         internal bool SolventIsCatalyst;
 
+        /// <summary>达到最佳效率所需的溶剂量（ml，和反应物一起装进容器）。</summary>
+        internal float SolventMl;
+
         internal float TempMin;    // °C；0 = 常温
         internal float TempMax;    // °C；<=0 = 只有下限
 
@@ -53,6 +56,7 @@ namespace ItemCatalog.Catalog
     /// <summary>
     /// 液体之间的全部成分反应。数据抄自 ChemicalHelper 的 Handle* 规则：
     /// 只用公开可见的液体 identifier，不依赖任何 id 猜测。
+    /// 溶剂 / 催化剂的量取「达到最佳效率所需的最小量」，展示时和反应物一起装进容器。
     /// </summary>
     internal static class LiquidReactions
     {
@@ -90,73 +94,73 @@ namespace ItemCatalog.Catalog
                 // 蛋白质 + 过量酸/碱 → 残渣（蛋白质 1:1 变性，多余的酸被消耗）
                 R("protein", new[] { "protein", "acid" }, new[] { 10f, 10f },
                   new[] { "debris" }, new[] { 10f },
-                  null, false, 0f, 0f,
+                  null, false, 0f, 0f, 0f,
                   "react_cond_excess", "酸/碱过量时发生"),
 
                 // 稳定剂 + 酸/碱 → 残渣（酸/碱都行）
                 R("stabilizer", new[] { "stabilizing_agent", "acid" }, new[] { 10f, 10f },
                   new[] { "debris" }, new[] { 10f },
-                  null, false, 0f, 0f,
+                  null, false, 0f, 0f, 0f,
                   "react_cond_acid_or_base", "酸或碱均可"),
 
-                // 有机废物矿化：废物 → 矿物（酸/碱作催化剂）
+                // 有机废物矿化：废物 → 矿物（酸作催化剂，1 酸 : 40 废物）
                 R("mineralize", new[] { "organic_waste" }, new[] { 10f },
                   new[] { "mineral" }, new[] { 1f },
-                  "acid", true, 0f, 0f,
+                  "acid", true, 0.25f, 0f, 0f,
                   null, null),
 
-                // 咖啡菇 + 酒精 → 咖啡因（溶剂萃取，效率上限 75%）
+                // 咖啡菇 + 酒精 → 咖啡因（每 tick 处理 1.5ml，溶剂最佳量 = 5 × 1.5ml）
                 R("coffee_alcohol", new[] { "coffee_mush" }, new[] { 10f },
                   new[] { "caffeine", "plant_matter" }, new[] { 7.5f, 2.5f },
-                  "alcohol", false, 50f, 0f,
+                  "alcohol", false, 7.5f, 50f, 0f,
                   "react_cond_solvent_ratio", "溶剂足量（≥5:1）"),
 
-                // 咖啡菇 + 水 → 咖啡因（效率上限 12.5%）
+                // 咖啡菇 + 水 → 咖啡因（每 tick 处理 0.5ml，水最佳量 = 5 × 0.5ml）
                 R("coffee_water", new[] { "coffee_mush" }, new[] { 10f },
                   new[] { "caffeine", "plant_matter" }, new[] { 1.25f, 8.75f },
-                  "water", false, 80f, 0f,
+                  "water", false, 2.5f, 80f, 0f,
                   "react_cond_solvent_ratio", "水足量（≥5:1）"),
 
-                // 梦帽菇 + 酒精 → 梦帽提取物（效率上限 50%）
+                // 梦帽菇 + 酒精 → 梦帽提取物（比例按整份菇算，最佳量 = 5 × 10ml）
                 R("dream_alcohol", new[] { "dream_cap_mush" }, new[] { 10f },
                   new[] { "dream_cap_extract", "plant_matter" }, new[] { 5f, 5f },
-                  "alcohol", false, 40f, 0f,
+                  "alcohol", false, 50f, 40f, 0f,
                   "react_cond_solvent_ratio", "酒精足量（≥5:1）"),
 
-                // 梦魇菇 + 酒精 → 梦魇提取物（效率上限 50%）
+                // 梦魇菇 + 酒精 → 梦魇提取物
                 R("nightmare_alcohol", new[] { "nightmare_cap_mush" }, new[] { 10f },
                   new[] { "nightmare_extract", "plant_matter" }, new[] { 5f, 5f },
-                  "alcohol", false, 40f, 0f,
+                  "alcohol", false, 50f, 40f, 0f,
                   "react_cond_solvent_ratio", "酒精足量（≥5:1）"),
 
-                // nomore：梦帽提取物 + 还原剂（脂粘合剂催化）→ 60% nomore + 40% 残渣
+                // nomore：梦帽提取物 + 还原剂，脂粘合剂最佳量 = 提取物 / 4
                 R("nomore", new[] { "dream_cap_extract", "reducing_agent" }, new[] { 10f, 10f },
                   new[] { "nomore", "debris" }, new[] { 6f, 4f },
-                  "lipobond_agent", true, 45f, 55f,
+                  "lipobond_agent", true, 2.5f, 45f, 55f,
                   "react_cond_nomore_alcohol", "酒精 ≤ 总体积 10%"),
 
                 // 芬达：甲基醇 + 还原剂 → 10% 芬达（还原剂消耗 75%）
                 R("fanta", new[] { "methylol", "reducing_agent" }, new[] { 10f, 7.5f },
                   new[] { "fanta" }, new[] { 1f },
-                  null, false, 110f, 130f,
+                  null, false, 0f, 110f, 130f,
                   "react_cond_fanta_order", "甲基醇 > 稳定剂"),
 
                 // 梦帽菇受热分解 → 植物纤维
                 R("dream_mush_heat", new[] { "dream_cap_mush" }, new[] { 10f },
                   new[] { "plant_matter" }, new[] { 10f },
-                  null, false, 50f, 0f,
+                  null, false, 0f, 50f, 0f,
                   null, null),
 
                 // 梦魇菇受热分解 → 植物纤维
                 R("nightmare_mush_heat", new[] { "nightmare_cap_mush" }, new[] { 10f },
                   new[] { "plant_matter" }, new[] { 10f },
-                  null, false, 50f, 0f,
+                  null, false, 0f, 50f, 0f,
                   null, null),
 
                 // 有机废物受热焦化 → 物理污染物（处理量的 33%）
                 R("waste_heat", new[] { "organic_waste" }, new[] { 10f },
                   new[] { "physical_contaminant" }, new[] { 3.3f },
-                  null, false, 80f, 0f,
+                  null, false, 0f, 80f, 0f,
                   "react_cond_waste_full", "≥100 °C 时全部转化")
             };
         }
@@ -164,7 +168,7 @@ namespace ItemCatalog.Catalog
         private static LiquidReaction R(string id,
             string[] reactants, float[] reactantMl,
             string[] products, float[] productMl,
-            string solvent, bool catalyst,
+            string solvent, bool catalyst, float solventMl,
             float tempMin, float tempMax,
             string conditionKey, string conditionFallback)
         {
@@ -177,6 +181,7 @@ namespace ItemCatalog.Catalog
                 ProductMl = productMl ?? new float[0],
                 Solvent = solvent,
                 SolventIsCatalyst = catalyst,
+                SolventMl = solventMl,
                 TempMin = tempMin,
                 TempMax = tempMax,
                 ConditionKey = conditionKey,

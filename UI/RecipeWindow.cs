@@ -3321,11 +3321,12 @@ namespace ItemCatalog.UI
         /// 使用页与搅拌机页共用这一份渲染。
         /// </summary>
         private static void RenderLiquidComposition(CustomUIBuilder builder,
-                                                    List<LiquidManager.Component> components)
+                                                    List<LiquidManager.Component> components,
+                                                    string idPrefix = "use_")
         {
             if (components == null || components.Count == 0) return;
 
-            builder.AddLabel(LiquidManager.TotalText(components[0].Total), "use_dissolve_total");
+            builder.AddLabel(LiquidManager.TotalText(components[0].Total), idPrefix + "dissolve_total");
             SetCompositionFont(builder.Last);
 
             for (int i = 0; i < components.Count; i++)
@@ -3334,7 +3335,7 @@ namespace ItemCatalog.UI
 
                 builder.BeginRow(2f, TextAnchor.MiddleLeft);
 
-                builder.AddLabel("<u>" + component.Name + "</u>", "use_comp_name" + i);
+                builder.AddLabel("<u>" + component.Name + "</u>", idPrefix + "comp_name" + i);
                 var nameLabel = builder.Last;
                 SetCompositionFont(nameLabel);
                 AttachLiquidLookup(nameLabel, component.Id);
@@ -3347,7 +3348,7 @@ namespace ItemCatalog.UI
                     builder.AddLabel(
                         ": " + WaterScannerUIManager.FormatAmount(component.Amount)
                         + " (" + pct.ToString("0.##") + "%)",
-                        "use_comp_value" + i);
+                        idPrefix + "comp_value" + i);
                     SetCompositionFont(builder.Last);
                 }
 
@@ -3912,15 +3913,13 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 一条成分反应：上面一行「反应物 → 产物」，下面原版面板三列：
-        /// 左 = 反应物容器，中 = 温度 / 溶剂 / 条件，右 = 产物容器。
-        /// 用量按 10 ml 单位体积灌进容器，容器提示框里能看到各自的毫升数。
+        /// 一条成分反应：原版面板三列——左 = 反应物容器，中 = 温度 / 溶剂 / 条件，右 = 产物容器。
+        /// 反应物容器里按 10 ml 基准连同最佳量溶剂一起灌入；
+        /// 面板下面左右两列分别用液体管理器列出两侧容器的成分。
         /// </summary>
         private static void RenderReactionPage(CustomUIBuilder builder, LiquidReaction reaction)
         {
             if (reaction == null) return;
-
-            builder.AddLabel(ReactionEquation(reaction), "react_eq");
 
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaMachine = new VanillaMachinePanel();
@@ -3933,7 +3932,12 @@ namespace ItemCatalog.UI
                 return;
             }
 
-            float panelMaxH = MaxMachinePanelHeight();
+            string[] reactantIds;
+            float[] reactantMl;
+            BuildReactionInputs(reaction, out reactantIds, out reactantMl);
+
+            // 面板下面还要写两侧成分，先留出这部分高度
+            float panelMaxH = MaxMachinePanelHeight() - ReactionCompositionHeight(reaction);
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
@@ -3962,32 +3966,61 @@ namespace ItemCatalog.UI
                 hostLe.flexibleHeight = 0f;
             }
 
-            _vanillaMachine.FillReaction(reaction.Reactants, reaction.ReactantMl,
+            _vanillaMachine.FillReaction(reactantIds, reactantMl,
                                          reaction.Products, reaction.ProductMl);
+
+            // 两个容器下面分别列成分：左 = 反应物，右 = 产物
+            builder.BeginRow(12f, UnityEngine.TextAnchor.UpperLeft);
+
+            builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
+            RenderLiquidComposition(builder, LiquidManager.Components(_vanillaMachine.ContainerSample),
+                                    "react_in_");
+            builder.End();
+
+            builder.AddFlexibleSpace();
+
+            builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
+            RenderLiquidComposition(builder, LiquidManager.Components(_vanillaMachine.ProductSample),
+                                    "react_out_");
+            builder.End();
+
+            builder.End();
         }
 
-        private static string ReactionEquation(LiquidReaction reaction)
+        /// <summary>反应物 + 最佳量溶剂 / 催化剂，一起装进左侧容器。</summary>
+        private static void BuildReactionInputs(LiquidReaction reaction,
+                                                out string[] ids, out float[] ml)
         {
-            var sb = new System.Text.StringBuilder();
-            AppendReactionSide(sb, reaction.Reactants, reaction.ReactantMl);
-            sb.Append("  →  ");
-            AppendReactionSide(sb, reaction.Products, reaction.ProductMl);
-            return sb.ToString();
-        }
+            var idList = new List<string>();
+            var mlList = new List<float>();
 
-        private static void AppendReactionSide(System.Text.StringBuilder sb, string[] ids, float[] ml)
-        {
-            if (ids == null) return;
+            if (reaction.Reactants != null)
+                for (int i = 0; i < reaction.Reactants.Length; i++)
+                {
+                    idList.Add(reaction.Reactants[i]);
+                    mlList.Add(reaction.ReactantMl != null && i < reaction.ReactantMl.Length
+                        ? reaction.ReactantMl[i] : 0f);
+                }
 
-            for (int i = 0; i < ids.Length; i++)
+            if (!string.IsNullOrEmpty(reaction.Solvent) && reaction.SolventMl > 0f)
             {
-                if (i > 0) sb.Append(" + ");
-                sb.Append(LiquidManager.NameOf(ids[i]));
-
-                float amount = ml != null && i < ml.Length ? ml[i] : 0f;
-                if (amount > 0f)
-                    sb.Append(' ').Append(WaterScannerUIManager.FormatAmount(Mathf.RoundToInt(amount * 1000f)));
+                idList.Add(reaction.Solvent);
+                mlList.Add(reaction.SolventMl);
             }
+
+            ids = idList.ToArray();
+            ml = mlList.ToArray();
+        }
+
+        /// <summary>面板下面两侧成分区的高度（左右并排，取行数多的一侧）。</summary>
+        private static float ReactionCompositionHeight(LiquidReaction reaction)
+        {
+            int left = (reaction.Reactants == null ? 0 : reaction.Reactants.Length)
+                       + (string.IsNullOrEmpty(reaction.Solvent) || reaction.SolventMl <= 0f ? 0 : 1)
+                       + 1;   // 总体积
+            int right = (reaction.Products == null ? 0 : reaction.Products.Length) + 1;
+
+            return Mathf.Max(left, right) * 20f + 6f;
         }
 
         /// <summary>中间那列的条件：温度、溶剂 / 催化剂、额外条件。</summary>
