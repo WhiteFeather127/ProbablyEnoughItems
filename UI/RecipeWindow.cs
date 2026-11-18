@@ -3331,7 +3331,7 @@ namespace ItemCatalog.UI
             string liquidEntry = CatalogWindow.LiquidEntryIdForChemical(id);
             if (string.IsNullOrEmpty(liquidEntry)) return;
 
-            RenderGoods(builder, liquidEntry, false, 9000, false, null, 56f);
+            RenderGoods(builder, liquidEntry, false, 9000, false);
 
             string composition = CatalogWindow.DissolveComposition(id);
             if (!string.IsNullOrEmpty(composition))
