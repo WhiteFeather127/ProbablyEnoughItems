@@ -3682,7 +3682,7 @@ namespace ItemCatalog.UI
             // WindowChrome、顶部行、翻页条与间距，剩下的全给面板。
             float panelMaxH = MaxMachinePanelHeight();
 
-            // 搅拌机 / 化学制剂成型机在面板下面还要写成分，先把这部分高度留出来
+            // 搅拌机 / 化学制剂成型机 / 蒸发器在面板下面还要写成分，先把这部分高度留出来
             if (HasMachineComposition(machineId))
                 panelMaxH -= MachineCompositionHeight(recipe);
 
@@ -3725,7 +3725,7 @@ namespace ItemCatalog.UI
             FillVanillaMachine(recipe, group.Purity);
             _vanillaMachine.HighlightItem(_entry == null ? null : _entry.Id);
 
-            // 搅拌机 / 化学制剂成型机：面板下面按成分检测器的格式列出液体成分（一行一种 + 总体积）
+            // 搅拌机 / 化学制剂成型机 / 蒸发器：面板下面按成分检测器的格式列出液体成分（一行一种 + 总体积）
             if (HasMachineComposition(machineId))
             {
                 // 成分随品质变化的化学产品（药）只写总量 + 主要成分名
@@ -3751,12 +3751,14 @@ namespace ItemCatalog.UI
         private static bool HasMachineComposition(string machineId)
         {
             return string.Equals(machineId, "blender", StringComparison.Ordinal)
-                   || string.Equals(machineId, "chem_finisher", StringComparison.Ordinal);
+                   || string.Equals(machineId, "chem_finisher", StringComparison.Ordinal)
+                   || string.Equals(machineId, "evaporator", StringComparison.Ordinal);
         }
 
         /// <summary>
         /// 机器成分区高度：第一行总体积 + 每种液体一行（字号 15）。
-        /// 化学产品只写总量 + 主要成分名，固定两行；化学制剂成型机按配方表只灌一种活性成分，也是两行。
+        /// 化学产品只写总量 + 主要成分名，固定两行；
+        /// 化学制剂成型机 / 蒸发器按配方只灌一种液体，也是两行。
         /// </summary>
         private static float MachineCompositionHeight(MachinePanels.Recipe recipe)
         {
