@@ -3331,7 +3331,23 @@ namespace ItemCatalog.UI
             string liquidEntry = CatalogWindow.LiquidEntryIdForChemical(id);
             if (string.IsNullOrEmpty(liquidEntry)) return;
 
+            // 单格也要占一个和网格格子一样的正方形：RenderGoods 里的 FitIcon
+            // 会按精灵真实比例算宽高，容器精灵是长方形，不套方框就会把布局撑成长条。
+            builder.BeginColumn(0f, UnityEngine.TextAnchor.MiddleCenter);
+            var cellBox = builder.CurrentContainer;
+            if (cellBox != null)
+            {
+                var boxLayout = EnsureLayoutElement(cellBox);
+                boxLayout.minWidth = CellWidth;
+                boxLayout.preferredWidth = CellWidth;
+                boxLayout.minHeight = CellHeight;
+                boxLayout.preferredHeight = CellHeight;
+                boxLayout.flexibleWidth = 0f;
+                boxLayout.flexibleHeight = 0f;
+            }
+
             RenderGoods(builder, liquidEntry, false, 9000, false);
+            builder.End();
 
             string composition = CatalogWindow.DissolveComposition(id);
             if (!string.IsNullOrEmpty(composition))
