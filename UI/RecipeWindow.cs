@@ -3374,11 +3374,15 @@ namespace ItemCatalog.UI
 
                 builder.BeginRow(2f, TextAnchor.MiddleLeft);
 
-                builder.AddLabel(MarkLiquidName(LiquidManager.NameOf(component.Id), false),
+                builder.AddLabel("<u>" + LiquidManager.NameOf(component.Id) + "</u>",
                                  idPrefix + "comp_name" + i);
                 var nameLabel = builder.Last;
                 SetCompositionFont(nameLabel);
                 AttachLiquidLookup(nameLabel, component.Id);
+
+                // 和物品一致：只有当前正在检索的那种液体才垫绿底
+                if (string.Equals(component.Id, QueryLiquidId(), StringComparison.Ordinal))
+                    AddLiquidNameBackground(builder, nameLabel);
 
                 // Summary 行只写名字（化学产品的详细成分不适合逐种列出）
                 if (!component.Summary)
@@ -3978,7 +3982,7 @@ namespace ItemCatalog.UI
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaMachine = new VanillaMachinePanel();
 
-            if (!_vanillaMachine.BuildReactionShell(ReactionConditionLines(reaction)))
+            if (!_vanillaMachine.BuildReactionShell(ReactionConditionLines(reaction), QueryLiquidId()))
             {
                 if (ModEntry.Log != null) ModEntry.Log.Warning("[reaction] build failed");
                 _vanillaMachine.Destroy();
@@ -4149,74 +4153,70 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 条件里的液体名：link（可点击）+ 和成分行共用的绿底下划线标记，名字由液体管理器提供。
+        /// 条件里的液体名：link（可点击）+ 下划线，名字由液体管理器提供。
+        /// 绿底由 ConditionLinkHandler 单独画，避免富文本底纹改掉字体颜色。
         /// </summary>
         private static string ConditionLiquidName(string liquidId)
         {
             return "<link=\"" + LiquidCatalog.EntryPrefix + liquidId + "\">"
-                   + MarkLiquidName(LiquidManager.NameOf(liquidId), true)
+                   + "<u>" + LiquidManager.NameOf(liquidId) + "</u>"
                    + "</link>";
         }
 
-        /// <summary>
-        /// 液体名的统一标记：绿底 + 下划线。condition = true 时把字体颜色显式写回正文色
-        /// （原版 MachineryText 用的就是它，避免 mark 底纹影响字形颜色）。
-        /// 成分行和条件行共用这一份。
-        /// </summary>
-        private static string MarkLiquidName(string name, bool condition)
+        /// <summary>给成分行里当前检索的液体名垫一块绿底（和物品高亮同一个通道）。</summary>
+        private static void AddLiquidNameBackground(CustomUIBuilder builder, CustomUIElement label)
         {
-            var sb = new System.Text.StringBuilder();
-            sb.Append("<mark=#").Append(LiquidMarkHex()).Append("><u>");
-            if (condition) sb.Append("<color=#").Append(BodyTextHex()).Append('>');
-            sb.Append(name);
-            if (condition) sb.Append("</color>");
-            sb.Append("</u></mark>");
-            return sb.ToString();
+            var cell = label == null ? null : label.Rect;
+            if (cell == null || cell.parent == null) return;
+
+            try
+            {
+                var go = new GameObject("liquidNameMark",
+                    typeof(RectTransform), typeof(UnityEngine.UI.Image));
+                go.transform.SetParent(cell.parent, false);
+                go.transform.SetSiblingIndex(cell.GetSiblingIndex());
+
+                var image = go.GetComponent<UnityEngine.UI.Image>();
+                image.sprite = LiquidMarkSprite();
+                image.color = LiquidMarkColor();
+                image.raycastTarget = false;
+
+                var rect = go.GetComponent<RectTransform>();
+                rect.sizeDelta = Vector2.zero;
+
+                var ignore = go.AddComponent<UnityEngine.UI.LayoutElement>();
+                ignore.ignoreLayout = true;
+
+                _highlights.Add(new KeyValuePair<RectTransform, RectTransform>(rect, cell));
+            }
+            catch { }
         }
 
-        private static string _liquidMarkHex;
+        private static Sprite _liquidMarkSprite;
 
-        /// <summary>液体名底纹色：直接取原版物品高亮用的绿色精灵，取不到就退回近似绿。</summary>
-        private static string LiquidMarkHex()
+        /// <summary>绿底用的白方块精灵（原版高亮用的白色块）。</summary>
+        internal static Sprite LiquidMarkSprite()
         {
-            if (!string.IsNullOrEmpty(_liquidMarkHex)) return _liquidMarkHex;
+            if (_liquidMarkSprite != null) return _liquidMarkSprite;
 
-            Color color = new Color(0.35f, 0.85f, 0.35f, 0.55f);
             try
             {
                 var handler = RenderHandler.current;
-                var sprite = handler == null ? null : handler.green;
-                if (sprite != null && sprite.texture != null)
-                {
-                    var rect = sprite.rect;
-                    Color px = sprite.texture.GetPixel(
-                        (int)(rect.x + rect.width * 0.5f),
-                        (int)(rect.y + rect.height * 0.5f));
-                    if (px.a > 0.01f) color = px;
-                }
+                if (handler != null && handler.white != null) return _liquidMarkSprite = handler.white;
             }
             catch { }
 
-            // 原版高亮是给物品垫底的，直接拿来当文字底纹要留一点透明度
-            if (color.a > 0.75f) color.a = 0.75f;
-            if (color.a < 0.25f) color.a = 0.55f;
-
-            _liquidMarkHex = ColorUtility.ToHtmlStringRGBA(color);
-            return _liquidMarkHex;
+            var texture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+            texture.SetPixel(0, 0, Color.white);
+            texture.Apply();
+            _liquidMarkSprite = Sprite.Create(texture, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+            return _liquidMarkSprite;
         }
 
-        private static string _bodyTextHex;
-
-        /// <summary>原版机械文字正文色（MachineryText 用的就是它）。</summary>
-        private static string BodyTextHex()
+        /// <summary>液体名绿底颜色（用户指定 93/107/63）。</summary>
+        internal static Color LiquidMarkColor()
         {
-            if (!string.IsNullOrEmpty(_bodyTextHex)) return _bodyTextHex;
-
-            Color color = Color.white;
-            try { color = MachineryStyle.BODY_TEXT; } catch { }
-
-            _bodyTextHex = ColorUtility.ToHtmlStringRGB(color);
-            return _bodyTextHex;
+            return new Color(93f / 255f, 107f / 255f, 63f / 255f, 1f);
         }
 
         private static string ReactionTempText(LiquidReaction reaction)

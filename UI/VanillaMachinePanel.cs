@@ -300,7 +300,7 @@ namespace ItemCatalog.UI
         /// 造成分反应页的面板（不是机器）：左 = 反应物容器，中间 = 条件文字，右 = 产物容器。
         /// 三块都是原版控件，容器里的混合液体由 <see cref="FillReaction"/> 灌入。
         /// </summary>
-        internal bool BuildReactionShell(string[] conditionLines)
+        internal bool BuildReactionShell(string[] conditionLines, string highlightLiquidId = null)
         {
             try
             {
@@ -318,7 +318,7 @@ namespace ItemCatalog.UI
                 var panels = new[]
                 {
                     MachineHelper.Panel(ModEntry.T("react_input"), _containerSlot, "react_input", true),
-                    MachineHelper.Panel(ModEntry.T("react_condition"), BuildTextStack(conditionLines), "react_condition", true),
+                    MachineHelper.Panel(ModEntry.T("react_condition"), BuildTextStack(conditionLines, highlightLiquidId), "react_condition", true),
                     MachineHelper.Panel(ModEntry.T("react_output"), _productSlot, "react_output", true)
                 };
 
@@ -341,22 +341,22 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>一列原版小字（温度 / 条件 / 结果），每行一个 MachineryText；液体名可点击。</summary>
-        private static MachineryStack BuildTextStack(string[] lines)
+        private static MachineryStack BuildTextStack(string[] lines, string highlightLiquidId)
         {
             var elements = new PixelElement[Mathf.Max(1, lines == null ? 0 : lines.Length)];
             for (int i = 0; i < elements.Length; i++)
             {
                 string text = lines != null && i < lines.Length ? lines[i] : string.Empty;
                 var label = new MachineryText(text, 8, HorizontalAlignmentOptions.Center, false);
-                AttachConditionLinks(label);
+                AttachConditionLinks(label, highlightLiquidId);
                 elements[i] = label;
             }
 
             return MachineryStack.Vertical(elements);
         }
 
-        /// <summary>给条件文字的 &lt;link&gt; 片段挂点击：左键查来源、右键查用途。</summary>
-        private static void AttachConditionLinks(MachineryText label)
+        /// <summary>给条件文字的 &lt;link&gt; 片段挂点击；只给正在检索的液体名画绿底。</summary>
+        private static void AttachConditionLinks(MachineryText label, string highlightLiquidId)
         {
             if (label == null) return;
 
@@ -370,6 +370,9 @@ namespace ItemCatalog.UI
                 if (handler == null) handler = tmp.gameObject.AddComponent<ConditionLinkHandler>();
 
                 handler.Text = tmp;
+                handler.HighlightLinkId = string.IsNullOrEmpty(highlightLiquidId)
+                    ? null
+                    : LiquidCatalog.EntryPrefix + highlightLiquidId;
                 handler.OnLink = delegate (string linkId, bool asUse)
                 {
                     var entry = LiquidCatalog.Find(linkId);
