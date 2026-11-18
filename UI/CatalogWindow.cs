@@ -3183,13 +3183,13 @@ namespace ItemCatalog.UI
                 if (summary)
                 {
                     ApplyFullPurity(chemical, chemicalId);
-                    mainName = LiquidManager.MainIngredientName(chemical);
+                    mainName = MainIngredientName(chemical);
                 }
 
                 ChemicalHelper.DissolveInto(chemical, bottle);
                 chemical = null;   // DissolveInto 内部已经 Destroy
 
-                composition = LiquidManager.FormatComposition(bottle, summary, mainName);
+                composition = FormatContainerComposition(bottle, summary, mainName);
 
                 // 真实体积相对瓶子容量往往很小（几 mL 对 750 mL），液位是 0、图标为空瓶。
                 // 仅把图标里的液位放大到可见档位；成分文本用的是上面的真实体积。
@@ -3290,6 +3290,89 @@ namespace ItemCatalog.UI
                 try { SpriteHelper.UpdateWaterContainerSprite(bottle); } catch { }
             }
             catch { }
+        }
+
+        /// <summary>
+        /// 容器成分文本（图鉴统一实现，搅拌机 / 使用页共用）：
+        /// 第一行总体积，后面每种液体一行「本地化名: 体积 (百分比)」。
+        /// mainOnly = true 时只写总体积 + 主要成分名。
+        /// </summary>
+        internal static string FormatContainerComposition(GameItem container,
+                                                         bool mainOnly = false, string mainName = null)
+        {
+            if (container == null) return null;
+
+            var parts = LiquidParts(container);
+            if (parts.Count == 0) return null;
+
+            int total = 0;
+            foreach (var pair in parts) total += pair.Value;
+            if (total <= 0) return null;
+
+            string totalText = null;
+            try
+            {
+                totalText = LocHelper.GetLocalizedMechanic("mech_scanner_total_volume",
+                    new object[] { WaterScannerUIManager.FormatAmount(total) });
+            }
+            catch { }
+
+            if (string.IsNullOrEmpty(totalText))
+                totalText = "Total: " + WaterScannerUIManager.FormatAmount(total);
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append(totalText);
+
+            if (mainOnly)
+            {
+                string name = mainName;
+                if (string.IsNullOrEmpty(name))
+                {
+                    string majorId = null;
+                    int major = 0;
+                    foreach (var pair in parts)
+                    {
+                        if (pair.Value > major) { major = pair.Value; majorId = pair.Key; }
+                    }
+                    if (majorId != null) name = LiquidName(majorId);
+                }
+
+                if (!string.IsNullOrEmpty(name)) sb.Append('\n').Append(name);
+                return sb.ToString();
+            }
+
+            var liquids = Liquid.Liquids;
+            if (liquids == null) return sb.ToString();
+
+            for (int i = 0; i < liquids.Count; i++)
+            {
+                var liquid = liquids[i];
+                if (liquid == null) continue;
+
+                int amount;
+                if (!parts.TryGetValue(liquid.identifier, out amount) || amount <= 0) continue;
+
+                float percent = (float)amount / total * 100f;
+                sb.Append('\n')
+                  .Append(LiquidName(liquid.identifier)).Append(": ")
+                  .Append(WaterScannerUIManager.FormatAmount(amount))
+                  .Append(" (").Append(string.Format("{0:F2}", percent)).Append("%)");
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>有效成分名：游戏把液体 id 写在 ACTIVATE_INGREDIENT_TAG。</summary>
+        internal static string MainIngredientName(GameItem item)
+        {
+            if (item == null) return null;
+
+            try
+            {
+                string liquidId = item.GetTagReadonly("ACTIVATE_INGREDIENT_TAG").GetString();
+                return string.IsNullOrEmpty(liquidId) ? null : LiquidName(liquidId);
+            }
+            catch { return null; }
         }
 
         // ------------------------------------------------------- 容器成分

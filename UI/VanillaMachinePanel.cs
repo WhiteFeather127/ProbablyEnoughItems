@@ -450,7 +450,7 @@ namespace ItemCatalog.UI
                 }
             }
 
-            return LiquidManager.FormatComposition(container, mainOnly, mainName);
+            return CatalogWindow.FormatContainerComposition(container, mainOnly, mainName);
         }
 
         private bool AllowOnlyWhileFilling(GameItem item, GameInventory inventory)
