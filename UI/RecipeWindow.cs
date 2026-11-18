@@ -4177,7 +4177,7 @@ namespace ItemCatalog.UI
                 go.transform.SetSiblingIndex(cell.GetSiblingIndex());
 
                 var image = go.GetComponent<UnityEngine.UI.Image>();
-                image.sprite = LiquidMarkSprite();
+                image.sprite = null;   // 无 sprite 的 Image 直接画纯色块，最稳
                 image.color = LiquidMarkColor();
                 image.raycastTarget = false;
 
@@ -4187,30 +4187,11 @@ namespace ItemCatalog.UI
                 var ignore = go.AddComponent<UnityEngine.UI.LayoutElement>();
                 ignore.ignoreLayout = true;
 
-                _highlights.Add(new KeyValuePair<RectTransform, RectTransform>(rect, cell));
+                // 布局组会反复改标签的锚点/尺寸，用每帧跟随保证底纹贴着文字
+                var follow = go.AddComponent<RectFollower>();
+                follow.Target = cell;
             }
             catch { }
-        }
-
-        private static Sprite _liquidMarkSprite;
-
-        /// <summary>绿底用的白方块精灵（原版高亮用的白色块）。</summary>
-        internal static Sprite LiquidMarkSprite()
-        {
-            if (_liquidMarkSprite != null) return _liquidMarkSprite;
-
-            try
-            {
-                var handler = RenderHandler.current;
-                if (handler != null && handler.white != null) return _liquidMarkSprite = handler.white;
-            }
-            catch { }
-
-            var texture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
-            texture.SetPixel(0, 0, Color.white);
-            texture.Apply();
-            _liquidMarkSprite = Sprite.Create(texture, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
-            return _liquidMarkSprite;
         }
 
         /// <summary>液体名绿底颜色（用户指定 93/107/63）。</summary>

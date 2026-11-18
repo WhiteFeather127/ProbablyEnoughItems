@@ -143,7 +143,7 @@ namespace ItemCatalog.UI
 
             _markRect = go.GetComponent<RectTransform>();
             _mark = go.GetComponent<Image>();
-            _mark.sprite = RecipeWindow.LiquidMarkSprite();
+            _mark.sprite = null;   // 无 sprite 的 Image 直接画纯色块
             _mark.color = RecipeWindow.LiquidMarkColor();
             _mark.raycastTarget = false;
 
