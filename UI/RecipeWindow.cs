@@ -3374,7 +3374,7 @@ namespace ItemCatalog.UI
 
                 builder.BeginRow(2f, TextAnchor.MiddleLeft);
 
-                builder.AddLabel("<mark=#55FF5580><u>" + component.Name + "</u></mark>",
+                builder.AddLabel("<mark=#" + LiquidMarkHex() + "><u>" + component.Name + "</u></mark>",
                                  idPrefix + "comp_name" + i);
                 var nameLabel = builder.Last;
                 SetCompositionFont(nameLabel);
@@ -4044,7 +4044,7 @@ namespace ItemCatalog.UI
 
                 if (!string.IsNullOrEmpty(reaction.Solvent))
                 {
-                    label = "<u>" + ConditionLiquidName(reaction.Solvent) + "</u>";
+                    label = ConditionLiquidName(reaction.Solvent);
                     liquidId = reaction.Solvent;
                 }
                 else
@@ -4148,10 +4148,62 @@ namespace ItemCatalog.UI
             return reaction == null ? null : reaction.ConditionLiquidIds;
         }
 
-        /// <summary>条件里的液体名：只给名字本身加绿底，名字统一由液体管理器提供。</summary>
+        /// <summary>
+        /// 条件里的液体名：link（可点击）+ 物品同款绿底 + 下划线，名字由液体管理器提供；
+        /// 字体颜色显式写回原版正文色，避免 mark 底纹影响观感。
+        /// </summary>
         private static string ConditionLiquidName(string liquidId)
         {
-            return "<mark=#55FF5580>" + LiquidManager.NameOf(liquidId) + "</mark>";
+            return "<link=\"" + LiquidCatalog.EntryPrefix + liquidId + "\">"
+                   + "<mark=#" + LiquidMarkHex() + ">"
+                   + "<u><color=#" + BodyTextHex() + ">"
+                   + LiquidManager.NameOf(liquidId)
+                   + "</color></u></mark></link>";
+        }
+
+        private static string _liquidMarkHex;
+
+        /// <summary>液体名底纹色：直接取原版物品高亮用的绿色精灵，取不到就退回近似绿。</summary>
+        private static string LiquidMarkHex()
+        {
+            if (!string.IsNullOrEmpty(_liquidMarkHex)) return _liquidMarkHex;
+
+            Color color = new Color(0.35f, 0.85f, 0.35f, 0.55f);
+            try
+            {
+                var handler = RenderHandler.current;
+                var sprite = handler == null ? null : handler.green;
+                if (sprite != null && sprite.texture != null)
+                {
+                    var rect = sprite.rect;
+                    Color px = sprite.texture.GetPixel(
+                        (int)(rect.x + rect.width * 0.5f),
+                        (int)(rect.y + rect.height * 0.5f));
+                    if (px.a > 0.01f) color = px;
+                }
+            }
+            catch { }
+
+            // 原版高亮是给物品垫底的，直接拿来当文字底纹要留一点透明度
+            if (color.a > 0.75f) color.a = 0.75f;
+            if (color.a < 0.25f) color.a = 0.55f;
+
+            _liquidMarkHex = ColorUtility.ToHtmlStringRGBA(color);
+            return _liquidMarkHex;
+        }
+
+        private static string _bodyTextHex;
+
+        /// <summary>原版机械文字正文色（MachineryText 用的就是它）。</summary>
+        private static string BodyTextHex()
+        {
+            if (!string.IsNullOrEmpty(_bodyTextHex)) return _bodyTextHex;
+
+            Color color = Color.white;
+            try { color = MachineryStyle.BODY_TEXT; } catch { }
+
+            _bodyTextHex = ColorUtility.ToHtmlStringRGB(color);
+            return _bodyTextHex;
         }
 
         private static string ReactionTempText(LiquidReaction reaction)

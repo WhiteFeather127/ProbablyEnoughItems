@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 
 using ItemCatalog.Catalog;
@@ -339,17 +340,45 @@ namespace ItemCatalog.UI
             }
         }
 
-        /// <summary>一列原版小字（温度 / 条件 / 结果），每行一个 MachineryText。</summary>
+        /// <summary>一列原版小字（温度 / 条件 / 结果），每行一个 MachineryText；液体名可点击。</summary>
         private static MachineryStack BuildTextStack(string[] lines)
         {
             var elements = new PixelElement[Mathf.Max(1, lines == null ? 0 : lines.Length)];
             for (int i = 0; i < elements.Length; i++)
             {
                 string text = lines != null && i < lines.Length ? lines[i] : string.Empty;
-                elements[i] = new MachineryText(text, 8, TMPro.HorizontalAlignmentOptions.Center, false);
+                var label = new MachineryText(text, 8, HorizontalAlignmentOptions.Center, false);
+                AttachConditionLinks(label);
+                elements[i] = label;
             }
 
             return MachineryStack.Vertical(elements);
+        }
+
+        /// <summary>给条件文字的 &lt;link&gt; 片段挂点击：左键查来源、右键查用途。</summary>
+        private static void AttachConditionLinks(MachineryText label)
+        {
+            if (label == null) return;
+
+            try
+            {
+                var rect = label.rectTransform;
+                var tmp = rect == null ? null : rect.GetComponentInChildren<TMP_Text>(true);
+                if (tmp == null) return;
+
+                var handler = tmp.gameObject.GetComponent<ConditionLinkHandler>();
+                if (handler == null) handler = tmp.gameObject.AddComponent<ConditionLinkHandler>();
+
+                handler.Text = tmp;
+                handler.OnLink = delegate (string linkId, bool asUse)
+                {
+                    var entry = LiquidCatalog.Find(linkId);
+                    if (entry != null) RecipeWindow.OpenFor(entry, asUse);
+                };
+
+                tmp.raycastTarget = true;
+            }
+            catch { }
         }
 
         /// <summary>
