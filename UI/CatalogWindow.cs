@@ -3189,6 +3189,12 @@ namespace ItemCatalog.UI
                 ChemicalHelper.DissolveInto(chemical, bottle);
                 chemical = null;   // DissolveInto 内部已经 Destroy
 
+                composition = LiquidManager.FormatComposition(bottle, summary, mainName);
+
+                // 真实体积相对瓶子容量往往很小（几 mL 对 750 mL），液位是 0、图标为空瓶。
+                // 仅把图标里的液位放大到可见档位；成分文本用的是上面的真实体积。
+                EnsureVisibleLiquidLevel(bottle);
+
                 bottleSprite = SpriteForItem(bottle);
 
                 // 液体是原版的 innate sprite modifier 覆盖层：只取 base 精灵会是空瓶。
@@ -3208,7 +3214,6 @@ namespace ItemCatalog.UI
                 }
                 catch (Exception e) { Warn("dissolve composite: " + e.Message); }
 
-                composition = LiquidManager.FormatComposition(bottle, summary, mainName);
                 return bottleSprite != null || !string.IsNullOrEmpty(composition);
             }
             catch (Exception e)
@@ -3221,6 +3226,70 @@ namespace ItemCatalog.UI
                 if (chemical != null) { try { chemical.Destroy(); } catch { } }
                 if (bottle != null) { try { bottle.Destroy(); } catch { } }
             }
+        }
+
+        /// <summary>
+        /// 图标用：把瓶内液体等比放大到至少 10% 液位（MapCapacity 的最小可见档）。
+        /// 只影响即将销毁的预览实例；成分文本已经按真实体积生成。
+        /// </summary>
+        private static void EnsureVisibleLiquidLevel(GameItem bottle)
+        {
+            if (bottle == null) return;
+
+            try
+            {
+                int capacity = bottle.GetTagReadonly("LIQUID_CONTAINER_CAPACITY").GetInt();
+                if (capacity <= 0) return;
+
+                var liquids = Liquid.Liquids;
+                if (liquids == null) return;
+
+                int total = 0;
+                for (int i = 0; i < liquids.Count; i++)
+                {
+                    if (liquids[i] == null) continue;
+                    total += bottle.GetTagReadonly(liquids[i].currentPart).GetInt();
+                }
+
+                // 已经达到 10% 液位就不动
+                if (total <= 0 || total * 10 >= capacity) return;
+
+                int target = capacity / 10;
+                int assigned = 0;
+                int lastIndex = -1;
+
+                for (int i = 0; i < liquids.Count; i++)
+                {
+                    var liquid = liquids[i];
+                    if (liquid == null) continue;
+
+                    int amount = bottle.GetTagReadonly(liquid.currentPart).GetInt();
+                    if (amount <= 0) continue;
+
+                    int scaled = (int)((long)amount * target / total);
+                    bottle.ModifyTag(liquid.currentPart, delegate(TagState state)
+                    {
+                        state.Enable().SetInt(scaled);
+                    }, false);
+
+                    assigned += scaled;
+                    lastIndex = i;
+                }
+
+                // 取整余量补给最后一种，保证正好到 10% 档位
+                if (lastIndex >= 0 && assigned < target)
+                {
+                    var liquid = liquids[lastIndex];
+                    int amount = bottle.GetTagReadonly(liquid.currentPart).GetInt() + (target - assigned);
+                    bottle.ModifyTag(liquid.currentPart, delegate(TagState state)
+                    {
+                        state.Enable().SetInt(amount);
+                    }, false);
+                }
+
+                try { SpriteHelper.UpdateWaterContainerSprite(bottle); } catch { }
+            }
+            catch { }
         }
 
         // ------------------------------------------------------- 容器成分
