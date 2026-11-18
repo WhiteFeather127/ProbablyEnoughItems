@@ -835,88 +835,104 @@ namespace ItemCatalog.UI
             _categories = new List<Category>();
             if (_entry == null) return;
 
-            // 两个方向用同一份内容：所有大类都收集「涉及当前物品」的记录，
-            // 页内由 RenderGoods 的 match 标出当前物品；方向只影响左上角标注。
-            AddClientCategory(SourceIndex.For(_entry.Id),
-                              SourceIndex.WantedBy(_entry.Id, _entry.Item));
-
-            AddSourceCategory(CatLocation, SourceIndex.For(_entry.Id));
-
-            if (MachinePanels.For(_entry.Id) != null ||
-                MachinePanels.RecipesFor(_entry.Id) != null ||
-                RecipeIndex.ByMachine(_entry.Id).Count > 0)
+            // 左右键按方向取记录：来源 = 当前物品是产物的一侧，用途 = 它是投入的一侧。
+            // 同一条记录的内容仍按原样画（配方同时有材料与产物、使用同时有来源与产物），
+            // 所以从来源查能看到用途侧，从用途查也能看到来源侧。
+            if (_asUse)
             {
-                _categories.Add(new Category
+                // ===== 用途方向 =====
+                AddClientCategory(null, SourceIndex.WantedBy(_entry.Id, _entry.Item));
+
+                if (MachinePanels.For(_entry.Id) != null ||
+                    MachinePanels.RecipesFor(_entry.Id) != null ||
+                    RecipeIndex.ByMachine(_entry.Id).Count > 0)
                 {
-                    Kind = CatMachine,
-                    Recipes = RecipeIndex.ByMachine(_entry.Id)
-                });
-            }
-
-            AddMachineRecipeCategories();
-            AddCraftCategory();
-
-            // 使用：把「它是投入」和「它是产物」的记录合并成同一份
-            var uses = new List<UseInfo>();
-            var usingList = UseIndex.Using(_entry.Id, _entry.Item);
-            for (int i = 0; i < usingList.Count; i++) uses.Add(usingList[i]);
-            var producingList = UseIndex.Producing(_entry.Id);
-            for (int i = 0; i < producingList.Count; i++) uses.Add(producingList[i]);
-            AddUseCategory(uses);
-
-            // 掉落池（同一地点合并成一页）：两个方向都给
-            var loot = LootSource.For(_entry.Id);
-            if (loot.Count > 0)
-            {
-                var order = new List<string>();
-                var buckets = new Dictionary<string, List<LootTableInfo>>(StringComparer.Ordinal);
-
-                for (int i = 0; i < loot.Count; i++)
-                {
-                    var table = loot[i];
-                    if (table == null) continue;
-
-                    string site = LootSource.SiteFor(table.TableId);
-                    if (string.IsNullOrEmpty(site) ||
-                        site.StartsWith("item:", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    List<LootTableInfo> bucket;
-                    if (!buckets.TryGetValue(site, out bucket))
-                    {
-                        bucket = new List<LootTableInfo>();
-                        buckets[site] = bucket;
-                        order.Add(site);
-                    }
-
-                    bucket.Add(table);
-                }
-
-                for (int i = 0; i < order.Count; i++)
-                {
-                    string site = order[i];
-
-                    var siteTables = new List<LootTableInfo>();
-                    var allTables = LootSource.Tables;
-                    for (int t = 0; t < allTables.Length; t++)
-                    {
-                        var tt = allTables[t];
-                        if (tt == null) continue;
-
-                        if (string.Equals(LootSource.SiteFor(tt.TableId), site, StringComparison.Ordinal))
-                            siteTables.Add(tt);
-                    }
-
-                    if (siteTables.Count == 0) continue;
-
                     _categories.Add(new Category
                     {
-                        Kind = CatLoot,
-                        Loot = new List<LootTableInfo> { MergeLootTables(siteTables) },
-                        Site = site
+                        Kind = CatMachine,
+                        Recipes = RecipeIndex.ByMachine(_entry.Id)
                     });
+                }
+
+                AddMachineRecipeCategories();
+                AddCraftCategory();
+                AddUseCategory(UseIndex.Using(_entry.Id, _entry.Item));
+            }
+            else
+            {
+                // ===== 来源方向 =====
+                AddClientCategory(SourceIndex.For(_entry.Id), null);
+                AddSourceCategory(CatLocation, SourceIndex.For(_entry.Id));
+
+                if (MachinePanels.For(_entry.Id) != null ||
+                    MachinePanels.RecipesFor(_entry.Id) != null ||
+                    RecipeIndex.ByMachine(_entry.Id).Count > 0)
+                {
+                    _categories.Add(new Category
+                    {
+                        Kind = CatMachine,
+                        Recipes = RecipeIndex.ByMachine(_entry.Id)
+                    });
+                }
+
+                AddMachineRecipeCategories();
+                AddCraftCategory();
+                AddUseCategory(UseIndex.Producing(_entry.Id));
+
+                // 掉落池（同一地点合并成一页）：地点池并集。
+                var loot = LootSource.For(_entry.Id);
+                if (loot.Count > 0)
+                {
+                    var order = new List<string>();
+                    var buckets = new Dictionary<string, List<LootTableInfo>>(StringComparer.Ordinal);
+
+                    for (int i = 0; i < loot.Count; i++)
+                    {
+                        var table = loot[i];
+                        if (table == null) continue;
+
+                        string site = LootSource.SiteFor(table.TableId);
+                        if (string.IsNullOrEmpty(site) ||
+                            site.StartsWith("item:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        List<LootTableInfo> bucket;
+                        if (!buckets.TryGetValue(site, out bucket))
+                        {
+                            bucket = new List<LootTableInfo>();
+                            buckets[site] = bucket;
+                            order.Add(site);
+                        }
+
+                        bucket.Add(table);
+                    }
+
+                    for (int i = 0; i < order.Count; i++)
+                    {
+                        string site = order[i];
+
+                        var siteTables = new List<LootTableInfo>();
+                        var allTables = LootSource.Tables;
+                        for (int t = 0; t < allTables.Length; t++)
+                        {
+                            var tt = allTables[t];
+                            if (tt == null) continue;
+
+                            if (string.Equals(LootSource.SiteFor(tt.TableId), site, StringComparison.Ordinal))
+                                siteTables.Add(tt);
+                        }
+
+                        if (siteTables.Count == 0) continue;
+
+                        _categories.Add(new Category
+                        {
+                            Kind = CatLoot,
+                            Loot = new List<LootTableInfo> { MergeLootTables(siteTables) },
+                            Site = site
+                        });
+                    }
                 }
             }
 
@@ -2135,58 +2151,56 @@ namespace ItemCatalog.UI
                 var source = category.Sources[i];
                 if (source == null) continue;
 
-                // 两个方向都画同一组页：先货单，再「他在收」。
-                bool buys = category.Wanted != null && category.Wanted.Contains(source);
-
-                var items = source.Items;
-                if (items == null || items.Length == 0)
+                // 方向：用途方向只画「求购」；来源方向画货单。
+                if (_asUse)
                 {
-                    // 只收不卖：只挂收购页；既没有货也没有收购的，保留空页
-                    if (!buys)
+                    if (category.Wanted != null && category.Wanted.Contains(source))
                     {
                         _sourceBlocks.Add(new SourceBlock
                         {
                             Source = source,
-                            Cells = new List<GoodsCell>()
+                            Cells = new List<GoodsCell>(),
+                            Buys = true
                         });
                     }
+                    continue;
                 }
-                else
+
+                var items = source.Items;
+                if (items == null || items.Length == 0)
                 {
-                    // 卖水的客人：容器一格（满瓶）。
-                    // 既卖水又卖瓶的客人（`empty` 列 = 1）：给灌过水的那件容器再拆一个
-                    // 原始空瓶格，不轮播、不显示成分。`water` 带 `@物品id` 限定时，
-                    // 没被灌的容器本来就是空瓶，不拆，免得出现两格一模一样的空瓶。
-                    var cells = new List<GoodsCell>(items.Length);
-                    for (int k = 0; k < items.Length; k++)
-                    {
-                        string id = items[k];
-                        if (string.IsNullOrEmpty(id)) continue;
-
-                        if (source.SellsEmpty && CatalogWindow.IsLiquidContainer(id)
-                            && CatalogWindow.ClientHasFilledBottle(source.Water, id))
-                            cells.Add(new GoodsCell { Id = id, Empty = true });
-
-                        cells.Add(new GoodsCell { Id = id });
-                    }
-
-                    // 整份货单作为一块交给分页计划，切片由 BuildPagePlan 统一做
+                    // 没有货单：不挂空页
                     _sourceBlocks.Add(new SourceBlock
                     {
                         Source = source,
-                        Cells = cells
+                        Cells = new List<GoodsCell>()
                     });
+                    continue;
                 }
 
-                if (buys)
+                // 卖水的客人：容器一格（满瓶）。
+                // 既卖水又卖瓶的客人（`empty` 列 = 1）：给灌过水的那件容器再拆一个
+                // 原始空瓶格，不轮播、不显示成分。`water` 带 `@物品id` 限定时，
+                // 没被灌的容器本来就是空瓶，不拆，免得出现两格一模一样的空瓶。
+                var cells = new List<GoodsCell>(items.Length);
+                for (int k = 0; k < items.Length; k++)
                 {
-                    _sourceBlocks.Add(new SourceBlock
-                    {
-                        Source = source,
-                        Cells = new List<GoodsCell>(),
-                        Buys = true
-                    });
+                    string id = items[k];
+                    if (string.IsNullOrEmpty(id)) continue;
+
+                    if (source.SellsEmpty && CatalogWindow.IsLiquidContainer(id)
+                        && CatalogWindow.ClientHasFilledBottle(source.Water, id))
+                        cells.Add(new GoodsCell { Id = id, Empty = true });
+
+                    cells.Add(new GoodsCell { Id = id });
                 }
+
+                // 整份货单作为一块交给分页计划，切片由 BuildPagePlan 统一做
+                _sourceBlocks.Add(new SourceBlock
+                {
+                    Source = source,
+                    Cells = cells
+                });
             }
         }
 
@@ -2669,18 +2683,22 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 使用记录是否涉及当前物品：投入或产物任一侧命中即可。
-        /// 两个方向都展示同一组记录，页内靠 RenderGoods 的 match 标绿。
+        /// 使用记录的方向选择：来源方向（左键）= 当前物品是产物；
+        /// 用途方向（右键）= 当前物品是投入。页面内容仍是完整记录，两侧都会画。
         /// </summary>
         private static bool IsUseInDirection(UseInfo u)
         {
             if (u == null || _entry == null) return false;
 
-            var s = u.Sources;
-            if (s != null)
+            if (_asUse)
             {
-                for (int i = 0; i < s.Length; i++)
-                    if (string.Equals(s[i], _entry.Id, StringComparison.Ordinal)) return true;
+                var s = u.Sources;
+                if (s != null)
+                {
+                    for (int i = 0; i < s.Length; i++)
+                        if (string.Equals(s[i], _entry.Id, StringComparison.Ordinal)) return true;
+                }
+                return false;
             }
 
             var p = u.Produces;
@@ -2689,7 +2707,6 @@ namespace ItemCatalog.UI
                 for (int i = 0; i < p.Length; i++)
                     if (string.Equals(p[i], _entry.Id, StringComparison.Ordinal)) return true;
             }
-
             return false;
         }
 
@@ -2835,9 +2852,9 @@ namespace ItemCatalog.UI
                         var recipe = group.Variants[v];
                         if (recipe == null) continue;
 
-                        hit = ContainsId(recipe.Inputs, _entry.Id)
-                              || ContainsId(recipe.Modules, _entry.Id)
-                              || ContainsId(recipe.Outputs, _entry.Id);
+                        hit = _asUse
+                            ? ContainsId(recipe.Inputs, _entry.Id) || ContainsId(recipe.Modules, _entry.Id)
+                            : ContainsId(recipe.Outputs, _entry.Id);
                     }
 
                     if (hit) matched.Add(group);
@@ -2869,9 +2886,9 @@ namespace ItemCatalog.UI
                 var recipe = group.Variants[i];
                 if (recipe == null) continue;
 
-                bool hit = ContainsId(recipe.Inputs, _entry.Id)
-                           || ContainsId(recipe.Modules, _entry.Id)
-                           || ContainsId(recipe.Outputs, _entry.Id);
+                bool hit = _asUse
+                    ? ContainsId(recipe.Inputs, _entry.Id) || ContainsId(recipe.Modules, _entry.Id)
+                    : ContainsId(recipe.Outputs, _entry.Id);
 
                 if (hit) list.Add(recipe);
             }
@@ -2947,16 +2964,21 @@ namespace ItemCatalog.UI
         {
             var merged = new List<RecipeInfo>();
 
-            // 两个方向同一份内容：产出它的配方 + 把它当材料用掉的配方。
+            // 方向选择记录：来源 = 产出它的配方；用途 = 把它当材料用掉的配方。
             // 传 Item 是为了让 `tag:XXX` 那类「整类目标」也能命中
             // （拆解只对带 ADV_GUN_TAG 的枪、屠宰只对带 BLADE_ITEM_TAG 的刀）。
-            var consumed = RecipeIndex.Consuming(_entry.Id, _entry.Item);
-            for (int i = 0; i < consumed.Count; i++)
-                if (consumed[i] != null && !merged.Contains(consumed[i])) merged.Add(consumed[i]);
-
-            var produced = RecipeIndex.Producing(_entry.Id);
-            for (int i = 0; i < produced.Count; i++)
-                if (produced[i] != null && !merged.Contains(produced[i])) merged.Add(produced[i]);
+            if (_asUse)
+            {
+                var consumed = RecipeIndex.Consuming(_entry.Id, _entry.Item);
+                for (int i = 0; i < consumed.Count; i++)
+                    if (consumed[i] != null && !merged.Contains(consumed[i])) merged.Add(consumed[i]);
+            }
+            else
+            {
+                var produced = RecipeIndex.Producing(_entry.Id);
+                for (int i = 0; i < produced.Count; i++)
+                    if (produced[i] != null && !merged.Contains(produced[i])) merged.Add(produced[i]);
+            }
 
             if (merged.Count > 0)
                 _categories.Add(new Category { Kind = CatCraft, Recipes = merged });
