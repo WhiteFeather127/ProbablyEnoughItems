@@ -3299,14 +3299,15 @@ namespace ItemCatalog.UI
                     builder.AddLabel(tagLine, "use_source_tags");
             }
 
+            builder.AddLabel(ModEntry.T("rec_result"), "rec_result");
+
             if (string.Equals(use.Kind, "dissolve", StringComparison.Ordinal))
             {
-                // 可溶化学品：画一只灌好成分的瓶子 + 成分文本，替代空产物格
+                // 可溶化学品：画一只灌好成分的瓶子 + 成分文本
                 RenderDissolveResult(builder, use);
             }
             else
             {
-                builder.AddLabel(ModEntry.T("rec_result"), "rec_result");
                 RenderItemGrid(builder, use.Produces, 700);
 
                 if (!string.IsNullOrEmpty(use.Note))
@@ -3330,8 +3331,13 @@ namespace ItemCatalog.UI
 
             builder.BeginColumn(4f, UnityEngine.TextAnchor.MiddleCenter);
 
+            // 单个格子用两端弹性空位居中：竖向布局组不会自动把子格摆到中间
+            builder.BeginRow(4f, UnityEngine.TextAnchor.MiddleCenter);
+            builder.AddFlexibleSpace();
             // 和普通物品格同一条 BindCell 链路：tooltip、左右键查询、拿取都能用
             RenderGoods(builder, entry.Id, false, 9000, false, null, 56f, bottle, entry);
+            builder.AddFlexibleSpace();
+            builder.End();
 
             if (!string.IsNullOrEmpty(composition))
             {

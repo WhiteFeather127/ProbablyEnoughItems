@@ -1548,6 +1548,11 @@ namespace ItemCatalog.UI
             // 不这么做的话，只有输入英文键名才能搜到，中文名一条都搜不出来。
             var matchedTypes = MatchTypes(query);
 
+            // 液体主要成分：查询词命中液体名/ID 时，主成分是该液体的物品一起列出
+            // （例如搜「避孕激素」能找到避孕药）。
+            var matchedLiquids = MatchLiquids(query);
+            if (matchedLiquids != null) EnsureMainLiquidIndex();
+
             var result = new List<ItemEntry>(64);
 
             for (int i = 0; i < all.Count; i++)
@@ -1583,10 +1588,90 @@ namespace ItemCatalog.UI
                     }
                 }
 
+                if (!hit && matchedLiquids != null && !string.IsNullOrEmpty(entry.Id))
+                {
+                    string main;
+                    if (_mainLiquidByItem.TryGetValue(entry.Id, out main) &&
+                        matchedLiquids.Contains(main))
+                        hit = true;
+                }
+
                 if (hit) result.Add(entry);
             }
 
             return result;
+        }
+
+        /// <summary>液体主要成分搜索：命中液体本地化名/ID 时返回这些液体 id，否则 null。</summary>
+        private static HashSet<string> MatchLiquids(string query)
+        {
+            if (string.IsNullOrEmpty(query)) return null;
+
+            var liquids = Liquid.Liquids;
+            if (liquids == null) return null;
+
+            HashSet<string> set = null;
+            for (int i = 0; i < liquids.Count; i++)
+            {
+                var liquid = liquids[i];
+                if (liquid == null) continue;
+
+                bool hit = false;
+                if (!string.IsNullOrEmpty(liquid.displayName))
+                    hit = liquid.displayName.IndexOf(query, StringComparison.CurrentCultureIgnoreCase) >= 0;
+                if (!hit && !string.IsNullOrEmpty(liquid.identifier))
+                    hit = liquid.identifier.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!hit) continue;
+
+                if (set == null) set = new HashSet<string>(StringComparer.Ordinal);
+                set.Add(liquid.identifier);
+            }
+
+            return set;
+        }
+
+        private static int _mainLiquidGeneration = -1;
+        private static readonly Dictionary<string, string> _mainLiquidByItem =
+            new Dictionary<string, string>(StringComparer.Ordinal);
+
+        /// <summary>每件物品的主要液体成分，按目录 generation 缓存。</summary>
+        private static void EnsureMainLiquidIndex()
+        {
+            if (_mainLiquidGeneration == CatalogDataBuilder.Generation) return;
+            _mainLiquidGeneration = CatalogDataBuilder.Generation;
+            _mainLiquidByItem.Clear();
+
+            var items = CatalogDataBuilder.Visible;
+            for (int i = 0; i < items.Count; i++)
+            {
+                var entry = items[i];
+                var item = entry == null ? null : entry.Item;
+                if (item == null || string.IsNullOrEmpty(entry.Id)) continue;
+
+                string main = MainLiquidOf(item);
+                if (!string.IsNullOrEmpty(main)) _mainLiquidByItem[entry.Id] = main;
+            }
+        }
+
+        private static string MainLiquidOf(GameItem item)
+        {
+            if (item == null) return null;
+
+            // 化学产品的有效成分（游戏写在 ACTIVATE_INGREDIENT_TAG）
+            string active = null;
+            try { active = ReadStringTag(item, "ACTIVATE_INGREDIENT_TAG"); } catch { }
+            if (!string.IsNullOrEmpty(active)) return active;
+
+            // 其它物品取量最大的那种液体
+            var parts = LiquidParts(item);
+            string major = null;
+            int best = 0;
+            foreach (var pair in parts)
+            {
+                if (pair.Value > best) { best = pair.Value; major = pair.Key; }
+            }
+
+            return major;
         }
 
         /// <summary>类型键 → 本地化名（`LUXURY_ITEM` → 奢侈品），首次搜索时建一次。</summary>
