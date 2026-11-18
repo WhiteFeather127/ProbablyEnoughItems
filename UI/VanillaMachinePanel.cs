@@ -431,10 +431,8 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 容器槽样本的成分文本，照游戏成分检测器（ChemScannerUIManager /
-        /// WaterScannerUIManager）的写法：第一行总体积，后面每种液体一行
-        /// 「本地化名: 体积 (百分比)」。没有内容时返回 null。
-        /// mainOnly = true 时只写总体积 + 主要成分名（成分随品质变化的化学产品用）。
+        /// 容器槽样本的成分文本；格式和成分检测器一致，由 LiquidManager 统一生成。
+        /// mainOnly = true 时只写总体积 + 主要成分名。
         /// </summary>
         internal string ContainerCompositionText(bool mainOnly = false, string mainName = null)
         {
@@ -452,87 +450,7 @@ namespace ItemCatalog.UI
                 }
             }
 
-            if (container == null) return null;
-
-            try
-            {
-                var liquids = Liquid.Liquids;
-                if (liquids == null) return null;
-
-                int total = 0;
-                for (int i = 0; i < liquids.Count; i++)
-                {
-                    if (liquids[i] == null) continue;
-                    total += container.GetTagReadonly(liquids[i].currentPart).GetInt();
-                }
-
-                if (total <= 0) return null;
-
-                // 第一行总体积，后面每种液体一行
-                string totalText = null;
-                try
-                {
-                    totalText = LocHelper.GetLocalizedMechanic("mech_scanner_total_volume",
-                        new object[] { WaterScannerUIManager.FormatAmount(total) });
-                }
-                catch { }
-
-                if (string.IsNullOrEmpty(totalText))
-                    totalText = "Total: " + WaterScannerUIManager.FormatAmount(total);
-
-                var sb = new System.Text.StringBuilder();
-                sb.Append(totalText);
-
-                if (mainOnly)
-                {
-                    // 药物这类成分可能随品质变化的，只写主要成分名
-                    string name = mainName;
-                    if (string.IsNullOrEmpty(name))
-                    {
-                        int best = 0;
-                        for (int i = 0; i < liquids.Count; i++)
-                        {
-                            var l = liquids[i];
-                            if (l == null) continue;
-
-                            int amount = container.GetTagReadonly(l.currentPart).GetInt();
-                            if (amount > best)
-                            {
-                                best = amount;
-                                name = string.IsNullOrEmpty(l.displayName) ? l.identifier : l.displayName;
-                            }
-                        }
-                    }
-
-                    if (!string.IsNullOrEmpty(name)) sb.Append('\n').Append(name);
-                    return sb.ToString();
-                }
-
-                for (int i = 0; i < liquids.Count; i++)
-                {
-                    var liquid = liquids[i];
-                    if (liquid == null) continue;
-
-                    int amount = container.GetTagReadonly(liquid.currentPart).GetInt();
-                    if (amount <= 0) continue;
-
-                    string name = string.IsNullOrEmpty(liquid.displayName)
-                        ? liquid.identifier : liquid.displayName;
-                    float percent = (float)amount / total * 100f;
-
-                    sb.Append('\n')
-                      .Append(name).Append(": ")
-                      .Append(WaterScannerUIManager.FormatAmount(amount))
-                      .Append(" (").Append(string.Format("{0:F2}", percent)).Append("%)");
-                }
-
-                return sb.ToString();
-            }
-            catch (Exception e)
-            {
-                Warn("composition text: " + e.Message);
-                return null;
-            }
+            return LiquidManager.FormatComposition(container, mainOnly, mainName);
         }
 
         private bool AllowOnlyWhileFilling(GameItem item, GameInventory inventory)

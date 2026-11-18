@@ -198,7 +198,7 @@ namespace ItemCatalog.Catalog
         /// <summary>
         /// 可溶化学品 → 液体容器：游戏里直接对容器使用就会溶进去（DissolveInto），
         /// 按 SOLUBLE_TAG 自动补一条使用记录，模组新增的可溶物品也会自动收录。
-        /// 记录只挂在化学品自己的去处里，目标容器写在备注里。
+        /// 渲染时使用页会画一只灌好成分的瓶子（见 RecipeWindow.RenderDissolveResult）。
         /// </summary>
         private static void AppendDissolveUses()
         {
@@ -222,9 +222,9 @@ namespace ItemCatalog.Catalog
                 {
                     Sources = new[] { entry.Id },
                     SourceTags = new string[0],
-                    Kind = "apply",
+                    Kind = "dissolve",
                     Produces = new string[0],
-                    Note = "use_note_dissolve"
+                    Note = null
                 };
 
                 _all.Add(info);
@@ -241,7 +241,7 @@ namespace ItemCatalog.Catalog
             for (int i = 0; i < list.Count; i++)
             {
                 var u = list[i];
-                if (u != null && string.Equals(u.Note, "use_note_dissolve", StringComparison.Ordinal))
+                if (u != null && string.Equals(u.Kind, "dissolve", StringComparison.Ordinal))
                     return true;
             }
 

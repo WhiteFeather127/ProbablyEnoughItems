@@ -22,7 +22,6 @@ src_doctor_shop,Доктор Джексон (магазин)
 rec_cat_craft_out,Крафт
 rec_cat_craft_in,В крафте
 use_none,Применение неизвестно
-use_note_dissolve,Можно растворить в любой ёмкости с жидкостью (применить на ёмкости)
 faction_none,Без фракции
 faction_location,Магазины локаций
 rec_cat_use_out,Из использования

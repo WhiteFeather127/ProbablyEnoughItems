@@ -3146,6 +3146,67 @@ namespace ItemCatalog.UI
 
         // ------------------------------------------------------- 容器成分
 
+        /// <summary>按物品实例当前的图集/精灵名取图（灌装后的瓶子用）。</summary>
+        internal static Sprite SpriteForItem(GameItem item)
+        {
+            if (item == null) return null;
+
+            var entry = new ItemEntry { Id = item.identifier, Item = item };
+            return GetSprite(entry);
+        }
+
+        /// <summary>
+        /// 可溶化学品溶进默认液体容器（LiquidManager.ContainerId）后的预览：
+        /// 返回灌好成分的瓶子图标 + 成分文本，供使用页展示。实例用完即销毁。
+        /// </summary>
+        internal static bool BuildDissolvePreview(string chemicalId,
+                                                  out Sprite bottleSprite, out string composition)
+        {
+            bottleSprite = null;
+            composition = null;
+            if (string.IsNullOrEmpty(chemicalId)) return false;
+
+            GameItem bottle = null;
+            GameItem chemical = null;
+            try
+            {
+                bottle = CreatePreviewItem(LiquidManager.ContainerId);
+                if (bottle == null) return false;
+
+                chemical = CreatePreviewItem(chemicalId);
+                if (chemical == null) return false;
+                if (!chemical.IsTag("SOLUBLE_TAG")) return false;
+
+                bool summary = IsFullPurityItem(chemicalId);
+                string mainName = null;
+
+                if (summary)
+                {
+                    ApplyFullPurity(chemical, chemicalId);
+                    mainName = LiquidManager.MainIngredientName(chemical);
+                }
+
+                ChemicalHelper.DissolveInto(chemical, bottle);
+                chemical = null;   // DissolveInto 内部已经 Destroy
+
+                bottleSprite = SpriteForItem(bottle);
+                composition = LiquidManager.FormatComposition(bottle, summary, mainName);
+                return bottleSprite != null || !string.IsNullOrEmpty(composition);
+            }
+            catch (Exception e)
+            {
+                Warn("dissolve preview '" + chemicalId + "': " + e.Message);
+                return false;
+            }
+            finally
+            {
+                if (chemical != null) { try { chemical.Destroy(); } catch { } }
+                if (bottle != null) { try { bottle.Destroy(); } catch { } }
+            }
+        }
+
+        // ------------------------------------------------------- 容器成分
+
         /// <summary>
         /// 读一个容器当前的液体成分：液体 identifier → 千分比（0..10000）。
         /// 原版把每种液体的占比存在 CURRENT_PART_&lt;id&gt; 标签里（9990 = 99.90%）。

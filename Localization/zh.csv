@@ -22,7 +22,6 @@ src_doctor_shop,博士（店铺）
 rec_cat_craft_out,合成
 rec_cat_craft_in,合成材料
 use_none,暂未收录用途
-use_note_dissolve,可溶入任意液体容器（直接对容器使用）
 faction_none,无阵营
 faction_location,地点商店
 rec_cat_use_out,使用来源

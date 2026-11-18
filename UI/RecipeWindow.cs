@@ -3291,11 +3291,54 @@ namespace ItemCatalog.UI
                     builder.AddLabel(tagLine, "use_source_tags");
             }
 
-            builder.AddLabel(ModEntry.T("rec_result"), "rec_result");
-            RenderItemGrid(builder, use.Produces, 700);
+            if (string.Equals(use.Kind, "dissolve", StringComparison.Ordinal))
+            {
+                // 可溶化学品：画一只灌好成分的瓶子 + 成分文本，替代空产物格
+                RenderDissolveResult(builder, use);
+            }
+            else
+            {
+                builder.AddLabel(ModEntry.T("rec_result"), "rec_result");
+                RenderItemGrid(builder, use.Produces, 700);
 
-            if (!string.IsNullOrEmpty(use.Note))
-                builder.AddLabel(ModEntry.T(use.Note), "use_note");
+                if (!string.IsNullOrEmpty(use.Note))
+                    builder.AddLabel(ModEntry.T(use.Note), "use_note");
+            }
+        }
+
+        /// <summary>
+        /// 可溶化学品的去处页：用液体管理器的默认容器装好成分并画出来，
+        /// 下面写和搅拌机相同的成分文本（第一行总体积，之后各成分/主要成分名）。
+        /// </summary>
+        private static void RenderDissolveResult(CustomUIBuilder builder, UseInfo use)
+        {
+            string id = use != null && use.Sources != null && use.Sources.Length > 0
+                ? use.Sources[0] : null;
+
+            Sprite bottle;
+            string composition;
+            if (!CatalogWindow.BuildDissolvePreview(id, out bottle, out composition)) return;
+
+            builder.BeginColumn(4f, UnityEngine.TextAnchor.MiddleCenter);
+            if (bottle != null)
+            {
+                float w, h;
+                CatalogWindow.FitIcon(bottle, 56f, out w, out h);
+                builder.AddImage(bottle, w, h, "use_dissolve_bottle");
+            }
+
+            if (!string.IsNullOrEmpty(composition))
+            {
+                builder.AddLabel(composition, "use_dissolve_composition");
+                var label = builder.Last;
+                if (label != null && label.text != null)
+                {
+                    label.text.fontSize = 13f;
+                    label.text.alignment = TextAlignmentOptions.Left;
+                }
+            }
+
+            builder.End();
         }
 
         /// <summary>
