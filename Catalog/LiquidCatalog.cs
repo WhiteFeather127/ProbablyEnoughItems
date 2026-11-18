@@ -130,15 +130,13 @@ namespace ItemCatalog.Catalog
         }
 
         /// <summary>
-        /// 物品管理器里这种液体的代表总量：取所有主成分为它的物品里最大的那份
-        /// （例如避孕药里的 1 ml 避孕激素），没有来源时退回 1 ml。
+        /// 物品管理器里这种液体的代表总量：取所有主成分为它的物品里**总体积**最大的一份。
+        /// 化学产品按实验室纯级取配方 requiredVolume（不是某个成分的量），
+        /// 其它物品把 CURRENT_PART_* 全部加起来。没有来源时退回 1 ml。
         /// </summary>
         private static int RepresentativeAmount(string liquidId)
         {
             LiquidManager.TagItems();
-
-            string part = Liquid.GetCurrentPartFromId(liquidId);
-            if (string.IsNullOrEmpty(part)) return 0;
 
             var items = CatalogDataBuilder.Visible;
             int best = 0;
@@ -150,14 +148,31 @@ namespace ItemCatalog.Catalog
                 if (item == null) continue;
                 if (!string.Equals(entry.LiquidTag, liquidId, StringComparison.Ordinal)) continue;
 
-                int amount;
-                try { amount = item.GetTagReadonly(part).GetInt(); }
-                catch { continue; }
-
-                if (amount > best) best = amount;
+                int total = TotalVolume(entry.Id, item);
+                if (total > best) best = total;
             }
 
             return best > 0 ? best : 1000;
+        }
+
+        private static int TotalVolume(string itemId, GameItem item)
+        {
+            // 化学产品：实验室纯级下总量就是配方的 requiredVolume
+            if (CatalogWindow.IsFullPurityItem(itemId))
+            {
+                try
+                {
+                    var recipe = ChemFinisherRecipe.GetRecipeById(itemId);
+                    if (recipe != null && recipe.requiredVolume > 0) return recipe.requiredVolume;
+                }
+                catch { }
+            }
+
+            // 其它物品：所有液体成分加起来
+            var parts = CatalogWindow.LiquidParts(item);
+            int total = 0;
+            foreach (var pair in parts) total += pair.Value;
+            return total;
         }
 
         /// <summary>换场景时销毁代表容器，下次搜索重新建。</summary>
