@@ -34,6 +34,37 @@ namespace ItemCatalog.Catalog
         internal string ConditionKey;
         internal string ConditionFallback;
 
+        /// <summary>
+        /// 条件里点名、需要按液体管理器取名字的液体（也是 {0}/{1} 的参数顺序）。
+        /// 用途反查时这些液体也会命中这条反应。
+        /// </summary>
+        internal string[] ConditionLiquidIds
+        {
+            get
+            {
+                switch (ConditionKey)
+                {
+                    case "react_cond_excess":
+                    case "react_cond_acid_or_base":
+                        return new[] { "acid", "base" };
+                    case "react_cond_nomore_alcohol":
+                    case "react_cond_alcohol_ratio":
+                        return new[] { "alcohol" };
+                    case "react_cond_fanta_order":
+                        return new[] { "methylol", "stabilizing_agent" };
+                    case "react_cond_solvent_ratio":
+                        if (string.IsNullOrEmpty(Solvent)) return null;
+                        return new[]
+                        {
+                            Solvent,
+                            Reactants != null && Reactants.Length > 0 ? Reactants[0] : Solvent
+                        };
+                    default:
+                        return null;
+                }
+            }
+        }
+
         internal bool HasReactant(string liquidId)
         {
             return Contains(Reactants, liquidId);
@@ -44,7 +75,7 @@ namespace ItemCatalog.Catalog
             return Contains(Products, liquidId);
         }
 
-        private static bool Contains(string[] ids, string liquidId)
+        internal static bool Contains(string[] ids, string liquidId)
         {
             if (ids == null || string.IsNullOrEmpty(liquidId)) return false;
 
@@ -80,7 +111,8 @@ namespace ItemCatalog.Catalog
 
                 bool hit = asUse
                     ? reaction.HasReactant(liquidId) ||
-                      string.Equals(reaction.Solvent, liquidId, StringComparison.Ordinal)
+                      string.Equals(reaction.Solvent, liquidId, StringComparison.Ordinal) ||
+                      LiquidReaction.Contains(reaction.ConditionLiquidIds, liquidId)
                     : reaction.HasProduct(liquidId);
 
                 if (hit) result.Add(reaction);
@@ -111,13 +143,13 @@ namespace ItemCatalog.Catalog
                 R("protein", new[] { "protein", "acid" }, new[] { 10f, 10f },
                   new[] { "debris" }, new[] { 10f },
                   null, false, 0f, 0f, 0f,
-                  "react_cond_excess", "{0}/{1} 过量时发生"),
+                  "react_cond_excess", "{0}/{1} 过量"),
 
                 // 稳定剂 + 酸/碱 → 残渣（酸/碱都行）
                 R("stabilizer", new[] { "stabilizing_agent", "acid" }, new[] { 10f, 10f },
                   new[] { "debris" }, new[] { 10f },
                   null, false, 0f, 0f, 0f,
-                  "react_cond_acid_or_base", "{0} 或 {1} 均可"),
+                  "react_cond_acid_or_base", "{0}/{1}"),
 
                 // 有机废物矿化：废物 + 酸（消耗型，1 酸 : 40 废物）→ 矿物
                 R("mineralize", new[] { "organic_waste", "acid" }, new[] { 10f, 0.25f },
@@ -129,7 +161,7 @@ namespace ItemCatalog.Catalog
                 R("coffee_alcohol", new[] { "coffee_mush" }, new[] { 10f },
                   new[] { "caffeine", "plant_matter" }, new[] { 7.5f, 2.5f },
                   "alcohol", false, 7.5f, 50f, 0f,
-                  "react_cond_solvent_ratio", "{0} 足量（≥5:1）"),
+                  "react_cond_solvent_ratio", "{0}:{1} ≥ 5:1"),
 
                 // 咖啡菇 + 水 → 咖啡因（每 tick 处理 0.5ml，水最佳量 = 5 × 0.5ml）
                 R("coffee_water", new[] { "coffee_mush" }, new[] { 10f },
@@ -153,7 +185,7 @@ namespace ItemCatalog.Catalog
                 R("nomore", new[] { "dream_cap_extract", "reducing_agent" }, new[] { 10f, 10f },
                   new[] { "nomore", "debris" }, new[] { 6f, 4f },
                   "lipobond_agent", true, 0f, 45f, 55f,
-                  "react_cond_nomore_alcohol", "{0} ≤ 总体积 10%"),
+                  "react_cond_nomore_alcohol", "{0} ≤ 10%"),
 
                 // 芬达：甲基醇 + 还原剂 → 10% 芬达（还原剂消耗 75%）
                 R("fanta", new[] { "methylol", "reducing_agent" }, new[] { 10f, 7.5f },
@@ -177,7 +209,7 @@ namespace ItemCatalog.Catalog
                 R("waste_heat", new[] { "organic_waste" }, new[] { 10f },
                   new[] { "physical_contaminant" }, new[] { 3.3f },
                   null, false, 0f, 80f, 0f,
-                  "react_cond_waste_full", "≥100 °C 时全部转化"),
+                  "react_cond_waste_full", "≥100 °C 完全反应"),
 
                 // 酸碱中和：两者等量消耗，没有产物
                 RN("neutralize", new[] { "acid", "base" }, new[] { 10f, 10f },
@@ -187,17 +219,17 @@ namespace ItemCatalog.Catalog
                 // 酸碱杀菌：每 100 只微生物消耗 1 单位酸/碱
                 RN("microbe_acid", new[] { "microbe", "acid" }, new[] { 10f, 0.1f },
                    null, false, 0f, 0f,
-                   "react_cond_acid_or_base", "{0} 或 {1} 均可"),
+                   "react_cond_acid_or_base", "{0}/{1}"),
 
                 // 酒精杀菌：酒精 ≥ 总体积 40%
                 RN("microbe_alcohol", new[] { "microbe" }, new[] { 10f },
                    "alcohol", false, 7f, 0f,
-                   "react_cond_alcohol_ratio", "{0} ≥ 总体积 40%"),
+                   "react_cond_alcohol_ratio", "{0} ≥ 40%"),
 
                 // 加热杀菌：≥70 °C 开始减少，≥100 °C 全灭
                 RN("microbe_heat", new[] { "microbe" }, new[] { 10f },
                    null, false, 0f, 70f,
-                   "react_cond_microbe_heat", "≥100 °C 时全灭"),
+                   "react_cond_microbe_heat", "≥100 °C 完全反应"),
 
                 // 氯消毒：杀微生物 + 去除化学污染物
                 RN("chlorine", new[] { "chlorine", "microbe" }, new[] { 10f, 10f },

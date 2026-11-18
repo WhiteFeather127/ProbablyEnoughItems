@@ -139,13 +139,13 @@ react_ambient,Ambient
 react_solvent,Solvent
 react_catalyst,Catalyst
 react_cond_excess,{0}/{1} in excess
-react_cond_acid_or_base,{0} or {1}
-react_cond_solvent_ratio,Enough {0} (≥5:1)
-react_cond_nomore_alcohol,{0} ≤ 10% of total volume
+react_cond_acid_or_base,{0}/{1}
+react_cond_solvent_ratio,{0}:{1} ≥ 5:1
+react_cond_nomore_alcohol,{0} ≤ 10%
 react_cond_fanta_order,{0} > {1}
-react_cond_waste_full,Fully converted at ≥100 °C
-react_cond_alcohol_ratio,{0} ≥ 40% of total volume
-react_cond_microbe_heat,All killed at ≥100 °C
+react_cond_waste_full,Complete reaction at ≥100 °C
+react_cond_alcohol_ratio,{0} ≥ 40%
+react_cond_microbe_heat,Complete reaction at ≥100 °C
 react_none,None
 mach_trap_output,Trap output
 mach_note_evap,Dry an alcoholic container: solvent recovery module + alcohol

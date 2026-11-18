@@ -4115,7 +4115,7 @@ namespace ItemCatalog.UI
                 string label = reaction.SolventIsCatalyst
                     ? Loc("react_catalyst", "催化")
                     : Loc("react_solvent", "溶剂");
-                lines.Add(label + " " + LiquidManager.NameOf(reaction.Solvent));
+                lines.Add(label + " " + ConditionLiquidName(reaction.Solvent));
             }
 
             if (!string.IsNullOrEmpty(reaction.ConditionKey) ||
@@ -4125,13 +4125,13 @@ namespace ItemCatalog.UI
                     ? reaction.ConditionFallback
                     : Loc(reaction.ConditionKey, reaction.ConditionFallback);
 
-                // 条件里点名的液体统一走液体管理器取名字（占位符 {0}/{1}）
+                // 条件里点名的液体统一走液体管理器取名字（占位符 {0}/{1}），只给名字本身加绿底
                 var liquidArgs = ConditionLiquidArgs(reaction);
                 if (liquidArgs != null && liquidArgs.Length > 0)
                 {
                     var names = new object[liquidArgs.Length];
                     for (int i = 0; i < liquidArgs.Length; i++)
-                        names[i] = LiquidManager.NameOf(liquidArgs[i]);
+                        names[i] = ConditionLiquidName(liquidArgs[i]);
                     try { condition = string.Format(condition, names); } catch { }
                 }
 
@@ -4144,23 +4144,13 @@ namespace ItemCatalog.UI
         /// <summary>条件文本里提到的液体（对应 {0}/{1} 占位符），名字由液体管理器提供。</summary>
         private static string[] ConditionLiquidArgs(LiquidReaction reaction)
         {
-            if (reaction == null || string.IsNullOrEmpty(reaction.ConditionKey)) return null;
+            return reaction == null ? null : reaction.ConditionLiquidIds;
+        }
 
-            switch (reaction.ConditionKey)
-            {
-                case "react_cond_excess":
-                case "react_cond_acid_or_base":
-                    return new[] { "acid", "base" };
-                case "react_cond_nomore_alcohol":
-                case "react_cond_alcohol_ratio":
-                    return new[] { "alcohol" };
-                case "react_cond_fanta_order":
-                    return new[] { "methylol", "stabilizing_agent" };
-                case "react_cond_solvent_ratio":
-                    return string.IsNullOrEmpty(reaction.Solvent) ? null : new[] { reaction.Solvent };
-                default:
-                    return null;
-            }
+        /// <summary>条件里的液体名：只给名字本身加绿底，名字统一由液体管理器提供。</summary>
+        private static string ConditionLiquidName(string liquidId)
+        {
+            return "<mark=#55FF5580>" + LiquidManager.NameOf(liquidId) + "</mark>";
         }
 
         private static string ReactionTempText(LiquidReaction reaction)
