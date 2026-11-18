@@ -119,10 +119,10 @@ namespace ItemCatalog.Catalog
                   null, false, 0f, 0f, 0f,
                   "react_cond_acid_or_base", "酸或碱均可"),
 
-                // 有机废物矿化：废物 → 矿物（酸是消耗型催化剂，1 酸 : 40 废物）
-                R("mineralize", new[] { "organic_waste" }, new[] { 10f },
+                // 有机废物矿化：废物 + 酸（消耗型，1 酸 : 40 废物）→ 矿物
+                R("mineralize", new[] { "organic_waste", "acid" }, new[] { 10f, 0.25f },
                   new[] { "mineral" }, new[] { 1f },
-                  "acid", true, 0.25f, 0f, 0f,
+                  null, false, 0f, 0f, 0f,
                   null, null),
 
                 // 咖啡菇 + 酒精 → 咖啡因（每 tick 处理 1.5ml，溶剂最佳量 = 5 × 1.5ml）
