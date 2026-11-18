@@ -3374,7 +3374,7 @@ namespace ItemCatalog.UI
 
                 builder.BeginRow(2f, TextAnchor.MiddleLeft);
 
-                builder.AddLabel("<mark=#" + LiquidMarkHex() + "><u>" + component.Name + "</u></mark>",
+                builder.AddLabel(MarkLiquidName(LiquidManager.NameOf(component.Id), false),
                                  idPrefix + "comp_name" + i);
                 var nameLabel = builder.Last;
                 SetCompositionFont(nameLabel);
@@ -4149,16 +4149,29 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 条件里的液体名：link（可点击）+ 物品同款绿底 + 下划线，名字由液体管理器提供；
-        /// 字体颜色显式写回原版正文色，避免 mark 底纹影响观感。
+        /// 条件里的液体名：link（可点击）+ 和成分行共用的绿底下划线标记，名字由液体管理器提供。
         /// </summary>
         private static string ConditionLiquidName(string liquidId)
         {
             return "<link=\"" + LiquidCatalog.EntryPrefix + liquidId + "\">"
-                   + "<mark=#" + LiquidMarkHex() + ">"
-                   + "<u><color=#" + BodyTextHex() + ">"
-                   + LiquidManager.NameOf(liquidId)
-                   + "</color></u></mark></link>";
+                   + MarkLiquidName(LiquidManager.NameOf(liquidId), true)
+                   + "</link>";
+        }
+
+        /// <summary>
+        /// 液体名的统一标记：绿底 + 下划线。condition = true 时把字体颜色显式写回正文色
+        /// （原版 MachineryText 用的就是它，避免 mark 底纹影响字形颜色）。
+        /// 成分行和条件行共用这一份。
+        /// </summary>
+        private static string MarkLiquidName(string name, bool condition)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<mark=#").Append(LiquidMarkHex()).Append("><u>");
+            if (condition) sb.Append("<color=#").Append(BodyTextHex()).Append('>');
+            sb.Append(name);
+            if (condition) sb.Append("</color>");
+            sb.Append("</u></mark>");
+            return sb.ToString();
         }
 
         private static string _liquidMarkHex;
