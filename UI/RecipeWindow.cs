@@ -3266,22 +3266,97 @@ namespace ItemCatalog.UI
                 // 两个方向共用同一份内容：产物的成分说明
                 string product = use.Produces != null && use.Produces.Length > 0
                     ? use.Produces[0] : null;
-                string composition = CatalogWindow.LiquidComposition(product);
-                if (!string.IsNullOrEmpty(composition))
-                {
-                    builder.AddLabel(composition, "use_dissolve_composition");
-                    var label = builder.Last;
-                    if (label != null && label.text != null)
-                    {
-                        label.text.fontSize = 13f;
-                        label.text.alignment = TextAlignmentOptions.Left;
-                    }
-                }
+                RenderLiquidComposition(builder, product);
             }
             else if (!string.IsNullOrEmpty(use.Note))
             {
                 builder.AddLabel(ModEntry.T(use.Note), "use_note");
             }
+        }
+
+        /// <summary>
+        /// 逐行渲染液体条目的成分：总体积一行，之后每种液体一行。
+        /// 液体名带下划线且可点击，左右键分别追溯它的来源 / 用途。
+        /// </summary>
+        private static void RenderLiquidComposition(CustomUIBuilder builder, string liquidEntryId)
+        {
+            var components = CatalogWindow.LiquidComponents(liquidEntryId);
+            if (components == null || components.Count == 0) return;
+
+            int total = components[0].Total;
+
+            string totalText = null;
+            try
+            {
+                totalText = LocHelper.GetLocalizedMechanic(
+                    "mech_scanner_total_volume",
+                    new object[] { WaterScannerUIManager.FormatAmount(total) });
+            }
+            catch { }
+            if (string.IsNullOrEmpty(totalText))
+                totalText = "Total volume: " + WaterScannerUIManager.FormatAmount(total);
+
+            builder.AddLabel(totalText, "use_dissolve_total");
+            SetCompositionFont(builder.Last);
+
+            for (int i = 0; i < components.Count; i++)
+            {
+                var component = components[i];
+
+                builder.BeginRow(2f, TextAnchor.MiddleLeft);
+
+                builder.AddLabel("<u>" + component.Name + "</u>", "use_comp_name" + i);
+                var nameLabel = builder.Last;
+                SetCompositionFont(nameLabel);
+                AttachLiquidLookup(nameLabel, component.Id);
+
+                double pct = component.Total > 0
+                    ? component.Amount * 100.0 / component.Total : 0.0;
+                builder.AddLabel(
+                    ": " + WaterScannerUIManager.FormatAmount(component.Amount)
+                    + " (" + pct.ToString("0.##") + "%)",
+                    "use_comp_value" + i);
+                SetCompositionFont(builder.Last);
+
+                builder.End();
+            }
+        }
+
+        private static void SetCompositionFont(CustomUIElement element)
+        {
+            if (element == null || element.text == null) return;
+            element.text.fontSize = 15f;
+            element.text.alignment = TextAlignmentOptions.Left;
+        }
+
+        /// <summary>给成分名挂左/右键查询，行为与物品格一致。</summary>
+        private static void AttachLiquidLookup(CustomUIElement element, string liquidId)
+        {
+            if (element == null || element.text == null || string.IsNullOrEmpty(liquidId)) return;
+
+            var entry = LiquidCatalog.Find(LiquidCatalog.EntryPrefix + liquidId);
+            if (entry == null) return;
+
+            try
+            {
+                element.text.raycastTarget = true;
+                var go = element.text.gameObject;
+                var trigger = go.GetComponent<UnityEngine.EventSystems.EventTrigger>();
+                if (trigger == null) trigger = go.AddComponent<UnityEngine.EventSystems.EventTrigger>();
+
+                var click = new UnityEngine.EventSystems.EventTrigger.Entry
+                {
+                    eventID = UnityEngine.EventSystems.EventTriggerType.PointerClick
+                };
+                click.callback.AddListener(delegate (UnityEngine.EventSystems.BaseEventData data)
+                {
+                    var pointer = data as UnityEngine.EventSystems.PointerEventData;
+                    OpenFor(entry, pointer != null
+                        && pointer.button == UnityEngine.EventSystems.PointerEventData.InputButton.Right);
+                });
+                trigger.triggers.Add(click);
+            }
+            catch { }
         }
 
         /// <summary>

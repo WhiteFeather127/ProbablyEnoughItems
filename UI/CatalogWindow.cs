@@ -3163,6 +3163,54 @@ namespace ItemCatalog.UI
 
         // ------------------------------------------------------- 容器成分
 
+        internal struct LiquidComponent
+        {
+            internal string Id;
+            internal string Name;
+            internal int Amount;
+            internal int Total;
+        }
+
+        /// <summary>
+        /// 液体条目的成分列表（总体积 + 每种液体），供使用页逐行渲染并支持点击。
+        /// 直接读 LiquidCatalog 的代表瓶子。
+        /// </summary>
+        internal static List<LiquidComponent> LiquidComponents(string liquidEntryId)
+        {
+            var result = new List<LiquidComponent>();
+
+            var entry = LiquidCatalog.Find(liquidEntryId);
+            var item = entry == null ? null : entry.Item;
+            if (item == null) return result;
+
+            var parts = LiquidParts(item);
+            int total = 0;
+            foreach (var pair in parts) total += pair.Value;
+            if (total <= 0) return result;
+
+            var liquids = Liquid.Liquids;
+            if (liquids == null) return result;
+
+            for (int i = 0; i < liquids.Count; i++)
+            {
+                var liquid = liquids[i];
+                if (liquid == null) continue;
+
+                int amount;
+                if (!parts.TryGetValue(liquid.identifier, out amount) || amount <= 0) continue;
+
+                result.Add(new LiquidComponent
+                {
+                    Id = liquid.identifier,
+                    Name = LiquidName(liquid.identifier),
+                    Amount = amount,
+                    Total = total
+                });
+            }
+
+            return result;
+        }
+
         /// <summary>
         /// 液体条目的成分说明（两个方向共用）：第一行总体积，第二行液体名。
         /// 直接读 LiquidCatalog 的代表瓶子，不再从化学品现造实例。
