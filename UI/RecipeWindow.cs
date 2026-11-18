@@ -3930,6 +3930,15 @@ namespace ItemCatalog.UI
         {
             if (reaction == null) return;
 
+            // 有温度限制的反应：右上角放一台加热板（点它可查加热板自身）
+            if (reaction.TempMin > 0f)
+            {
+                builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
+                builder.AddFlexibleSpace();
+                RenderGoods(builder, "heating_plate", false, 3190, false, null, 52f);
+                builder.End();
+            }
+
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaMachine = new VanillaMachinePanel();
 
