@@ -2280,12 +2280,10 @@ namespace ItemCatalog.UI
             var cells = page.Cells;
             bool hasCells = cells != null && cells.Count > 0;
 
-            // 客人页两个方向都固定显示；地点只有货单
-            if (showClientName || hasCells)
-                builder.AddLabel(ModEntry.T("src_sold"), "src_sold");
-
+            // 有内容才留标题：售出
             if (hasCells)
             {
+                builder.AddLabel(ModEntry.T("src_sold"), "src_sold");
                 // 只画本页切片那一段；格子编号按页内序号，避免同一物品多页时
                 // 元素 id 重复（提示框 / 绿底 / 拖拽都按 id 登记）。
                 int from = Mathf.Clamp(start, 0, cells.Count);
@@ -2315,8 +2313,8 @@ namespace ItemCatalog.UI
                 }
             }
 
-            // 客人（双向）：售出、求购固定两块都显示，即使某一侧为空
-            if (showClientName)
+            // 客人（双向）：售出、求购固定两块；求购只在第一页画一次，避免货单分页时重复
+            if (showClientName && start == 0)
             {
                 RenderBuys(builder, source, true, _asUse);
             }
@@ -2340,9 +2338,9 @@ namespace ItemCatalog.UI
             bool hasTags = tags != null && tags.Length > 0;
             bool hasItems = items != null && items.Length > 0;
 
-            if (withHeader) builder.AddLabel(ModEntry.T("src_wanted"), "src_wanted");
-
             if (!hasTags && !hasItems) return;
+
+            if (withHeader) builder.AddLabel(ModEntry.T("src_wanted"), "src_wanted");
 
             if (hasTags)
             {
