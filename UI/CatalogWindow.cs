@@ -437,6 +437,7 @@ namespace ItemCatalog.UI
             _compositeSprites.Clear();
             _compositeByCell.Clear();
             DestroyCompositeStage();
+            ReleaseDissolveCells();
 
             _window = null;
             _inputBlocker = null;
@@ -2111,6 +2112,15 @@ namespace ItemCatalog.UI
         {
             if (entry == null) return null;
 
+            // 特殊格子（使用页的溶解瓶）：按登记的工厂现造一只同成分的实例
+            if (entry.TakeFactory != null)
+            {
+                GameItem made = null;
+                try { made = entry.TakeFactory(); }
+                catch (Exception e) { Warn("take factory '" + entry.Id + "': " + e.Message); }
+                return made;
+            }
+
             GameItem item = null;
 
             try { item = CreateCellItem(entry, Math.Max(0, entry.VariantIndex)); }
@@ -3156,31 +3166,93 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 可溶化学品溶进默认液体容器（LiquidManager.ContainerId）后的预览：
-        /// 返回灌好成分的瓶子图标 + 成分文本，供使用页展示。实例用完即销毁。
+        /// 使用页「可溶化学品溶进默认容器」的格子。
+        /// 返回和普通物品格同一条链路的 ItemEntry（tooltip / 拿取都走 BindCell），
+        /// 图标是灌好成分的瓶子，拿取时 TakeFactory 现造一只同成分的瓶子。
         /// </summary>
-        internal static bool BuildDissolvePreview(string chemicalId,
-                                                  out Sprite bottleSprite, out string composition)
+        internal static ItemEntry BuildDissolveCell(string chemicalId,
+                                                    out Sprite bottleSprite, out string composition)
         {
             bottleSprite = null;
             composition = null;
-            if (string.IsNullOrEmpty(chemicalId)) return false;
+            if (string.IsNullOrEmpty(chemicalId)) return null;
 
+            DissolveCell cached;
+            if (_dissolveCells.TryGetValue(chemicalId, out cached) && cached != null)
+            {
+                bottleSprite = cached.Sprite;
+                composition = cached.Composition;
+                return cached.Entry;
+            }
+
+            bool summary = IsFullPurityItem(chemicalId);
+            string mainName;
+
+            // 真实内容实例：tooltip 与拿取都以它为准
+            var bottle = CreateDissolveBottle(chemicalId, summary, out mainName);
+            if (bottle == null) return null;
+
+            composition = FormatContainerComposition(bottle, summary, mainName);
+
+            // 图标实例：单独缩放到可见液位，取完精灵就销毁
+            var display = CreateDissolveBottle(chemicalId, summary, out mainName);
+            if (display != null)
+            {
+                EnsureVisibleLiquidLevel(display);
+                bottleSprite = ComposeContainerIcon(display, "dissolve:" + chemicalId);
+                try { display.Destroy(); } catch { }
+            }
+
+            var entry = new ItemEntry
+            {
+                Id = LiquidManager.ContainerId,
+                Item = bottle,
+                KeyOverride = "dissolve:" + chemicalId,
+                TakeFactory = delegate
+                {
+                    string ignored;
+                    return CreateDissolveBottle(chemicalId, summary, out ignored);
+                }
+            };
+
+            _dissolveCells[chemicalId] = new DissolveCell
+            {
+                Entry = entry,
+                Sprite = bottleSprite,
+                Composition = composition,
+                Item = bottle
+            };
+
+            return entry;
+        }
+
+        private sealed class DissolveCell
+        {
+            internal ItemEntry Entry;
+            internal Sprite Sprite;
+            internal string Composition;
+            internal GameItem Item;
+        }
+
+        private static readonly Dictionary<string, DissolveCell> _dissolveCells =
+            new Dictionary<string, DissolveCell>(StringComparer.Ordinal);
+
+        /// <summary>造一只真正装入化学品的默认容器（不做图标用的液位放大）。</summary>
+        private static GameItem CreateDissolveBottle(string chemicalId, bool fullPurity, out string mainName)
+        {
+            mainName = null;
             GameItem bottle = null;
             GameItem chemical = null;
             try
             {
                 bottle = CreatePreviewItem(LiquidManager.ContainerId);
-                if (bottle == null) return false;
+                if (bottle == null) return null;
 
                 chemical = CreatePreviewItem(chemicalId);
-                if (chemical == null) return false;
-                if (!chemical.IsTag("SOLUBLE_TAG")) return false;
+                if (chemical == null) { bottle.Destroy(); return null; }
+                if (!chemical.IsTag("SOLUBLE_TAG")) { chemical.Destroy(); bottle.Destroy(); return null; }
 
-                bool summary = IsFullPurityItem(chemicalId);
-                string mainName = null;
-
-                if (summary)
+                if (fullPurity)
                 {
                     ApplyFullPurity(chemical, chemicalId);
                     mainName = MainIngredientName(chemical);
@@ -3188,44 +3260,50 @@ namespace ItemCatalog.UI
 
                 ChemicalHelper.DissolveInto(chemical, bottle);
                 chemical = null;   // DissolveInto 内部已经 Destroy
-
-                composition = FormatContainerComposition(bottle, summary, mainName);
-
-                // 真实体积相对瓶子容量往往很小（几 mL 对 750 mL），液位是 0、图标为空瓶。
-                // 仅把图标里的液位放大到可见档位；成分文本用的是上面的真实体积。
-                EnsureVisibleLiquidLevel(bottle);
-
-                bottleSprite = SpriteForItem(bottle);
-
-                // 液体是原版的 innate sprite modifier 覆盖层：只取 base 精灵会是空瓶。
-                // 走图鉴格子同一套合成管线，把液体层叠上去。
-                try
-                {
-                    string key = "dissolve:" + chemicalId;
-                    CaptureContainerOverlays(bottle, key);
-
-                    List<ContainerOverlay> overlays;
-                    if (_cellOverlays.TryGetValue(key, out overlays) &&
-                        overlays != null && overlays.Count > 0)
-                    {
-                        var composed = BuildCompositeSprite(key, bottleSprite, overlays);
-                        if (composed != null) bottleSprite = composed;
-                    }
-                }
-                catch (Exception e) { Warn("dissolve composite: " + e.Message); }
-
-                return bottleSprite != null || !string.IsNullOrEmpty(composition);
+                return bottle;
             }
             catch (Exception e)
             {
-                Warn("dissolve preview '" + chemicalId + "': " + e.Message);
-                return false;
-            }
-            finally
-            {
+                Warn("dissolve bottle '" + chemicalId + "': " + e.Message);
                 if (chemical != null) { try { chemical.Destroy(); } catch { } }
                 if (bottle != null) { try { bottle.Destroy(); } catch { } }
+                return null;
             }
+        }
+
+        /// <summary>base 精灵 + 原版 innate 覆盖层（液体/高亮）合成完整图标。</summary>
+        private static Sprite ComposeContainerIcon(GameItem bottle, string key)
+        {
+            var sprite = SpriteForItem(bottle);
+            try
+            {
+                CaptureContainerOverlays(bottle, key);
+
+                List<ContainerOverlay> overlays;
+                if (_cellOverlays.TryGetValue(key, out overlays) &&
+                    overlays != null && overlays.Count > 0)
+                {
+                    var composed = BuildCompositeSprite(key, sprite, overlays);
+                    if (composed != null) return composed;
+                }
+            }
+            catch (Exception e) { Warn("dissolve composite: " + e.Message); }
+
+            return sprite;
+        }
+
+        /// <summary>释放使用页的溶解瓶（换场景 / 关详情窗口时调用）。</summary>
+        internal static void ReleaseDissolveCells()
+        {
+            foreach (var pair in _dissolveCells)
+            {
+                var cell = pair.Value;
+                if (cell != null && cell.Item != null)
+                {
+                    try { cell.Item.Destroy(); } catch { }
+                }
+            }
+            _dissolveCells.Clear();
         }
 
         /// <summary>
