@@ -145,7 +145,7 @@ namespace ItemCatalog.Catalog
                 catch { product = false; }
                 if (!product) continue;
 
-                if (!string.Equals(MainLiquidOf(item), liquidId, StringComparison.Ordinal)) continue;
+                if (!string.Equals(MainLiquidId(item), liquidId, StringComparison.Ordinal)) continue;
 
                 result.Add(new UseInfo
                 {
@@ -158,7 +158,7 @@ namespace ItemCatalog.Catalog
             return result;
         }
 
-        private static string MainLiquidOf(GameItem item)
+        internal static string MainLiquidId(GameItem item)
         {
             if (item == null) return null;
 

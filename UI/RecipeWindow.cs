@@ -492,7 +492,6 @@ namespace ItemCatalog.UI
             SourceSeed = null;
             SourceWater = null;
             CatalogWindow.ResetExternalCells();
-            CatalogWindow.ReleaseDissolveCells();
         }
 
         /// <summary>
@@ -1144,7 +1143,6 @@ namespace ItemCatalog.UI
             _currentSlice = new PageSlice();
             _inputBlocker = null;
             CatalogWindow.ResetExternalCells();
-            CatalogWindow.ReleaseDissolveCells();
         }
 
         /// <summary>
@@ -2516,8 +2514,7 @@ namespace ItemCatalog.UI
         /// 左键看来源 / 右键看去处、开启拿取后可拖出）。
         /// 没有精灵图时用 AddButton 兜底，保证文字格子也能点、也能悬停。
         /// </summary>
-        private static void RenderGoods(CustomUIBuilder builder, string id, bool match, int index, bool emptyOnly, List<Sprite> rotate = null, float sideOverride = 0f,
-                                        Sprite spriteOverride = null, ItemEntry entryOverride = null)
+        private static void RenderGoods(CustomUIBuilder builder, string id, bool match, int index, bool emptyOnly, List<Sprite> rotate = null, float sideOverride = 0f)
         {
             // 占位 id（random_performance_module 这类）直接换成同族的**默认模块**：
             // 池子里塞的是占位，游戏生成时才掷骰；图鉴展示不做随机实例，
@@ -2565,9 +2562,6 @@ namespace ItemCatalog.UI
             // 标签源（`tag:XXX`）要轮播一整类物品，图标序列由调用方给
             if (rotate != null && rotate.Count > 0) sprite = rotate[0];
 
-            // 特殊格子（使用页的溶解瓶）：图标由调用方按灌装结果生成
-            if (spriteOverride != null) sprite = spriteOverride;
-
             var entry = RecipeIndex.FindEntry(id);
 
             // 预构建键（portable_water_purifier_used 这类）不在目录里：照抄容器的写法，
@@ -2575,8 +2569,6 @@ namespace ItemCatalog.UI
             // 原生提示框链 / 拖拽拿取就全和普通容器格子一样了。
             if (entry == null && PreBuiltItems.IsPreBuilt(id))
                 entry = CatalogWindow.PreBuiltEntry(id);
-
-            if (entryOverride != null) entry = entryOverride;
 
             string elementId = "g" + index;
 
@@ -3334,14 +3326,14 @@ namespace ItemCatalog.UI
             string id = use != null && use.Sources != null && use.Sources.Length > 0
                 ? use.Sources[0] : null;
 
-            Sprite bottle;
-            string composition;
-            var entry = CatalogWindow.BuildDissolveCell(id, out bottle, out composition);
-            if (entry == null) return;
+            // 产物就是代表该液体主成分的液体条目：和窗口里其他物品一样，
+            // 直接调 RenderGoods（内部走目录条目 + CompositeIconFor + BindCell）。
+            string liquidEntry = CatalogWindow.LiquidEntryIdForChemical(id);
+            if (string.IsNullOrEmpty(liquidEntry)) return;
 
-            // 和普通物品格同一条 BindCell 链路：tooltip、左右键查询、拿取都能用
-            RenderGoods(builder, entry.Id, false, 9000, false, null, 56f, bottle, entry);
+            RenderGoods(builder, liquidEntry, false, 9000, false, null, 56f);
 
+            string composition = CatalogWindow.DissolveComposition(id);
             if (!string.IsNullOrEmpty(composition))
             {
                 builder.AddLabel(composition, "use_dissolve_composition");

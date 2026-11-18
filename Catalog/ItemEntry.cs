@@ -39,18 +39,11 @@ namespace ItemCatalog.Catalog
         /// <summary>界面/缓存的唯一键：展开条目带上变体序号，避免 N 个格子互相覆盖。</summary>
         public string Key
         {
-            get
-            {
-                if (!string.IsNullOrEmpty(KeyOverride)) return KeyOverride;
-                return VariantIndex < 0 ? Id : Id + "#" + VariantIndex;
-            }
+            get { return VariantIndex < 0 ? Id : Id + "#" + VariantIndex; }
         }
 
-        /// <summary>同 id 的特殊格子（使用页的溶解瓶等）用这个覆盖 Key，避免和目录条目撞键。</summary>
-        public string KeyOverride;
-
         /// <summary>
-        /// 「拿取物品」时用来造新实例的工厂（特殊格子：使用页的溶解瓶）。
+        /// 「拿取物品」时用来造新实例的工厂（特殊格子：液体条目等）。
         /// 有它就不走 CreateCellItem / ItemSpawner 那条常规路径。
         /// </summary>
         public Func<GameItem> TakeFactory;

@@ -437,7 +437,7 @@ namespace ItemCatalog.UI
             _compositeSprites.Clear();
             _compositeByCell.Clear();
             DestroyCompositeStage();
-            ReleaseDissolveCells();
+            _dissolveText.Clear();
             LiquidCatalog.Reset();
 
             _window = null;
@@ -3164,88 +3164,55 @@ namespace ItemCatalog.UI
 
         // ------------------------------------------------------- 容器成分
 
-        /// <summary>按物品实例当前的图集/精灵名取图（灌装后的瓶子用）。</summary>
-        internal static Sprite SpriteForItem(GameItem item)
+        /// <summary>可溶化学品 → 代表它的液体条目 id（主成分的瓶子）。</summary>
+        internal static string LiquidEntryIdForChemical(string chemicalId)
         {
+            var entry = RecipeIndex.FindEntry(chemicalId);
+            var item = entry == null ? null : entry.Item;
             if (item == null) return null;
 
-            var entry = new ItemEntry { Id = item.identifier, Item = item };
-            return GetSprite(entry);
+            string liquidId = LiquidCatalog.MainLiquidId(item);
+            return string.IsNullOrEmpty(liquidId) ? null : LiquidCatalog.EntryPrefix + liquidId;
         }
+
+        private static readonly Dictionary<string, string> _dissolveText =
+            new Dictionary<string, string>(StringComparer.Ordinal);
 
         /// <summary>
-        /// 使用页「可溶化学品溶进默认容器」的格子。
-        /// 返回和普通物品格同一条链路的 ItemEntry（tooltip / 拿取都走 BindCell），
-        /// 图标是灌好成分的瓶子，拿取时 TakeFactory 现造一只同成分的瓶子。
+        /// 使用页成分文本：化学产品按实验室纯级取成分（和搅拌机一致），
+        /// 其它可溶物直接读自己的液体标签。
         /// </summary>
-        internal static ItemEntry BuildDissolveCell(string chemicalId,
-                                                    out Sprite bottleSprite, out string composition)
+        internal static string DissolveComposition(string chemicalId)
         {
-            bottleSprite = null;
-            composition = null;
             if (string.IsNullOrEmpty(chemicalId)) return null;
 
-            DissolveCell cached;
-            if (_dissolveCells.TryGetValue(chemicalId, out cached) && cached != null)
+            string cached;
+            if (_dissolveText.TryGetValue(chemicalId, out cached)) return cached;
+
+            string text = null;
+
+            if (IsFullPurityItem(chemicalId))
             {
-                bottleSprite = cached.Sprite;
-                composition = cached.Composition;
-                return cached.Entry;
-            }
-
-            bool summary = IsFullPurityItem(chemicalId);
-            string mainName;
-
-            // 真实内容实例：tooltip 与拿取都以它为准
-            var bottle = CreateDissolveBottle(chemicalId, summary, out mainName);
-            if (bottle == null) return null;
-
-            composition = FormatContainerComposition(bottle, summary, mainName);
-
-            // 图标实例：单独缩放到可见液位，取完精灵就销毁
-            var display = CreateDissolveBottle(chemicalId, summary, out mainName);
-            if (display != null)
-            {
-                EnsureVisibleLiquidLevel(display);
-                bottleSprite = ComposeContainerIcon(display, "dissolve:" + chemicalId);
-                try { display.Destroy(); } catch { }
-            }
-
-            var entry = new ItemEntry
-            {
-                Id = LiquidManager.ContainerId,
-                Item = bottle,
-                KeyOverride = "dissolve:" + chemicalId,
-                TakeFactory = delegate
+                string mainName;
+                var bottle = CreateDissolveBottle(chemicalId, true, out mainName);
+                if (bottle != null)
                 {
-                    string ignored;
-                    return CreateDissolveBottle(chemicalId, summary, out ignored);
+                    text = FormatContainerComposition(bottle, true, mainName);
+                    try { bottle.Destroy(); } catch { }
                 }
-            };
-
-            _dissolveCells[chemicalId] = new DissolveCell
+            }
+            else
             {
-                Entry = entry,
-                Sprite = bottleSprite,
-                Composition = composition,
-                Item = bottle
-            };
+                var entry = RecipeIndex.FindEntry(chemicalId);
+                var item = entry == null ? null : entry.Item;
+                text = FormatContainerComposition(item, false, null);
+            }
 
-            return entry;
+            _dissolveText[chemicalId] = text;
+            return text;
         }
 
-        private sealed class DissolveCell
-        {
-            internal ItemEntry Entry;
-            internal Sprite Sprite;
-            internal string Composition;
-            internal GameItem Item;
-        }
-
-        private static readonly Dictionary<string, DissolveCell> _dissolveCells =
-            new Dictionary<string, DissolveCell>(StringComparer.Ordinal);
-
-        /// <summary>造一只真正装入化学品的默认容器（不做图标用的液位放大）。</summary>
+        /// <summary>造一只真正装入化学品的默认容器（成分计算用，用完销毁）。</summary>
         private static GameItem CreateDissolveBottle(string chemicalId, bool fullPurity, out string mainName)
         {
             mainName = null;
@@ -3277,105 +3244,6 @@ namespace ItemCatalog.UI
                 if (bottle != null) { try { bottle.Destroy(); } catch { } }
                 return null;
             }
-        }
-
-        /// <summary>base 精灵 + 原版 innate 覆盖层（液体/高亮）合成完整图标。</summary>
-        private static Sprite ComposeContainerIcon(GameItem bottle, string key)
-        {
-            var sprite = SpriteForItem(bottle);
-            try
-            {
-                CaptureContainerOverlays(bottle, key);
-
-                List<ContainerOverlay> overlays;
-                if (_cellOverlays.TryGetValue(key, out overlays) &&
-                    overlays != null && overlays.Count > 0)
-                {
-                    var composed = BuildCompositeSprite(key, sprite, overlays);
-                    if (composed != null) return composed;
-                }
-            }
-            catch (Exception e) { Warn("dissolve composite: " + e.Message); }
-
-            return sprite;
-        }
-
-        /// <summary>释放使用页的溶解瓶（换场景 / 关详情窗口时调用）。</summary>
-        internal static void ReleaseDissolveCells()
-        {
-            foreach (var pair in _dissolveCells)
-            {
-                var cell = pair.Value;
-                if (cell != null && cell.Item != null)
-                {
-                    try { cell.Item.Destroy(); } catch { }
-                }
-            }
-            _dissolveCells.Clear();
-        }
-
-        /// <summary>
-        /// 图标用：把瓶内液体等比放大到至少 10% 液位（MapCapacity 的最小可见档）。
-        /// 只影响即将销毁的预览实例；成分文本已经按真实体积生成。
-        /// </summary>
-        private static void EnsureVisibleLiquidLevel(GameItem bottle)
-        {
-            if (bottle == null) return;
-
-            try
-            {
-                int capacity = bottle.GetTagReadonly("LIQUID_CONTAINER_CAPACITY").GetInt();
-                if (capacity <= 0) return;
-
-                var liquids = Liquid.Liquids;
-                if (liquids == null) return;
-
-                int total = 0;
-                for (int i = 0; i < liquids.Count; i++)
-                {
-                    if (liquids[i] == null) continue;
-                    total += bottle.GetTagReadonly(liquids[i].currentPart).GetInt();
-                }
-
-                // 已经达到 10% 液位就不动
-                if (total <= 0 || total * 10 >= capacity) return;
-
-                int target = capacity / 10;
-                int assigned = 0;
-                int lastIndex = -1;
-
-                for (int i = 0; i < liquids.Count; i++)
-                {
-                    var liquid = liquids[i];
-                    if (liquid == null) continue;
-
-                    int amount = bottle.GetTagReadonly(liquid.currentPart).GetInt();
-                    if (amount <= 0) continue;
-
-                    int scaled = (int)((long)amount * target / total);
-                    bottle.ModifyTag(liquid.currentPart, delegate(TagState state)
-                    {
-                        state.Enable().SetInt(scaled);
-                    }, false);
-
-                    assigned += scaled;
-                    lastIndex = i;
-                }
-
-                // 取整余量补给最后一种，保证正好到 10% 档位
-                if (lastIndex >= 0 && assigned < target)
-                {
-                    var liquid = liquids[lastIndex];
-                    int amount = bottle.GetTagReadonly(liquid.currentPart).GetInt() + (target - assigned);
-                    bottle.ModifyTag(liquid.currentPart, delegate(TagState state)
-                    {
-                        state.Enable().SetInt(amount);
-                    }, false);
-                }
-
-                try { SpriteHelper.UpdateWaterContainerSprite(bottle); } catch { }
-            }
-            catch { }
         }
 
         /// <summary>
