@@ -2212,6 +2212,14 @@ namespace ItemCatalog.UI
 
             try { GeneralHelper.SetItemOwned(copy, true); } catch { }
 
+            // 药品这类成分随机的物品：拿取统一用图鉴展示的实验室纯级（100% 活性物质）
+            try
+            {
+                if (IsFullPurityItem(copy.identifier))
+                    ApplyFullPurity(copy, copy.identifier);
+            }
+            catch (Exception e) { Warn("full purity copy: " + e.Message); }
+
             // 容器样本（例如搅拌机里灌好成分的瓶子）要把内容物一起复制，
             // 否则拖出来只是工厂新造的空瓶。
             try
@@ -5359,7 +5367,7 @@ namespace ItemCatalog.UI
 
         private static int _purityLogs;
 
-        private static bool IsFullPurityItem(string id)
+        internal static bool IsFullPurityItem(string id)
         {
             if (string.IsNullOrEmpty(id)) return false;
 
@@ -5379,7 +5387,7 @@ namespace ItemCatalog.UI
         /// 所以这里传物品自己的 id，配方自己知道该填哪种活性物质、灌多少体积。
         /// 片剂和注射剂走同一条路径。
         /// </summary>
-        private static void ApplyFullPurity(GameItem item, string id)
+        internal static void ApplyFullPurity(GameItem item, string id)
         {
             if (item == null || string.IsNullOrEmpty(id)) return;
 

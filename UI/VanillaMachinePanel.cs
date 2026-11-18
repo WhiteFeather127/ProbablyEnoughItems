@@ -416,6 +416,10 @@ namespace ItemCatalog.UI
                 if (chemical == null) return;
                 if (!chemical.IsTag("BLENDABLE_TAG")) return;
 
+                // 药品用实验室纯级（100% 活性物质），产物里的成分也按 100% 纯度灌入
+                if (CatalogWindow.IsFullPurityItem(inputId))
+                    CatalogWindow.ApplyFullPurity(chemical, inputId);
+
                 ChemicalHelper.BlendInto(chemical, container, 0);
                 chemical = null;   // BlendInto 内部已经 Destroy
             }
@@ -883,6 +887,15 @@ namespace ItemCatalog.UI
                 // 预览实例仍不写存档，但提示框里不能显示「未拥有」——
                 // 图鉴的探针也是用 SetItemOwned 标记成已拥有的。
                 try { GeneralHelper.SetItemOwned(item, true); } catch { }
+
+                // 成分随机的药品：机器面板里也统一显示实验室纯级（100% 活性物质），
+                // 拿取和面板展示保持一致。
+                try
+                {
+                    if (CatalogWindow.IsFullPurityItem(id))
+                        CatalogWindow.ApplyFullPurity(item, id);
+                }
+                catch { }
 
                 // 熔炉锭：把这一档的纯度写进样本物品（特性 / tooltip 由原版 SetPurity 接管）
                 if (!string.IsNullOrEmpty(purity) &&
