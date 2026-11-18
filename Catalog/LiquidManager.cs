@@ -146,5 +146,147 @@ namespace ItemCatalog.Catalog
 
             return major;
         }
+
+        // ------------------------------------------------------- 容器成分
+
+        /// <summary>一行成分：总体积、液体 id / 本地化名、含量。Summary = 只写名字。</summary>
+        internal struct Component
+        {
+            internal string Id;
+            internal string Name;
+            internal int Amount;
+            internal int Total;
+            internal bool Summary;
+        }
+
+        /// <summary>液体 id → 显示名（优先游戏 Liquid 数据里的 displayName，其次本地化键）。</summary>
+        internal static string NameOf(string liquidId)
+        {
+            if (string.IsNullOrEmpty(liquidId)) return "?";
+
+            try
+            {
+                var liquid = Liquid.LiquidDict == null ? null : Liquid.LiquidDict[liquidId];
+                if (liquid != null && !string.IsNullOrEmpty(liquid.displayName))
+                    return liquid.displayName;
+            }
+            catch { }
+
+            try
+            {
+                string text = LocHelper.GetLocalizedMechanic("liquid_name_" + liquidId, liquidId);
+                return string.IsNullOrEmpty(text) ? liquidId : text;
+            }
+            catch { return liquidId; }
+        }
+
+        /// <summary>读一个容器当前的液体成分：液体 identifier → 千分比（0..10000）。</summary>
+        internal static Dictionary<string, int> Parts(GameItem item)
+        {
+            var parts = new Dictionary<string, int>(StringComparer.Ordinal);
+            if (item == null) return parts;
+
+            try
+            {
+                var liquids = Liquid.Liquids;
+                if (liquids == null) return parts;
+
+                for (int i = 0; i < liquids.Count; i++)
+                {
+                    var liquid = liquids[i];
+                    if (liquid == null) continue;
+
+                    string id = liquid.identifier;
+                    if (string.IsNullOrEmpty(id)) continue;
+
+                    int value;
+                    try { value = item.GetTagReadonly(liquid.currentPart).GetInt(); }
+                    catch { continue; }
+
+                    if (value > 0) parts[id] = value;
+                }
+            }
+            catch { }
+
+            return parts;
+        }
+
+        /// <summary>
+        /// 容器成分列表。mainOnly = true 时只返回一项（总体积 + 主要成分名），
+        /// 用于成分随品质变化的化学产品；否则按 Liquid.Liquids 顺序列全部成分。
+        /// </summary>
+        internal static List<Component> Components(GameItem container,
+                                                   bool mainOnly = false, string mainName = null)
+        {
+            var result = new List<Component>();
+            var parts = Parts(container);
+            if (parts.Count == 0) return result;
+
+            int total = 0;
+            foreach (var pair in parts) total += pair.Value;
+            if (total <= 0) return result;
+
+            string majorId = null;
+            int major = 0;
+            foreach (var pair in parts)
+            {
+                if (pair.Value > major) { major = pair.Value; majorId = pair.Key; }
+            }
+
+            if (mainOnly)
+            {
+                result.Add(new Component
+                {
+                    Id = majorId,
+                    Name = string.IsNullOrEmpty(mainName) ? NameOf(majorId) : mainName,
+                    Amount = total,
+                    Total = total,
+                    Summary = true
+                });
+                return result;
+            }
+
+            var liquids = Liquid.Liquids;
+            if (liquids == null) return result;
+
+            for (int i = 0; i < liquids.Count; i++)
+            {
+                var liquid = liquids[i];
+                if (liquid == null) continue;
+
+                int amount;
+                if (!parts.TryGetValue(liquid.identifier, out amount) || amount <= 0) continue;
+
+                result.Add(new Component
+                {
+                    Id = liquid.identifier,
+                    Name = NameOf(liquid.identifier),
+                    Amount = amount,
+                    Total = total
+                });
+            }
+
+            return result;
+        }
+
+        /// <summary>液体条目（liquid:*）的成分列表。</summary>
+        internal static List<Component> Components(ItemEntry entry)
+        {
+            return entry == null ? new List<Component>() : Components(entry.Item);
+        }
+
+        /// <summary>成分检测器风格的总体积行。</summary>
+        internal static string TotalText(int total)
+        {
+            try
+            {
+                string text = LocHelper.GetLocalizedMechanic("mech_scanner_total_volume",
+                    new object[] { WaterScannerUIManager.FormatAmount(total) });
+                if (!string.IsNullOrEmpty(text)) return text;
+            }
+            catch { }
+
+            return "Total volume: " + WaterScannerUIManager.FormatAmount(total);
+        }
     }
 }

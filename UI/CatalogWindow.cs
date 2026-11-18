@@ -3163,138 +3163,7 @@ namespace ItemCatalog.UI
 
         // ------------------------------------------------------- 容器成分
 
-        internal struct LiquidComponent
-        {
-            internal string Id;
-            internal string Name;
-            internal int Amount;
-            internal int Total;
-        }
-
-        /// <summary>
-        /// 液体条目的成分列表（总体积 + 每种液体），供使用页逐行渲染并支持点击。
-        /// 直接读 LiquidCatalog 的代表瓶子。
-        /// </summary>
-        internal static List<LiquidComponent> LiquidComponents(string liquidEntryId)
-        {
-            var result = new List<LiquidComponent>();
-
-            var entry = LiquidCatalog.Find(liquidEntryId);
-            var item = entry == null ? null : entry.Item;
-            if (item == null) return result;
-
-            var parts = LiquidParts(item);
-            int total = 0;
-            foreach (var pair in parts) total += pair.Value;
-            if (total <= 0) return result;
-
-            var liquids = Liquid.Liquids;
-            if (liquids == null) return result;
-
-            for (int i = 0; i < liquids.Count; i++)
-            {
-                var liquid = liquids[i];
-                if (liquid == null) continue;
-
-                int amount;
-                if (!parts.TryGetValue(liquid.identifier, out amount) || amount <= 0) continue;
-
-                result.Add(new LiquidComponent
-                {
-                    Id = liquid.identifier,
-                    Name = LiquidName(liquid.identifier),
-                    Amount = amount,
-                    Total = total
-                });
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// 液体条目的成分说明（两个方向共用）：第一行总体积，第二行液体名。
-        /// 直接读 LiquidCatalog 的代表瓶子，不再从化学品现造实例。
-        /// </summary>
-        internal static string LiquidComposition(string liquidEntryId)
-        {
-            var entry = LiquidCatalog.Find(liquidEntryId);
-            var item = entry == null ? null : entry.Item;
-            if (item == null) return null;
-
-            return FormatContainerComposition(item, true, entry.DisplayName);
-        }
-
-        /// <summary>
-        /// 容器成分文本（图鉴统一实现，搅拌机 / 使用页共用）：
-        /// 第一行总体积，后面每种液体一行「本地化名: 体积 (百分比)」。
-        /// mainOnly = true 时只写总体积 + 主要成分名。
-        /// </summary>
-        internal static string FormatContainerComposition(GameItem container,
-                                                         bool mainOnly = false, string mainName = null)
-        {
-            if (container == null) return null;
-
-            var parts = LiquidParts(container);
-            if (parts.Count == 0) return null;
-
-            int total = 0;
-            foreach (var pair in parts) total += pair.Value;
-            if (total <= 0) return null;
-
-            string totalText = null;
-            try
-            {
-                totalText = LocHelper.GetLocalizedMechanic("mech_scanner_total_volume",
-                    new object[] { WaterScannerUIManager.FormatAmount(total) });
-            }
-            catch { }
-
-            if (string.IsNullOrEmpty(totalText))
-                totalText = "Total: " + WaterScannerUIManager.FormatAmount(total);
-
-            var sb = new System.Text.StringBuilder();
-            sb.Append(totalText);
-
-            if (mainOnly)
-            {
-                string name = mainName;
-                if (string.IsNullOrEmpty(name))
-                {
-                    string majorId = null;
-                    int major = 0;
-                    foreach (var pair in parts)
-                    {
-                        if (pair.Value > major) { major = pair.Value; majorId = pair.Key; }
-                    }
-                    if (majorId != null) name = LiquidName(majorId);
-                }
-
-                if (!string.IsNullOrEmpty(name)) sb.Append('\n').Append(name);
-                return sb.ToString();
-            }
-
-            var liquids = Liquid.Liquids;
-            if (liquids == null) return sb.ToString();
-
-            for (int i = 0; i < liquids.Count; i++)
-            {
-                var liquid = liquids[i];
-                if (liquid == null) continue;
-
-                int amount;
-                if (!parts.TryGetValue(liquid.identifier, out amount) || amount <= 0) continue;
-
-                float percent = (float)amount / total * 100f;
-                sb.Append('\n')
-                  .Append(LiquidName(liquid.identifier)).Append(": ")
-                  .Append(WaterScannerUIManager.FormatAmount(amount))
-                  .Append(" (").Append(string.Format("{0:F2}", percent)).Append("%)");
-            }
-
-            return sb.ToString();
-        }
-
-        // ------------------------------------------------------- 容器成分
+        // 成分读取、主要成分、总体积文本统一在 Catalog/LiquidManager.cs。
 
         /// <summary>
         /// 读一个容器当前的液体成分：液体 identifier → 千分比（0..10000）。
@@ -3302,29 +3171,7 @@ namespace ItemCatalog.UI
         /// </summary>
         internal static Dictionary<string, int> LiquidParts(GameItem item)
         {
-            var parts = new Dictionary<string, int>(StringComparer.Ordinal);
-            if (item == null) return parts;
-
-            try
-            {
-                var liquids = Liquid.Liquids;
-                if (liquids == null) return parts;
-
-                for (int i = 0; i < liquids.Count; i++)
-                {
-                    var liquid = liquids[i];
-                    if (liquid == null) continue;
-
-                    string id = liquid.identifier;
-                    if (string.IsNullOrEmpty(id)) continue;
-
-                    int value = ReadIntTag(item, liquid.currentPart);
-                    if (value > 0) parts[id] = value;
-                }
-            }
-            catch { }
-
-            return parts;
+            return LiquidManager.Parts(item);
         }
 
         /// <summary>
@@ -4021,14 +3868,7 @@ namespace ItemCatalog.UI
 
         private static string LiquidName(string liquidId)
         {
-            try
-            {
-                var liquid = Liquid.LiquidDict == null ? null : Liquid.LiquidDict[liquidId];
-                if (liquid != null && !string.IsNullOrEmpty(liquid.displayName)) return liquid.displayName;
-            }
-            catch { }
-
-            return liquidId;
+            return LiquidManager.NameOf(liquidId);
         }
 
         /// <summary>供合成表窗口复用：按精灵真实比例算显示尺寸。</summary>

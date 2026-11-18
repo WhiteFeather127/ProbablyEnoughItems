@@ -430,27 +430,21 @@ namespace ItemCatalog.UI
             }
         }
 
-        /// <summary>
-        /// 容器槽样本的成分文本；格式和成分检测器一致，由 LiquidManager 统一生成。
-        /// mainOnly = true 时只写总体积 + 主要成分名。
-        /// </summary>
-        internal string ContainerCompositionText(bool mainOnly = false, string mainName = null)
+        /// <summary>当前配方预览里容器槽中的样本（没有则 null）。</summary>
+        internal GameItem ContainerSample
         {
-            GameItem container = null;
-            if (_containerSlot != null)
+            get
             {
+                if (_containerSlot == null) return null;
+
                 for (int i = 0; i < _samples.Count; i++)
                 {
                     var it = _samples[i];
-                    if (it != null && it.parentInventory == _containerSlot)
-                    {
-                        container = it;
-                        break;
-                    }
+                    if (it != null && it.parentInventory == _containerSlot) return it;
                 }
-            }
 
-            return CatalogWindow.FormatContainerComposition(container, mainOnly, mainName);
+                return null;
+            }
         }
 
         private bool AllowOnlyWhileFilling(GameItem item, GameInventory inventory)

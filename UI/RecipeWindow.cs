@@ -318,9 +318,6 @@ namespace ItemCatalog.UI
         /// <summary>品质需求所在的行：单独一行，居中放在机器图标下方。</summary>
         private static RectTransform _machineQualityRow;
 
-        /// <summary>机器页面板下方的成分文本（搅拌机）；页面重建时重新生成。</summary>
-        private static CustomUIElement _machineCompositionLabel;
-
         /// <summary>
         /// 窗口层级遮挡：拖拽落点用 RenderHandler.RaycastElement 从前往后找
         /// TreeNodeRender。详情窗口的正文是自定义 UI（没有 TreeNodeRender），
@@ -1302,7 +1299,6 @@ namespace ItemCatalog.UI
             _machineTopRow = null;
             _machineQualityLabel = null;
             _machineQualityRow = null;
-            _machineCompositionLabel = null;
             CatalogWindow.ResetExternalCells();   // 旧格子的提示框 / 拖拽登记一起失效
 
             // 只有来源页才有「哪个客人」这回事；配方页清掉种子，
@@ -3266,7 +3262,8 @@ namespace ItemCatalog.UI
                 // 两个方向共用同一份内容：产物的成分说明
                 string product = use.Produces != null && use.Produces.Length > 0
                     ? use.Produces[0] : null;
-                RenderLiquidComposition(builder, product);
+                RenderLiquidComposition(builder,
+                    LiquidManager.Components(LiquidCatalog.Find(product)));
             }
             else if (!string.IsNullOrEmpty(use.Note))
             {
@@ -3275,28 +3272,16 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 逐行渲染液体条目的成分：总体积一行，之后每种液体一行。
+        /// 逐行渲染液体成分：总体积一行，之后每种液体一行。
         /// 液体名带下划线且可点击，左右键分别追溯它的来源 / 用途。
+        /// 使用页与搅拌机页共用这一份渲染。
         /// </summary>
-        private static void RenderLiquidComposition(CustomUIBuilder builder, string liquidEntryId)
+        private static void RenderLiquidComposition(CustomUIBuilder builder,
+                                                    List<LiquidManager.Component> components)
         {
-            var components = CatalogWindow.LiquidComponents(liquidEntryId);
             if (components == null || components.Count == 0) return;
 
-            int total = components[0].Total;
-
-            string totalText = null;
-            try
-            {
-                totalText = LocHelper.GetLocalizedMechanic(
-                    "mech_scanner_total_volume",
-                    new object[] { WaterScannerUIManager.FormatAmount(total) });
-            }
-            catch { }
-            if (string.IsNullOrEmpty(totalText))
-                totalText = "Total volume: " + WaterScannerUIManager.FormatAmount(total);
-
-            builder.AddLabel(totalText, "use_dissolve_total");
+            builder.AddLabel(LiquidManager.TotalText(components[0].Total), "use_dissolve_total");
             SetCompositionFont(builder.Last);
 
             for (int i = 0; i < components.Count; i++)
@@ -3310,13 +3295,17 @@ namespace ItemCatalog.UI
                 SetCompositionFont(nameLabel);
                 AttachLiquidLookup(nameLabel, component.Id);
 
-                double pct = component.Total > 0
-                    ? component.Amount * 100.0 / component.Total : 0.0;
-                builder.AddLabel(
-                    ": " + WaterScannerUIManager.FormatAmount(component.Amount)
-                    + " (" + pct.ToString("0.##") + "%)",
-                    "use_comp_value" + i);
-                SetCompositionFont(builder.Last);
+                // Summary 行只写名字（化学产品的详细成分不适合逐种列出）
+                if (!component.Summary)
+                {
+                    double pct = component.Total > 0
+                        ? component.Amount * 100.0 / component.Total : 0.0;
+                    builder.AddLabel(
+                        ": " + WaterScannerUIManager.FormatAmount(component.Amount)
+                        + " (" + pct.ToString("0.##") + "%)",
+                        "use_comp_value" + i);
+                    SetCompositionFont(builder.Last);
+                }
 
                 builder.End();
             }
@@ -3718,23 +3707,16 @@ namespace ItemCatalog.UI
             _vanillaMachine.HighlightItem(_entry == null ? null : _entry.Id);
 
             // 搅拌机：面板下面按成分检测器的格式列出液体成分（一行一种 + 总体积）
-            _machineCompositionLabel = null;
             if (string.Equals(machineId, "blender", StringComparison.Ordinal))
             {
                 // 成分随品质变化的化学产品（药）只写总量 + 主要成分名
                 bool summaryOnly = IsVariableCompositionDrug(recipe);
-                string composition = _vanillaMachine.ContainerCompositionText(
+                var components = LiquidManager.Components(_vanillaMachine.ContainerSample,
                     summaryOnly, summaryOnly ? MainIngredientName(recipe) : null);
-                if (!string.IsNullOrEmpty(composition))
+                if (components.Count > 0)
                 {
                     builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
-                    builder.AddLabel(composition, "mach_composition");
-                    _machineCompositionLabel = builder.Last;
-                    if (_machineCompositionLabel != null && _machineCompositionLabel.text != null)
-                    {
-                        _machineCompositionLabel.text.fontSize = 13f;
-                        _machineCompositionLabel.text.alignment = TextAlignmentOptions.Left;
-                    }
+                    RenderLiquidComposition(builder, components);
                     builder.End();
                 }
             }
@@ -3747,7 +3729,7 @@ namespace ItemCatalog.UI
 
 
         /// <summary>
-        /// 搅拌机成分区高度：第一行总体积 + 每种液体一行（字号 13）。
+        /// 搅拌机成分区高度：第一行总体积 + 每种液体一行（字号 15）。
         /// 化学产品只写总量 + 主要成分名，固定两行。
         /// </summary>
         private static float BlenderCompositionHeight(MachinePanels.Recipe recipe)
@@ -3780,7 +3762,7 @@ namespace ItemCatalog.UI
                 lines = components + 1;   // 总体积 + 各成分
             }
 
-            return lines * 18f + 6f;
+            return lines * 20f + 6f;
         }
 
         /// <summary>配方里的投入物品实例（取第一个输入）。</summary>
