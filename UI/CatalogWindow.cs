@@ -3190,6 +3190,24 @@ namespace ItemCatalog.UI
                 chemical = null;   // DissolveInto 内部已经 Destroy
 
                 bottleSprite = SpriteForItem(bottle);
+
+                // 液体是原版的 innate sprite modifier 覆盖层：只取 base 精灵会是空瓶。
+                // 走图鉴格子同一套合成管线，把液体层叠上去。
+                try
+                {
+                    string key = "dissolve:" + chemicalId;
+                    CaptureContainerOverlays(bottle, key);
+
+                    List<ContainerOverlay> overlays;
+                    if (_cellOverlays.TryGetValue(key, out overlays) &&
+                        overlays != null && overlays.Count > 0)
+                    {
+                        var composed = BuildCompositeSprite(key, bottleSprite, overlays);
+                        if (composed != null) bottleSprite = composed;
+                    }
+                }
+                catch (Exception e) { Warn("dissolve composite: " + e.Message); }
+
                 composition = LiquidManager.FormatComposition(bottle, summary, mainName);
                 return bottleSprite != null || !string.IsNullOrEmpty(composition);
             }
