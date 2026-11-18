@@ -861,7 +861,9 @@ namespace ItemCatalog.UI
             else
             {
                 // ===== 来源方向 =====
-                AddClientCategory(SourceIndex.For(_entry.Id), null);
+                // 卖这件的客人：页面里同时会画他的售出与求购（见 BuildSourceBlocks）
+                AddClientCategory(SourceIndex.For(_entry.Id),
+                                  SourceIndex.WantedBy(_entry.Id, _entry.Item));
                 AddSourceCategory(CatLocation, SourceIndex.For(_entry.Id));
 
                 if (MachinePanels.For(_entry.Id) != null ||
@@ -969,7 +971,8 @@ namespace ItemCatalog.UI
                 }
             }
 
-            // 收购方：卖家里没有的补在后面（同一客人既卖又收时，一页清单里两面都有）
+            // 收购方：同一客人既卖又收时只登记收购，不额外加人物；
+            // 用途方向（sources == null）才把只收不卖的客人补进来。
             var buyers = new List<SourceInfo>();
             if (wanted != null)
             {
@@ -977,7 +980,15 @@ namespace ItemCatalog.UI
                 {
                     var one = wanted[i];
                     if (one == null || one.Kind != SourceKind.Client) continue;
-                    if (clients.Contains(one)) continue;
+
+                    if (clients.Contains(one))
+                    {
+                        if (!buyers.Contains(one)) buyers.Add(one);
+                        continue;
+                    }
+
+                    if (sources != null) continue;   // 来源方向只列卖家
+
                     clients.Add(one);
                     buyers.Add(one);
                 }
@@ -2151,55 +2162,36 @@ namespace ItemCatalog.UI
                 var source = category.Sources[i];
                 if (source == null) continue;
 
-                // 方向：用途方向只画「求购」；来源方向画货单。
-                if (_asUse)
-                {
-                    if (category.Wanted != null && category.Wanted.Contains(source))
-                    {
-                        _sourceBlocks.Add(new SourceBlock
-                        {
-                            Source = source,
-                            Cells = new List<GoodsCell>(),
-                            Buys = true
-                        });
-                    }
-                    continue;
-                }
+                // 一个客人一页：售出与求购合在同一页，方向只决定进入这一页的客人。
+                bool buys = category.Wanted != null && category.Wanted.Contains(source);
 
                 var items = source.Items;
-                if (items == null || items.Length == 0)
+                var cells = new List<GoodsCell>(items == null ? 0 : items.Length);
+
+                if (items != null)
                 {
-                    // 没有货单：不挂空页
-                    _sourceBlocks.Add(new SourceBlock
+                    // 卖水的客人：容器一格（满瓶）。
+                    // 既卖水又卖瓶的客人（`empty` 列 = 1）：给灌过水的那件容器再拆一个
+                    // 原始空瓶格，不轮播、不显示成分。`water` 带 `@物品id` 限定时，
+                    // 没被灌的容器本来就是空瓶，不拆，免得出现两格一模一样的空瓶。
+                    for (int k = 0; k < items.Length; k++)
                     {
-                        Source = source,
-                        Cells = new List<GoodsCell>()
-                    });
-                    continue;
+                        string id = items[k];
+                        if (string.IsNullOrEmpty(id)) continue;
+
+                        if (source.SellsEmpty && CatalogWindow.IsLiquidContainer(id)
+                            && CatalogWindow.ClientHasFilledBottle(source.Water, id))
+                            cells.Add(new GoodsCell { Id = id, Empty = true });
+
+                        cells.Add(new GoodsCell { Id = id });
+                    }
                 }
 
-                // 卖水的客人：容器一格（满瓶）。
-                // 既卖水又卖瓶的客人（`empty` 列 = 1）：给灌过水的那件容器再拆一个
-                // 原始空瓶格，不轮播、不显示成分。`water` 带 `@物品id` 限定时，
-                // 没被灌的容器本来就是空瓶，不拆，免得出现两格一模一样的空瓶。
-                var cells = new List<GoodsCell>(items.Length);
-                for (int k = 0; k < items.Length; k++)
-                {
-                    string id = items[k];
-                    if (string.IsNullOrEmpty(id)) continue;
-
-                    if (source.SellsEmpty && CatalogWindow.IsLiquidContainer(id)
-                        && CatalogWindow.ClientHasFilledBottle(source.Water, id))
-                        cells.Add(new GoodsCell { Id = id, Empty = true });
-
-                    cells.Add(new GoodsCell { Id = id });
-                }
-
-                // 整份货单作为一块交给分页计划，切片由 BuildPagePlan 统一做
                 _sourceBlocks.Add(new SourceBlock
                 {
                     Source = source,
-                    Cells = cells
+                    Cells = cells,
+                    Buys = buys
                 });
             }
         }
@@ -2308,7 +2300,7 @@ namespace ItemCatalog.UI
                 for (int i = from; i < to; i++)
                 {
                     var cell = cells[i];
-                    bool match = _entry != null &&
+                    bool match = !_asUse && _entry != null &&
                                  string.Equals(cell.Id, _entry.Id, StringComparison.Ordinal);
                     RenderGoods(builder, cell.Id, match, i - from, cell.Empty);
                 }
@@ -2329,7 +2321,7 @@ namespace ItemCatalog.UI
             // 收购标签（WATER/FOOD 这类整类目标）+ 专收的具体物品
             if (page.Buys)
             {
-                RenderBuys(builder, source, true);
+                RenderBuys(builder, source, true, _asUse);
             }
         }
 
@@ -2340,7 +2332,8 @@ namespace ItemCatalog.UI
         ///   · 种类：只显示标签名（WATER、FOOD…），不展开成具体物品；
         ///   · 特殊物品：和货单格子一样，有图标、能点击、能悬停。
         /// </summary>
-        private static void RenderBuys(CustomUIBuilder builder, SourceInfo source, bool withHeader = true)
+        private static void RenderBuys(CustomUIBuilder builder, SourceInfo source,
+                                       bool withHeader = true, bool matchCurrent = false)
         {
             if (source == null) return;
 
@@ -2383,7 +2376,7 @@ namespace ItemCatalog.UI
                     Tags = tags,
                     Items = items,
                     Base = 800 + _tagStripSeq * 8,
-                    CurrentId = _entry == null ? null : _entry.Id,
+                    CurrentId = matchCurrent && _entry != null ? _entry.Id : null,
                     Exclude = exclude
                 };
                 _tagStripSeq++;
@@ -2394,7 +2387,7 @@ namespace ItemCatalog.UI
 
             if (!hasItems) return;
 
-            RenderItemGrid(builder, items, 500);
+            RenderItemGrid(builder, items, 500, matchCurrent);
         }
 
 
@@ -2403,7 +2396,8 @@ namespace ItemCatalog.UI
         /// 网格格子自带和「客人的货」一样的绿底、同样的 56×56 尺寸，
         /// 行里手搓的图没有底、还会被压小。
         /// </summary>
-        private static void RenderItemGrid(CustomUIBuilder builder, string[] ids, int idBase)
+        private static void RenderItemGrid(CustomUIBuilder builder, string[] ids, int idBase,
+                                           bool matchEnabled = true)
         {
             if (ids == null || ids.Length == 0) return;
 
@@ -2414,7 +2408,8 @@ namespace ItemCatalog.UI
             {
                 if (string.IsNullOrEmpty(ids[i])) continue;
 
-                bool match = _entry != null && string.Equals(ids[i], _entry.Id, StringComparison.Ordinal);
+                bool match = matchEnabled && _entry != null &&
+                             string.Equals(ids[i], _entry.Id, StringComparison.Ordinal);
                 RenderGoods(builder, ids[i], match, idBase + i, false);
             }
 
