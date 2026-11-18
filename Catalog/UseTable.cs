@@ -188,6 +188,64 @@ namespace ItemCatalog.Catalog
 
             if (ModEntry.Log != null)
                 ModEntry.Log.Log("[uses] loaded " + _all.Count + " rows from " + UsesCsvPath);
+
+            // 可溶化学品（SOLUBLE_TAG）在游戏里可以直接对任意液体容器使用
+            // （ChemicalHelper.InitChemItem 注册的 onItemTargetItemFunc → DissolveInto）。
+            // 这类关系没有配方表可读，按标签自动补一条「使用」记录。
+            AppendDissolveUses();
+        }
+
+        /// <summary>
+        /// 可溶化学品 → 液体容器：游戏里直接对容器使用就会溶进去（DissolveInto），
+        /// 按 SOLUBLE_TAG 自动补一条使用记录，模组新增的可溶物品也会自动收录。
+        /// 记录只挂在化学品自己的去处里，目标容器写在备注里。
+        /// </summary>
+        private static void AppendDissolveUses()
+        {
+            var items = CatalogDataBuilder.Visible;
+            if (items == null) return;
+
+            for (int i = 0; i < items.Count; i++)
+            {
+                var entry = items[i];
+                var item = entry == null ? null : entry.Item;
+                if (item == null || string.IsNullOrEmpty(entry.Id)) continue;
+
+                bool soluble;
+                try { soluble = item.IsTag("SOLUBLE_TAG"); }
+                catch { continue; }
+                if (!soluble) continue;
+
+                if (HasDissolveUse(entry.Id)) continue;
+
+                var info = new UseInfo
+                {
+                    Sources = new[] { entry.Id },
+                    SourceTags = new string[0],
+                    Kind = "apply",
+                    Produces = new string[0],
+                    Note = "use_note_dissolve"
+                };
+
+                _all.Add(info);
+                Append(_using, entry.Id, info);
+                AppendAlias(_using, entry.Id, info);
+            }
+        }
+
+        private static bool HasDissolveUse(string id)
+        {
+            List<UseInfo> list;
+            if (_using == null || !_using.TryGetValue(id, out list) || list == null) return false;
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                var u = list[i];
+                if (u != null && string.Equals(u.Note, "use_note_dissolve", StringComparison.Ordinal))
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>

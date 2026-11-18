@@ -22,6 +22,7 @@ src_doctor_shop,Dr. Jackson (shop)
 rec_cat_craft_out,Crafting
 rec_cat_craft_in,Used in crafting
 use_none,No known use yet
+use_note_dissolve,Can be dissolved into any liquid container (use it on the container)
 faction_none,Unaffiliated
 faction_location,Location Shops
 rec_cat_use_out,From use
