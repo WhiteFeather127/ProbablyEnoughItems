@@ -3374,7 +3374,8 @@ namespace ItemCatalog.UI
 
                 builder.BeginRow(2f, TextAnchor.MiddleLeft);
 
-                builder.AddLabel("<u>" + component.Name + "</u>", idPrefix + "comp_name" + i);
+                builder.AddLabel("<mark=#55FF5580><u>" + component.Name + "</u></mark>",
+                                 idPrefix + "comp_name" + i);
                 var nameLabel = builder.Last;
                 SetCompositionFont(nameLabel);
                 AttachLiquidLookup(nameLabel, component.Id);
@@ -4043,7 +4044,7 @@ namespace ItemCatalog.UI
 
                 if (!string.IsNullOrEmpty(reaction.Solvent))
                 {
-                    label = "<u>" + LiquidManager.NameOf(reaction.Solvent) + "</u>";
+                    label = "<u>" + ConditionLiquidName(reaction.Solvent) + "</u>";
                     liquidId = reaction.Solvent;
                 }
                 else
