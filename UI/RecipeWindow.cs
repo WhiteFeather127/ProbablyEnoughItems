@@ -4178,7 +4178,7 @@ namespace ItemCatalog.UI
 
                 var image = go.GetComponent<UnityEngine.UI.Image>();
                 image.sprite = null;   // 无 sprite 的 Image 直接画纯色块，最稳
-                image.color = LiquidMarkColor();
+                image.color = GameHighlightGreen();
                 image.raycastTarget = false;
 
                 var rect = go.GetComponent<RectTransform>();
@@ -4194,8 +4194,8 @@ namespace ItemCatalog.UI
             catch { }
         }
 
-        /// <summary>液体名绿底颜色（用户指定 93/107/63）。</summary>
-        internal static Color LiquidMarkColor()
+        /// <summary>原版绿底颜色（物品高亮用的绿，RGB 93/107/63）。</summary>
+        internal static Color GameHighlightGreen()
         {
             return new Color(93f / 255f, 107f / 255f, 63f / 255f, 1f);
         }
