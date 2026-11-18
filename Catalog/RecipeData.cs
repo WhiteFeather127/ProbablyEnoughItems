@@ -368,7 +368,10 @@ namespace ItemCatalog.Catalog
             Build();
 
             ItemEntry entry;
-            return id != null && _entryById.TryGetValue(id, out entry) ? entry : null;
+            if (id != null && _entryById.TryGetValue(id, out entry)) return entry;
+
+            // 液体条目（liquid:xxx）是搜索时动态生成的合成条目
+            return LiquidCatalog.Find(id);
         }
 
         /// <summary>全量条目（找钥匙卡这类「按标签扫一遍」的用途）。</summary>

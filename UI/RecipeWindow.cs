@@ -836,6 +836,16 @@ namespace ItemCatalog.UI
             _categories = new List<Category>();
             if (_entry == null) return;
 
+            // 液体条目（搜索里代表液体的瓶子）：来源 = 有效成分为它的化学产品。
+            // 第一版只做这一条关系，其它分类对合成 id 没有意义。
+            if (LiquidCatalog.IsLiquidEntry(_entry.Id))
+            {
+                var liquidUses = LiquidCatalog.SourceUses(_entry.Id);
+                if (liquidUses.Count > 0)
+                    _categories.Add(new Category { Kind = CatUse, Uses = liquidUses });
+                return;
+            }
+
             // 同一套大类，**页面内容按打开方向取**：左键=来源方向（谁卖它 / 从哪得到它），
             // 右键=用途方向（谁收它 / 它参与什么）。方向标注（ApplyDirectionLabel）
             // 与之一致。两个方向查到的是同一个页面结构，内容各是各的。
