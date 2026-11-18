@@ -49,6 +49,9 @@ namespace ItemCatalog.UI
         /// <summary>蒸发器的馏出槽：蒸馏出来的液体会装进这里的容器。</summary>
         private GameSlotInventory _distillateSlot;
 
+        /// <summary>成分反应页的产物槽（反应页不是机器，单独一个槽）。</summary>
+        private GameSlotInventory _productSlot;
+
         /// <summary>只有 Fill 自己往预览格塞物品时允许入格；外部拖拽一律拒绝。</summary>
         private bool _filling;
 
@@ -289,6 +292,111 @@ namespace ItemCatalog.UI
             {
                 Warn("build evaporator shell: " + e.Message);
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// 造成分反应页的面板（不是机器）：左 = 反应物容器，中间 = 条件文字，右 = 产物容器。
+        /// 三块都是原版控件，容器里的混合液体由 <see cref="FillReaction"/> 灌入。
+        /// </summary>
+        internal bool BuildReactionShell(string[] conditionLines)
+        {
+            try
+            {
+                _containerSlot = new GameSlotInventory();
+                _productSlot = new GameSlotInventory();
+
+                _containerSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _productSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+
+                try { _containerSlot.SetBackgroundFadeSprite("Items/water_container4", "xl", 0.5f, 0.5f); }
+                catch { }
+                try { _productSlot.SetBackgroundFadeSprite("Items/water_container4", "xl", 0.5f, 0.5f); }
+                catch { }
+
+                // 中间一列：温度 / 溶剂 / 额外条件，逐行往下排
+                var lines = conditionLines ?? new string[0];
+                var elements = new PixelElement[Mathf.Max(1, lines.Length)];
+                for (int i = 0; i < elements.Length; i++)
+                {
+                    string text = i < lines.Length ? lines[i] : string.Empty;
+                    elements[i] = new MachineryText(text, 8, TMPro.HorizontalAlignmentOptions.Center, false);
+                }
+                var stack = MachineryStack.Vertical(elements);
+
+                var panels = new[]
+                {
+                    MachineHelper.Panel(ModEntry.T("react_input"), _containerSlot, "react_input", true),
+                    MachineHelper.Panel(ModEntry.T("react_condition"), stack, "react_condition", true),
+                    MachineHelper.Panel(ModEntry.T("react_output"), _productSlot, "react_output", true)
+                };
+
+                var row = new MachineryPanelRow(panels);
+                row.SetColumns(3);
+
+                _window = new PixelWindow(false, null, WindowStyle.Machinery);
+                _window.Attach(row);
+                _window.Validate();
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] reaction shell size="
+                                     + _window.widthPixels + "x" + _window.heightPixels);
+                return _window != null;
+            }
+            catch (Exception e)
+            {
+                Warn("build reaction shell: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 反应页装填：两侧各造一只 bottled_water，按 10 ml 基准灌入对应液体。
+        /// 同一容器里多个液体各写各的 CURRENT_PART，不会互相覆盖。
+        /// </summary>
+        internal void FillReaction(string[] reactantIds, float[] reactantMl,
+                                   string[] productIds, float[] productMl)
+        {
+            ClearSamples();
+
+            _filling = true;
+            try
+            {
+                AcceptMixture(_containerSlot, reactantIds, reactantMl);
+                AcceptMixture(_productSlot, productIds, productMl);
+            }
+            finally { _filling = false; }
+        }
+
+        private void AcceptMixture(GameSlotInventory slot, string[] liquidIds, float[] ml)
+        {
+            if (slot == null || liquidIds == null || liquidIds.Length == 0) return;
+
+            GameItem item = null;
+            try
+            {
+                item = CatalogWindow.CreatePreviewItem(LiquidManager.ContainerId);
+                if (item == null) return;
+
+                for (int i = 0; i < liquidIds.Length; i++)
+                {
+                    if (string.IsNullOrEmpty(liquidIds[i])) continue;
+
+                    float amount = i < ml.Length ? ml[i] : 0f;
+                    int units = Mathf.RoundToInt(amount * 1000f);
+                    if (units <= 0) units = 1000;
+                    ChemicalHelper.SetChemContentUL(item, liquidIds[i], units);
+                }
+
+                try { WaterFeatureHelper.UpdateWaterFeature(item, false); } catch { }
+                try { SpriteHelper.UpdateWaterContainerSprite(item); } catch { }
+
+                Accept(slot, item);
+                item = null;   // Accept 成功后样本由面板管理
+            }
+            catch (Exception e) { Warn("fill reaction: " + e.Message); }
+            finally
+            {
+                if (item != null) { try { item.Destroy(); } catch { } }
             }
         }
 
@@ -978,6 +1086,7 @@ namespace ItemCatalog.UI
                 _outputGrid = null;
                 _containerSlot = null;
                 _distillateSlot = null;
+                _productSlot = null;
                 if (_window != null && _window.rectTransform != null)
                     UnityEngine.Object.Destroy(_window.rectTransform.gameObject);
             }

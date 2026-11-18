@@ -130,6 +130,20 @@ mach_inputs,Inputs
 mach_modules,Modules
 mach_outputs,Products
 mach_evap_output,Distillation output
+cat_reaction,Reactions
+react_input,Reactants
+react_condition,Conditions
+react_output,Products
+react_temp,Temperature
+react_ambient,Ambient
+react_solvent,Solvent
+react_catalyst,Catalyst
+react_cond_excess,Requires excess acid/base
+react_cond_acid_or_base,Acid or base
+react_cond_solvent_ratio,Enough solvent (≥5:1)
+react_cond_nomore_alcohol,Alcohol ≤ 10% of total volume
+react_cond_fanta_order,Methylol > stabilizing agent
+react_cond_waste_full,Fully converted at ≥100 °C
 mach_trap_output,Trap output
 mach_note_evap,Dry an alcoholic container: solvent recovery module + alcohol
 mach_note_evap_beer,Any alcoholic container yields alcohol

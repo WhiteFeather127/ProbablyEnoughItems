@@ -130,6 +130,7 @@ namespace ItemCatalog.UI
         private const int CatMachine = 10;   // 双向：这件东西自己是机器（界面 + 产出配方）
         private const int CatUse = 11;       // 双向：使用互查 + 箱子/卡的开启关系
         private const int CatMachineRecipe = 12;   // 双向：这件东西是某台机器的投入 / 模块 / 产出
+        private const int CatReaction = 13;        // 双向：液体条目的成分反应（一条反应一页）
 
         private sealed class Category
         {
@@ -159,6 +160,9 @@ namespace ItemCatalog.UI
             /// </summary>
             internal string MachineId;
             internal List<MachinePanels.RecipeGroup> MachineGroups;
+
+            /// <summary>成分反应页：一条反应一页。</summary>
+            internal List<LiquidReaction> Reactions;
         }
 
         /// <summary>货单里的一个格子。有水也有空瓶的客人，容器会多出「空瓶」那一格。</summary>
@@ -932,8 +936,25 @@ namespace ItemCatalog.UI
                 }
             }
 
+            AddReactionCategory();
+
             if (_category < 0) _category = 0;
             if (_category >= _categories.Count) _category = Math.Max(0, _categories.Count - 1);
+        }
+
+        /// <summary>
+        /// 液体条目的成分反应：来源方向看「它是产物的反应」，
+        /// 用途方向看「它作为反应物 / 溶剂参与的反应」，一条反应一页。
+        /// </summary>
+        private static void AddReactionCategory()
+        {
+            if (_entry == null || !LiquidCatalog.IsLiquidEntry(_entry.Id)) return;
+
+            string liquidId = _entry.Id.Substring(LiquidCatalog.EntryPrefix.Length);
+            var reactions = LiquidReactions.For(liquidId, _asUse);
+            if (reactions.Count == 0) return;
+
+            _categories.Add(new Category { Kind = CatReaction, Reactions = reactions });
         }
 
         /// <summary>
@@ -1450,6 +1471,14 @@ namespace ItemCatalog.UI
                         BlockCount = c => c.MachineGroups == null ? 0 : c.MachineGroups.Count,
                         BlockItems = (c, b) => 0,
                         Render = RenderMachineRecipeBlock
+                    } },
+
+                // 成分反应：一条反应一页（左侧反应物 / 中间条件 / 右侧产物）
+                { CatReaction, new PageType
+                    {
+                        BlockCount = c => c.Reactions == null ? 0 : c.Reactions.Count,
+                        BlockItems = (c, b) => 0,
+                        Render = RenderReactionBlock
                     } }
             };
         }
@@ -1751,6 +1780,7 @@ namespace ItemCatalog.UI
                 // 「垃圾倾倒场 / 小偷 / 装着它的箱子」这类具体地点。
                 case CatLoot: return Loc("cat_site", "地点");
                 case CatMachine: return Loc("cat_machine", "机器");
+                case CatReaction: return Loc("cat_reaction", "反应");
                 case CatMachineRecipe:
                 {
                     var machineEntry = RecipeIndex.FindEntry(category.MachineId);
@@ -3869,6 +3899,134 @@ namespace ItemCatalog.UI
             if (g != null) sb.Append(" Grid");
             if (sb.Length == 0) sb.Append("none");
             return sb.ToString();
+        }
+
+        // ---------------------------------------------------------------- 成分反应页
+
+        private static void RenderReactionBlock(CustomUIBuilder builder, Category category, PageSlice slice)
+        {
+            if (category == null || category.Reactions == null || category.Reactions.Count == 0) return;
+
+            int i = Mathf.Clamp(slice.Block, 0, category.Reactions.Count - 1);
+            RenderReactionPage(builder, category.Reactions[i]);
+        }
+
+        /// <summary>
+        /// 一条成分反应：上面一行「反应物 → 产物」，下面原版面板三列：
+        /// 左 = 反应物容器，中 = 温度 / 溶剂 / 条件，右 = 产物容器。
+        /// 用量按 10 ml 单位体积灌进容器，容器提示框里能看到各自的毫升数。
+        /// </summary>
+        private static void RenderReactionPage(CustomUIBuilder builder, LiquidReaction reaction)
+        {
+            if (reaction == null) return;
+
+            builder.AddLabel(ReactionEquation(reaction), "react_eq");
+
+            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
+            _vanillaMachine = new VanillaMachinePanel();
+
+            if (!_vanillaMachine.BuildReactionShell(ReactionConditionLines(reaction)))
+            {
+                if (ModEntry.Log != null) ModEntry.Log.Warning("[reaction] build failed");
+                _vanillaMachine.Destroy();
+                _vanillaMachine = null;
+                return;
+            }
+
+            float panelMaxH = MaxMachinePanelHeight();
+
+            builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
+            var host = builder.CurrentContainer;
+            float panelH = Mathf.Max(1f, _vanillaMachine.ScaledSize(_bodyHost, panelMaxH, WinWidth - 40f).y);
+            builder.End();
+
+            if (host != null)
+            {
+                var hostLayout = EnsureLayoutElement(host);
+                hostLayout.preferredWidth = WinWidth - 40f;
+                hostLayout.flexibleWidth = 1f;
+                hostLayout.minHeight = panelH;
+                hostLayout.preferredHeight = panelH;
+                hostLayout.flexibleHeight = 0f;
+            }
+
+            var rect = _vanillaMachine.AttachContentTo(host);
+            if (rect != null) CustomUIBuilder.RebuildLayout(rect);
+
+            float visualH = _vanillaMachine.MatchGameCanvasScale(host, panelMaxH, WinWidth - 40f);
+            if (visualH > 10f && host != null)
+            {
+                var hostLe = EnsureLayoutElement(host);
+                hostLe.minHeight = visualH;
+                hostLe.preferredHeight = visualH;
+                hostLe.flexibleHeight = 0f;
+            }
+
+            _vanillaMachine.FillReaction(reaction.Reactants, reaction.ReactantMl,
+                                         reaction.Products, reaction.ProductMl);
+        }
+
+        private static string ReactionEquation(LiquidReaction reaction)
+        {
+            var sb = new System.Text.StringBuilder();
+            AppendReactionSide(sb, reaction.Reactants, reaction.ReactantMl);
+            sb.Append("  →  ");
+            AppendReactionSide(sb, reaction.Products, reaction.ProductMl);
+            return sb.ToString();
+        }
+
+        private static void AppendReactionSide(System.Text.StringBuilder sb, string[] ids, float[] ml)
+        {
+            if (ids == null) return;
+
+            for (int i = 0; i < ids.Length; i++)
+            {
+                if (i > 0) sb.Append(" + ");
+                sb.Append(LiquidManager.NameOf(ids[i]));
+
+                float amount = ml != null && i < ml.Length ? ml[i] : 0f;
+                if (amount > 0f)
+                    sb.Append(' ').Append(WaterScannerUIManager.FormatAmount(Mathf.RoundToInt(amount * 1000f)));
+            }
+        }
+
+        /// <summary>中间那列的条件：温度、溶剂 / 催化剂、额外条件。</summary>
+        private static string[] ReactionConditionLines(LiquidReaction reaction)
+        {
+            var lines = new List<string>();
+
+            lines.Add(Loc("react_temp", "温度") + " " + ReactionTempText(reaction));
+
+            if (!string.IsNullOrEmpty(reaction.Solvent))
+            {
+                string label = reaction.SolventIsCatalyst
+                    ? Loc("react_catalyst", "催化")
+                    : Loc("react_solvent", "溶剂");
+                lines.Add(label + " " + LiquidManager.NameOf(reaction.Solvent));
+            }
+
+            if (!string.IsNullOrEmpty(reaction.ConditionKey) ||
+                !string.IsNullOrEmpty(reaction.ConditionFallback))
+            {
+                string condition = string.IsNullOrEmpty(reaction.ConditionKey)
+                    ? reaction.ConditionFallback
+                    : Loc(reaction.ConditionKey, reaction.ConditionFallback);
+                if (!string.IsNullOrEmpty(condition)) lines.Add(condition);
+            }
+
+            return lines.ToArray();
+        }
+
+        private static string ReactionTempText(LiquidReaction reaction)
+        {
+            if (reaction.TempMin <= 0f && reaction.TempMax <= 0f)
+                return Loc("react_ambient", "常温");
+
+            if (reaction.TempMax > reaction.TempMin)
+                return Mathf.RoundToInt(reaction.TempMin) + "–"
+                       + Mathf.RoundToInt(reaction.TempMax) + " °C";
+
+            return "≥" + Mathf.RoundToInt(reaction.TempMin) + " °C";
         }
 
         /// <summary>把当前配方的物品塞进原版窗口的真 inventory（轮播换配方时只换物品，不重建窗口）。</summary>
