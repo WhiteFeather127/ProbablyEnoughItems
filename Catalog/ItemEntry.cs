@@ -49,6 +49,12 @@ namespace ItemCatalog.Catalog
         public Func<GameItem> TakeFactory;
 
         /// <summary>
+        /// 物品管理器里的液体标签：这件物品的主要液体成分 id（不是游戏标签）。
+        /// 液体反查（液体 ← 物品）按它匹配。
+        /// </summary>
+        public string LiquidTag;
+
+        /// <summary>
         /// 由模组通过 ICatalogItemProvider 注入的条目（注册表里查不到）。
         /// 这类物品的原生提示框链路要靠标识回查注册表，会退化成只显示类型与价格，
         /// 所以图鉴对它们直接走自己的兜底构建（名称/描述/来源/ID 都在）。

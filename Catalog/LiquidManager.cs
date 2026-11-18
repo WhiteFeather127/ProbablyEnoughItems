@@ -93,5 +93,58 @@ namespace ItemCatalog.Catalog
 
             return false;
         }
+
+        private static int _tagGeneration = -1;
+
+        /// <summary>
+        /// 给物品管理器里的每条记录打上「主要液体成分」标签（<see cref="ItemEntry.LiquidTag"/>）。
+        /// 化学产品读游戏的有效成分 <c>ACTIVATE_INGREDIENT_TAG</c>，
+        /// 其他物品取 CURRENT_PART_* 里量最大的一种。按目录 generation 缓存。
+        /// </summary>
+        internal static void TagItems()
+        {
+            if (_tagGeneration == CatalogDataBuilder.Generation) return;
+            _tagGeneration = CatalogDataBuilder.Generation;
+
+            var items = CatalogDataBuilder.Visible;
+            for (int i = 0; i < items.Count; i++)
+            {
+                var entry = items[i];
+                if (entry == null) continue;
+                entry.LiquidTag = MainComponent(entry.Item);
+            }
+        }
+
+        /// <summary>物品的主要液体成分 id。</summary>
+        internal static string MainComponent(GameItem item)
+        {
+            if (item == null) return null;
+
+            try
+            {
+                string active = item.GetTagReadonly("ACTIVATE_INGREDIENT_TAG").GetString();
+                if (!string.IsNullOrEmpty(active)) return active;
+            }
+            catch { }
+
+            var liquids = Liquid.Liquids;
+            if (liquids == null) return null;
+
+            string major = null;
+            int best = 0;
+            for (int i = 0; i < liquids.Count; i++)
+            {
+                var liquid = liquids[i];
+                if (liquid == null) continue;
+
+                int amount;
+                try { amount = item.GetTagReadonly(liquid.currentPart).GetInt(); }
+                catch { continue; }
+
+                if (amount > best) { best = amount; major = liquid.identifier; }
+            }
+
+            return major;
+        }
     }
 }

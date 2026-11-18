@@ -3168,10 +3168,11 @@ namespace ItemCatalog.UI
         internal static string LiquidEntryIdForChemical(string chemicalId)
         {
             var entry = RecipeIndex.FindEntry(chemicalId);
-            var item = entry == null ? null : entry.Item;
-            if (item == null) return null;
+            if (entry == null) return null;
 
-            string liquidId = LiquidCatalog.MainLiquidId(item);
+            LiquidManager.TagItems();
+
+            string liquidId = entry.LiquidTag;
             return string.IsNullOrEmpty(liquidId) ? null : LiquidCatalog.EntryPrefix + liquidId;
         }
 

@@ -63,6 +63,8 @@ namespace ItemCatalog.Catalog
             if (_built) return;
             _built = true;
 
+            LiquidManager.TagItems();
+
             var liquids = Liquid.Liquids;
             if (liquids == null) return;
 
@@ -109,7 +111,10 @@ namespace ItemCatalog.Catalog
                 int capacity = bottle.GetTagReadonly("LIQUID_CONTAINER_CAPACITY").GetInt();
                 if (capacity <= 0) capacity = 1;
 
-                WaterHelper.AddLiquid(bottle, liquidId, capacity);
+                // 直接写液体标签（物品管理器的代表瓶子就是 100% 这种液体），
+                // 不走 AddLiquid 的温度/特性管线，避免灌进别的东西。
+                ChemicalHelper.SetChemContentUL(bottle, liquidId, capacity);
+                try { WaterFeatureHelper.UpdateWaterFeature(bottle, false); } catch { }
                 try { SpriteHelper.UpdateWaterContainerSprite(bottle); } catch { }
                 return bottle;
             }
@@ -132,6 +137,8 @@ namespace ItemCatalog.Catalog
             if (!IsLiquidEntry(liquidEntryId)) return result;
 
             string liquidId = liquidEntryId.Substring(EntryPrefix.Length);
+            LiquidManager.TagItems();
+
             var items = CatalogDataBuilder.Visible;
 
             for (int i = 0; i < items.Count; i++)
@@ -140,12 +147,8 @@ namespace ItemCatalog.Catalog
                 var item = entry == null ? null : entry.Item;
                 if (item == null) continue;
 
-                bool product;
-                try { product = item.IsTag("CHEMICAL_PRODUCT_TAG"); }
-                catch { product = false; }
-                if (!product) continue;
-
-                if (!string.Equals(MainLiquidId(item), liquidId, StringComparison.Ordinal)) continue;
+                // 物品管理器里的液体标签（不是游戏标签）
+                if (!string.Equals(entry.LiquidTag, liquidId, StringComparison.Ordinal)) continue;
 
                 result.Add(new UseInfo
                 {
@@ -156,28 +159,6 @@ namespace ItemCatalog.Catalog
             }
 
             return result;
-        }
-
-        internal static string MainLiquidId(GameItem item)
-        {
-            if (item == null) return null;
-
-            try
-            {
-                string active = item.GetTagReadonly("ACTIVATE_INGREDIENT_TAG").GetString();
-                if (!string.IsNullOrEmpty(active)) return active;
-            }
-            catch { }
-
-            var parts = CatalogWindow.LiquidParts(item);
-            string major = null;
-            int best = 0;
-            foreach (var pair in parts)
-            {
-                if (pair.Value > best) { best = pair.Value; major = pair.Key; }
-            }
-
-            return major;
         }
 
         /// <summary>换场景时销毁代表容器，下次搜索重新建。</summary>
