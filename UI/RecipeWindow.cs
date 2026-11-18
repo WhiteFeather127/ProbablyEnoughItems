@@ -3965,9 +3965,12 @@ namespace ItemCatalog.UI
             // 有温度限制的反应：右上角放一台加热板（点它可查加热板自身）
             if (reaction.TempMin > 0f)
             {
+                bool isHeatingPlate = _entry != null &&
+                                      string.Equals(_entry.Id, "heating_plate", StringComparison.Ordinal);
+
                 builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
                 builder.AddFlexibleSpace();
-                RenderGoods(builder, "heating_plate", false, 3190, false, null, 52f);
+                RenderGoods(builder, "heating_plate", isHeatingPlate, 3190, false, null, 52f);
                 builder.End();
             }
 
@@ -4121,10 +4124,43 @@ namespace ItemCatalog.UI
                 string condition = string.IsNullOrEmpty(reaction.ConditionKey)
                     ? reaction.ConditionFallback
                     : Loc(reaction.ConditionKey, reaction.ConditionFallback);
+
+                // 条件里点名的液体统一走液体管理器取名字（占位符 {0}/{1}）
+                var liquidArgs = ConditionLiquidArgs(reaction);
+                if (liquidArgs != null && liquidArgs.Length > 0)
+                {
+                    var names = new object[liquidArgs.Length];
+                    for (int i = 0; i < liquidArgs.Length; i++)
+                        names[i] = LiquidManager.NameOf(liquidArgs[i]);
+                    try { condition = string.Format(condition, names); } catch { }
+                }
+
                 if (!string.IsNullOrEmpty(condition)) lines.Add(condition);
             }
 
             return lines.ToArray();
+        }
+
+        /// <summary>条件文本里提到的液体（对应 {0}/{1} 占位符），名字由液体管理器提供。</summary>
+        private static string[] ConditionLiquidArgs(LiquidReaction reaction)
+        {
+            if (reaction == null || string.IsNullOrEmpty(reaction.ConditionKey)) return null;
+
+            switch (reaction.ConditionKey)
+            {
+                case "react_cond_excess":
+                case "react_cond_acid_or_base":
+                    return new[] { "acid", "base" };
+                case "react_cond_nomore_alcohol":
+                case "react_cond_alcohol_ratio":
+                    return new[] { "alcohol" };
+                case "react_cond_fanta_order":
+                    return new[] { "methylol", "stabilizing_agent" };
+                case "react_cond_solvent_ratio":
+                    return string.IsNullOrEmpty(reaction.Solvent) ? null : new[] { reaction.Solvent };
+                default:
+                    return null;
+            }
         }
 
         private static string ReactionTempText(LiquidReaction reaction)

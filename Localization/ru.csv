@@ -138,13 +138,13 @@ react_temp,Температура
 react_ambient,Комнатная
 react_solvent,Растворитель
 react_catalyst,Катализатор
-react_cond_excess,Нужен избыток кислоты/щелочи
-react_cond_acid_or_base,Кислота или щёлочь
-react_cond_solvent_ratio,Достаточно растворителя (≥5:1)
-react_cond_nomore_alcohol,Спирт ≤ 10% объёма
-react_cond_fanta_order,Метилол > стабилизатор
+react_cond_excess,Избыток {0}/{1}
+react_cond_acid_or_base,{0} или {1}
+react_cond_solvent_ratio,Достаточно {0} (≥5:1)
+react_cond_nomore_alcohol,{0} ≤ 10% объёма
+react_cond_fanta_order,{0} > {1}
 react_cond_waste_full,Полное превращение при ≥100 °C
-react_cond_alcohol_ratio,Спирт ≥ 40% объёма
+react_cond_alcohol_ratio,{0} ≥ 40% объёма
 react_cond_microbe_heat,Полная гибель при ≥100 °C
 react_none,Нет
 mach_trap_output,Ловушка

@@ -111,13 +111,13 @@ namespace ItemCatalog.Catalog
                 R("protein", new[] { "protein", "acid" }, new[] { 10f, 10f },
                   new[] { "debris" }, new[] { 10f },
                   null, false, 0f, 0f, 0f,
-                  "react_cond_excess", "酸/碱过量时发生"),
+                  "react_cond_excess", "{0}/{1} 过量时发生"),
 
                 // 稳定剂 + 酸/碱 → 残渣（酸/碱都行）
                 R("stabilizer", new[] { "stabilizing_agent", "acid" }, new[] { 10f, 10f },
                   new[] { "debris" }, new[] { 10f },
                   null, false, 0f, 0f, 0f,
-                  "react_cond_acid_or_base", "酸或碱均可"),
+                  "react_cond_acid_or_base", "{0} 或 {1} 均可"),
 
                 // 有机废物矿化：废物 + 酸（消耗型，1 酸 : 40 废物）→ 矿物
                 R("mineralize", new[] { "organic_waste", "acid" }, new[] { 10f, 0.25f },
@@ -129,7 +129,7 @@ namespace ItemCatalog.Catalog
                 R("coffee_alcohol", new[] { "coffee_mush" }, new[] { 10f },
                   new[] { "caffeine", "plant_matter" }, new[] { 7.5f, 2.5f },
                   "alcohol", false, 7.5f, 50f, 0f,
-                  "react_cond_solvent_ratio", "溶剂足量（≥5:1）"),
+                  "react_cond_solvent_ratio", "{0} 足量（≥5:1）"),
 
                 // 咖啡菇 + 水 → 咖啡因（每 tick 处理 0.5ml，水最佳量 = 5 × 0.5ml）
                 R("coffee_water", new[] { "coffee_mush" }, new[] { 10f },
@@ -153,13 +153,13 @@ namespace ItemCatalog.Catalog
                 R("nomore", new[] { "dream_cap_extract", "reducing_agent" }, new[] { 10f, 10f },
                   new[] { "nomore", "debris" }, new[] { 6f, 4f },
                   "lipobond_agent", true, 0f, 45f, 55f,
-                  "react_cond_nomore_alcohol", "酒精 ≤ 总体积 10%"),
+                  "react_cond_nomore_alcohol", "{0} ≤ 总体积 10%"),
 
                 // 芬达：甲基醇 + 还原剂 → 10% 芬达（还原剂消耗 75%）
                 R("fanta", new[] { "methylol", "reducing_agent" }, new[] { 10f, 7.5f },
                   new[] { "fanta" }, new[] { 1f },
                   null, false, 0f, 110f, 130f,
-                  "react_cond_fanta_order", "甲基醇 > 稳定剂"),
+                  "react_cond_fanta_order", "{0} > {1}"),
 
                 // 梦帽菇受热分解 → 植物纤维
                 R("dream_mush_heat", new[] { "dream_cap_mush" }, new[] { 10f },
@@ -187,12 +187,12 @@ namespace ItemCatalog.Catalog
                 // 酸碱杀菌：每 100 只微生物消耗 1 单位酸/碱
                 RN("microbe_acid", new[] { "microbe", "acid" }, new[] { 10f, 0.1f },
                    null, false, 0f, 0f,
-                   "react_cond_acid_or_base", "酸或碱均可"),
+                   "react_cond_acid_or_base", "{0} 或 {1} 均可"),
 
                 // 酒精杀菌：酒精 ≥ 总体积 40%
                 RN("microbe_alcohol", new[] { "microbe" }, new[] { 10f },
                    "alcohol", false, 7f, 0f,
-                   "react_cond_alcohol_ratio", "酒精 ≥ 总体积 40%"),
+                   "react_cond_alcohol_ratio", "{0} ≥ 总体积 40%"),
 
                 // 加热杀菌：≥70 °C 开始减少，≥100 °C 全灭
                 RN("microbe_heat", new[] { "microbe" }, new[] { 10f },

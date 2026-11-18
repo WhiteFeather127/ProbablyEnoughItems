@@ -140,13 +140,13 @@ react_temp,温度
 react_ambient,常温
 react_solvent,溶剂
 react_catalyst,催化
-react_cond_excess,酸/碱过量时发生
-react_cond_acid_or_base,酸或碱均可
-react_cond_solvent_ratio,溶剂足量（≥5:1）
-react_cond_nomore_alcohol,酒精 ≤ 总体积 10%
-react_cond_fanta_order,甲基醇 > 稳定剂
+react_cond_excess,{0}/{1} 过量时发生
+react_cond_acid_or_base,{0} 或 {1} 均可
+react_cond_solvent_ratio,{0} 足量（≥5:1）
+react_cond_nomore_alcohol,{0} ≤ 总体积 10%
+react_cond_fanta_order,{0} > {1}
 react_cond_waste_full,≥100 °C 时全部转化
-react_cond_alcohol_ratio,酒精 ≥ 总体积 40%
+react_cond_alcohol_ratio,{0} ≥ 总体积 40%
 react_cond_microbe_heat,≥100 °C 时全灭
 react_none,无
 mach_trap_output,捕鼠夹产出

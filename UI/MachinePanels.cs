@@ -106,12 +106,6 @@ namespace ItemCatalog.UI
                     P(Slot, "mech_hydroponic_label_seed", "种子"),
                     P(Slot, "mech_hydroponic_label_output", "产出"),
                     P(Note, null, "纸条") } },
-                { "heating_plate", new[] {
-                    P(Battery, null, "电池"),
-                    P(Module, "mech_heating_plate_label_module", "模块"),
-                    P(Slot, "mech_heating_plate_label_container", "容器"),
-                    P(Slot, "mech_heating_plate_label_temp", "温度"),
-                    P(Slot, "mech_heating_plate_label_control", "控制") } },
                 { "wine_rack", new[] {
                     P(Grid, null, "容器网格"),
                     P(Battery, null, "电池"),
