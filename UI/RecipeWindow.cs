@@ -177,9 +177,6 @@ namespace ItemCatalog.UI
             internal SourceInfo Source;
             internal List<GoodsCell> Cells;
 
-            /// <summary>true = 这一块是这位客人的收购清单（「他在收」），不画货单。</summary>
-            internal bool Buys;
-
             internal int Count { get { return Cells == null ? 0 : Cells.Count; } }
         }
 
@@ -2163,8 +2160,6 @@ namespace ItemCatalog.UI
                 if (source == null) continue;
 
                 // 一个客人一页：售出与求购合在同一页，方向只决定进入这一页的客人。
-                bool buys = category.Wanted != null && category.Wanted.Contains(source);
-
                 var items = source.Items;
                 var cells = new List<GoodsCell>(items == null ? 0 : items.Length);
 
@@ -2190,8 +2185,7 @@ namespace ItemCatalog.UI
                 _sourceBlocks.Add(new SourceBlock
                 {
                     Source = source,
-                    Cells = cells,
-                    Buys = buys
+                    Cells = cells
                 });
             }
         }
@@ -2284,10 +2278,14 @@ namespace ItemCatalog.UI
             // 该来源可能摆出的全部物品。只收购、不卖货的客人（比如按标签收
             // WEAPON 的 Scavenger）货单是空的，不画空网格，让位给下面的求购区。
             var cells = page.Cells;
-            if (cells != null && cells.Count > 0)
-            {
+            bool hasCells = cells != null && cells.Count > 0;
+
+            // 客人页两个方向都固定显示；地点只有货单
+            if (showClientName || hasCells)
                 builder.AddLabel(ModEntry.T("src_sold"), "src_sold");
 
+            if (hasCells)
+            {
                 // 只画本页切片那一段；格子编号按页内序号，避免同一物品多页时
                 // 元素 id 重复（提示框 / 绿底 / 拖拽都按 id 登记）。
                 int from = Mathf.Clamp(start, 0, cells.Count);
@@ -2317,9 +2315,8 @@ namespace ItemCatalog.UI
                 }
             }
 
-            // 客人（双向）的收购页：这一页只画收购清单——
-            // 收购标签（WATER/FOOD 这类整类目标）+ 专收的具体物品
-            if (page.Buys)
+            // 客人（双向）：售出、求购固定两块都显示，即使某一侧为空
+            if (showClientName)
             {
                 RenderBuys(builder, source, true, _asUse);
             }
@@ -2343,9 +2340,9 @@ namespace ItemCatalog.UI
             bool hasTags = tags != null && tags.Length > 0;
             bool hasItems = items != null && items.Length > 0;
 
-            if (!hasTags && !hasItems) return;
-
             if (withHeader) builder.AddLabel(ModEntry.T("src_wanted"), "src_wanted");
+
+            if (!hasTags && !hasItems) return;
 
             if (hasTags)
             {
