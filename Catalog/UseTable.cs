@@ -190,15 +190,17 @@ namespace ItemCatalog.Catalog
                 ModEntry.Log.Log("[uses] loaded " + _all.Count + " rows from " + UsesCsvPath);
 
             // 可溶化学品（SOLUBLE_TAG）在游戏里可以直接对任意液体容器使用
-            // （ChemicalHelper.InitChemItem 注册的 onItemTargetItemFunc → DissolveInto）。
-            // 这类关系没有配方表可读，按标签自动补一条「使用」记录。
+            // （ChemicalHelper.InitChemItem 注册的 onItemTargetItemFunc → DissolveInto）；
+            // 其它装液体的容器则通过内容物标签说明「里面是什么」。
+            // 这两类关系都没有配方表可读，按标签 / 内容物自动补一条使用记录。
             AppendDissolveUses();
         }
 
         /// <summary>
-        /// 可溶化学品 → 液体容器：游戏里直接对容器使用就会溶进去（DissolveInto），
-        /// 按 SOLUBLE_TAG 自动补一条使用记录，模组新增的可溶物品也会自动收录。
-        /// 记录同时登记在来源（药）与产物（液体瓶）两侧，两个方向查到的是同一条。
+        /// 物品 → 液体条目的关系，液体管理器统一判定：
+        /// - 可溶化学品（SOLUBLE_TAG）：dissolve，产物是该液体主成分的条目；
+        /// - 其它装有液体的容器：contain，产物同样是主成分条目，成分在详情页逐行列出。
+        /// 记录同时登记在物品与液体两侧，两个方向查到的是同一条。
         /// </summary>
         private static void AppendDissolveUses()
         {
@@ -215,9 +217,12 @@ namespace ItemCatalog.Catalog
 
                 bool soluble;
                 try { soluble = item.IsTag("SOLUBLE_TAG"); }
-                catch { continue; }
-                if (!soluble) continue;
+                catch { soluble = false; }
 
+                // 容器：有 CURRENT_PART_* 内容物才算（空瓶子不登记）
+                bool filled = !soluble && LiquidManager.Parts(item).Count > 0;
+
+                if (!soluble && !filled) continue;
                 if (HasDissolveUse(entry.Id)) continue;
 
                 // 产物 = 代表该液体主成分的液体条目，两个方向查到的都是同一条记录
@@ -229,7 +234,7 @@ namespace ItemCatalog.Catalog
                 {
                     Sources = new[] { entry.Id },
                     SourceTags = new string[0],
-                    Kind = "dissolve",
+                    Kind = soluble ? "dissolve" : "contain",
                     Produces = string.IsNullOrEmpty(product) ? new string[0] : new[] { product },
                     Note = null
                 };

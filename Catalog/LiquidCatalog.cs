@@ -8,8 +8,8 @@ namespace ItemCatalog.Catalog
     /// <summary>
     /// 液体作为可查对象：每种液体对应一只装满它的默认容器
     /// （<see cref="LiquidManager.ContainerId"/>），作为图鉴里的合成条目参与搜索、
-    /// 来源/去处与拿取。第一版只把化学产品（药）登记为液体的来源；
-    /// 以后可以扩展成独立的液体详情页。
+    /// 来源/去处与拿取。所有装有该液体的物品（可溶化学品、液体容器）
+    /// 都由 <see cref="UseIndex"/> 按主成分登记为它的来源。
     /// </summary>
     internal static class LiquidCatalog
     {

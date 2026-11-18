@@ -3257,13 +3257,27 @@ namespace ItemCatalog.UI
                 RenderItemGrid(builder, use.Produces, 700);
             }
 
-            if (string.Equals(use.Kind, "dissolve", StringComparison.Ordinal))
+            bool dissolve = string.Equals(use.Kind, "dissolve", StringComparison.Ordinal);
+            bool contain = string.Equals(use.Kind, "contain", StringComparison.Ordinal);
+
+            if (dissolve || contain)
             {
-                // 两个方向共用同一份内容：产物的成分说明
-                string product = use.Produces != null && use.Produces.Length > 0
-                    ? use.Produces[0] : null;
-                RenderLiquidComposition(builder,
-                    LiquidManager.Components(LiquidCatalog.Find(product)));
+                // 两个方向共用同一份内容：产物液体的成分说明。
+                // 容器条目（contain）展示容器自身的内容物，化学品（dissolve）展示产物液体。
+                List<LiquidManager.Component> components;
+                if (contain)
+                {
+                    var sourceEntry = sources.Count > 0 ? RecipeIndex.FindEntry(sources[0]) : null;
+                    components = LiquidManager.Components(sourceEntry);
+                }
+                else
+                {
+                    string product = use.Produces != null && use.Produces.Length > 0
+                        ? use.Produces[0] : null;
+                    components = LiquidManager.Components(LiquidCatalog.Find(product));
+                }
+
+                RenderLiquidComposition(builder, components);
             }
             else if (!string.IsNullOrEmpty(use.Note))
             {
