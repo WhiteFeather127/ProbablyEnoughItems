@@ -2280,6 +2280,8 @@ namespace ItemCatalog.UI
             var cells = page.Cells;
             if (cells != null && cells.Count > 0)
             {
+                builder.AddLabel(ModEntry.T("src_sold"), "src_sold");
+
                 // 只画本页切片那一段；格子编号按页内序号，避免同一物品多页时
                 // 元素 id 重复（提示框 / 绿底 / 拖拽都按 id 登记）。
                 int from = Mathf.Clamp(start, 0, cells.Count);
@@ -2313,7 +2315,7 @@ namespace ItemCatalog.UI
             // 收购标签（WATER/FOOD 这类整类目标）+ 专收的具体物品
             if (page.Buys)
             {
-                RenderBuys(builder, source, false);
+                RenderBuys(builder, source, true);
             }
         }
 
@@ -2336,7 +2338,7 @@ namespace ItemCatalog.UI
 
             if (!hasTags && !hasItems) return;
 
-            if (withHeader) builder.AddHeader(ModEntry.T("src_clients"), "src_buys");
+            if (withHeader) builder.AddLabel(ModEntry.T("src_wanted"), "src_wanted");
 
             if (hasTags)
             {

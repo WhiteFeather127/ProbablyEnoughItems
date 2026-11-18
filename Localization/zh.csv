@@ -15,6 +15,8 @@ rec_result,产物
 src_commissary,配给站
 src_none,暂无已知来源
 src_clients,客人
+src_sold,售出
+src_wanted,求购
 src_locations,地点商店
 src_client_supplier,补给跑者
 src_client_scavenger,拾荒者

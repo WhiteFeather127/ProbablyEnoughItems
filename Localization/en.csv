@@ -15,6 +15,8 @@ rec_result,Result
 src_commissary,Commissary
 src_none,No known source
 src_clients,Clients
+src_sold,Selling
+src_wanted,Wanted
 src_locations,Location shops
 src_client_supplier,Supply runner
 src_client_scavenger,Scavenger
