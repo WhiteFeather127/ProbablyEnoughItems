@@ -32,6 +32,13 @@ namespace ItemCatalog.Catalog
         internal string ConditionKey;
         internal string ConditionFallback;
 
+        /// <summary>
+        /// 没有实物产物的反应（分解 / 灭菌 / 中和 / 蒸发）右侧显示的结果文字。
+        /// 有产物时忽略。
+        /// </summary>
+        internal string ResultKey;
+        internal string ResultFallback;
+
         internal bool HasReactant(string liquidId)
         {
             return Contains(Reactants, liquidId);
@@ -161,7 +168,69 @@ namespace ItemCatalog.Catalog
                 R("waste_heat", new[] { "organic_waste" }, new[] { 10f },
                   new[] { "physical_contaminant" }, new[] { 3.3f },
                   null, false, 0f, 80f, 0f,
-                  "react_cond_waste_full", "≥100 °C 时全部转化")
+                  "react_cond_waste_full", "≥100 °C 时全部转化"),
+
+                // 酸碱中和：两者等量消耗，没有产物
+                RN("neutralize", new[] { "acid", "base" }, new[] { 10f, 10f },
+                   null, false, 0f, 0f,
+                   null, null,
+                   "react_result_neutralize", "中和（无产物）"),
+
+                // 酸碱杀菌：每 100 只微生物消耗 1 单位酸/碱
+                RN("microbe_acid", new[] { "microbe", "acid" }, new[] { 10f, 0.1f },
+                   null, false, 0f, 0f,
+                   "react_cond_acid_or_base", "酸或碱均可",
+                   "react_result_kill", "微生物被杀死"),
+
+                // 酒精杀菌：酒精 ≥ 总体积 40%
+                RN("microbe_alcohol", new[] { "microbe" }, new[] { 10f },
+                   "alcohol", false, 7f, 0f,
+                   "react_cond_alcohol_ratio", "酒精 ≥ 总体积 40%",
+                   "react_result_kill", "微生物被杀死"),
+
+                // 加热杀菌：≥70 °C 开始减少，≥100 °C 全灭
+                RN("microbe_heat", new[] { "microbe" }, new[] { 10f },
+                   null, false, 0f, 70f,
+                   "react_cond_microbe_heat", "≥100 °C 时全灭",
+                   "react_result_kill", "微生物被杀死"),
+
+                // 氯消毒：杀微生物 + 去除化学污染物
+                RN("chlorine", new[] { "chlorine", "microbe" }, new[] { 10f, 10f },
+                   null, false, 0f, 0f,
+                   null, null,
+                   "react_result_chlorine", "灭菌 + 清除化学污染物"),
+
+                // 梦帽提取物受热分解
+                RN("dream_extract_heat", new[] { "dream_cap_extract" }, new[] { 10f },
+                   null, false, 0f, 60f,
+                   null, null,
+                   "react_result_decompose", "分解"),
+
+                // 梦魇提取物受热分解
+                RN("nightmare_extract_heat", new[] { "nightmare_extract" }, new[] { 10f },
+                   null, false, 0f, 50f,
+                   null, null,
+                   "react_result_decompose", "分解"),
+
+                // 芬达受热：≥130 °C 每秒损失 2%
+                RN("fanta_heat", new[] { "fanta" }, new[] { 10f },
+                   null, false, 0f, 130f,
+                   null, null,
+                   "react_result_evaporate", "蒸发（每秒 2%）"),
+
+                // 沸腾：温度超过沸点后该液体每秒减少 2%
+                RN("boil_water", new[] { "water" }, new[] { 10f },
+                   null, false, 0f, 100f,
+                   null, null,
+                   "react_result_evaporate", "蒸发（每秒 2%）"),
+                RN("boil_alcohol", new[] { "alcohol" }, new[] { 10f },
+                   null, false, 0f, 78.37f,
+                   null, null,
+                   "react_result_evaporate", "蒸发（每秒 2%）"),
+                RN("boil_lipobond", new[] { "lipobond_agent" }, new[] { 10f },
+                   null, false, 0f, 55f,
+                   null, null,
+                   "react_result_evaporate", "蒸发（每秒 2%）")
             };
         }
 
@@ -187,6 +256,22 @@ namespace ItemCatalog.Catalog
                 ConditionKey = conditionKey,
                 ConditionFallback = conditionFallback
             };
+        }
+
+        /// <summary>没有实物产物的反应：右侧显示结果文字（分解 / 灭菌 / 中和 / 蒸发）。</summary>
+        private static LiquidReaction RN(string id,
+            string[] reactants, float[] reactantMl,
+            string solvent, bool catalyst, float solventMl,
+            float tempMin,
+            string conditionKey, string conditionFallback,
+            string resultKey, string resultFallback)
+        {
+            var reaction = R(id, reactants, reactantMl, null, null,
+                             solvent, catalyst, solventMl, tempMin, 0f,
+                             conditionKey, conditionFallback);
+            reaction.ResultKey = resultKey;
+            reaction.ResultFallback = resultFallback;
+            return reaction;
         }
     }
 }

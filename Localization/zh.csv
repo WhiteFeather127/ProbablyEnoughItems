@@ -146,6 +146,13 @@ react_cond_solvent_ratio,溶剂足量（≥5:1）
 react_cond_nomore_alcohol,酒精 ≤ 总体积 10%
 react_cond_fanta_order,甲基醇 > 稳定剂
 react_cond_waste_full,≥100 °C 时全部转化
+react_cond_alcohol_ratio,酒精 ≥ 总体积 40%
+react_cond_microbe_heat,≥100 °C 时全灭
+react_result_neutralize,中和（无产物）
+react_result_kill,微生物被杀死
+react_result_chlorine,灭菌 + 清除化学污染物
+react_result_decompose,分解
+react_result_evaporate,蒸发（每秒 2%）
 mach_trap_output,捕鼠夹产出
 mach_note_evap,把含酒精的容器蒸干：留下溶剂回收模块，馏出酒精
 mach_note_evap_beer,任何含酒精的液体容器都能蒸出酒精

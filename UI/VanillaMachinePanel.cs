@@ -299,36 +299,35 @@ namespace ItemCatalog.UI
         /// 造成分反应页的面板（不是机器）：左 = 反应物容器，中间 = 条件文字，右 = 产物容器。
         /// 三块都是原版控件，容器里的混合液体由 <see cref="FillReaction"/> 灌入。
         /// </summary>
-        internal bool BuildReactionShell(string[] conditionLines)
+        internal bool BuildReactionShell(string[] conditionLines, string[] resultLines = null)
         {
             try
             {
                 _containerSlot = new GameSlotInventory();
-                _productSlot = new GameSlotInventory();
-
                 _containerSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
-                _productSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
-
                 try { _containerSlot.SetBackgroundFadeSprite("Items/water_container4", "xl", 0.5f, 0.5f); }
                 catch { }
-                try { _productSlot.SetBackgroundFadeSprite("Items/water_container4", "xl", 0.5f, 0.5f); }
-                catch { }
 
-                // 中间一列：温度 / 溶剂 / 额外条件，逐行往下排
-                var lines = conditionLines ?? new string[0];
-                var elements = new PixelElement[Mathf.Max(1, lines.Length)];
-                for (int i = 0; i < elements.Length; i++)
+                // 有实物产物：右列放容器槽；没有产物（分解 / 灭菌 / 中和）：右列写结果文字
+                PixelElement output;
+                if (resultLines != null && resultLines.Length > 0)
                 {
-                    string text = i < lines.Length ? lines[i] : string.Empty;
-                    elements[i] = new MachineryText(text, 8, TMPro.HorizontalAlignmentOptions.Center, false);
+                    output = BuildTextStack(resultLines);
                 }
-                var stack = MachineryStack.Vertical(elements);
+                else
+                {
+                    _productSlot = new GameSlotInventory();
+                    _productSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                    try { _productSlot.SetBackgroundFadeSprite("Items/water_container4", "xl", 0.5f, 0.5f); }
+                    catch { }
+                    output = _productSlot;
+                }
 
                 var panels = new[]
                 {
                     MachineHelper.Panel(ModEntry.T("react_input"), _containerSlot, "react_input", true),
-                    MachineHelper.Panel(ModEntry.T("react_condition"), stack, "react_condition", true),
-                    MachineHelper.Panel(ModEntry.T("react_output"), _productSlot, "react_output", true)
+                    MachineHelper.Panel(ModEntry.T("react_condition"), BuildTextStack(conditionLines), "react_condition", true),
+                    MachineHelper.Panel(ModEntry.T("react_output"), output, "react_output", true)
                 };
 
                 var row = new MachineryPanelRow(panels);
@@ -347,6 +346,19 @@ namespace ItemCatalog.UI
                 Warn("build reaction shell: " + e.Message);
                 return false;
             }
+        }
+
+        /// <summary>一列原版小字（温度 / 条件 / 结果），每行一个 MachineryText。</summary>
+        private static MachineryStack BuildTextStack(string[] lines)
+        {
+            var elements = new PixelElement[Mathf.Max(1, lines == null ? 0 : lines.Length)];
+            for (int i = 0; i < elements.Length; i++)
+            {
+                string text = lines != null && i < lines.Length ? lines[i] : string.Empty;
+                elements[i] = new MachineryText(text, 8, TMPro.HorizontalAlignmentOptions.Center, false);
+            }
+
+            return MachineryStack.Vertical(elements);
         }
 
         /// <summary>

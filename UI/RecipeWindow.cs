@@ -3942,7 +3942,17 @@ namespace ItemCatalog.UI
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaMachine = new VanillaMachinePanel();
 
-            if (!_vanillaMachine.BuildReactionShell(ReactionConditionLines(reaction)))
+            // 没有实物产物的反应（分解 / 灭菌 / 中和 / 蒸发）：右列写结果文字
+            string[] resultLines = null;
+            if (reaction.Products == null || reaction.Products.Length == 0)
+            {
+                string text = string.IsNullOrEmpty(reaction.ResultKey)
+                    ? reaction.ResultFallback
+                    : Loc(reaction.ResultKey, reaction.ResultFallback);
+                if (!string.IsNullOrEmpty(text)) resultLines = new[] { text };
+            }
+
+            if (!_vanillaMachine.BuildReactionShell(ReactionConditionLines(reaction), resultLines))
             {
                 if (ModEntry.Log != null) ModEntry.Log.Warning("[reaction] build failed");
                 _vanillaMachine.Destroy();
@@ -4038,7 +4048,9 @@ namespace ItemCatalog.UI
             int left = (reaction.Reactants == null ? 0 : reaction.Reactants.Length)
                        + (string.IsNullOrEmpty(reaction.Solvent) || reaction.SolventMl <= 0f ? 0 : 1)
                        + 1;   // 总体积
-            int right = (reaction.Products == null ? 0 : reaction.Products.Length) + 1;
+            int right = reaction.Products == null || reaction.Products.Length == 0
+                ? 0
+                : reaction.Products.Length + 1;
 
             return Mathf.Max(left, right) * 20f + 6f;
         }
