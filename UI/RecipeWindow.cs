@@ -3253,8 +3253,13 @@ namespace ItemCatalog.UI
                     builder.AddLabel(tagLine, "use_source_tags");
             }
 
-            builder.AddLabel(ModEntry.T("rec_result"), "rec_result");
-            RenderItemGrid(builder, use.Produces, 700);
+            bool hasProduces = use.Produces != null && use.Produces.Length > 0;
+
+            if (hasProduces)
+            {
+                builder.AddLabel(ModEntry.T("rec_result"), "rec_result");
+                RenderItemGrid(builder, use.Produces, 700);
+            }
 
             if (string.Equals(use.Kind, "dissolve", StringComparison.Ordinal))
             {
