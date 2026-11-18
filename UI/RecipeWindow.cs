@@ -3339,15 +3339,8 @@ namespace ItemCatalog.UI
             var entry = CatalogWindow.BuildDissolveCell(id, out bottle, out composition);
             if (entry == null) return;
 
-            builder.BeginColumn(4f, UnityEngine.TextAnchor.MiddleCenter);
-
-            // 单个格子用两端弹性空位居中：竖向布局组不会自动把子格摆到中间
-            builder.BeginRow(4f, UnityEngine.TextAnchor.MiddleCenter);
-            builder.AddFlexibleSpace();
             // 和普通物品格同一条 BindCell 链路：tooltip、左右键查询、拿取都能用
             RenderGoods(builder, entry.Id, false, 9000, false, null, 56f, bottle, entry);
-            builder.AddFlexibleSpace();
-            builder.End();
 
             if (!string.IsNullOrEmpty(composition))
             {
@@ -3359,8 +3352,6 @@ namespace ItemCatalog.UI
                     label.text.alignment = TextAlignmentOptions.Left;
                 }
             }
-
-            builder.End();
         }
 
         /// <summary>
