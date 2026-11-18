@@ -2906,55 +2906,6 @@ namespace ItemCatalog.UI
             return false;
         }
 
-        /// <summary>当前物品在同一条记录里的角色：来源 / 用途 / 两者都有。</summary>
-        private static string RoleLabel(bool source, bool use)
-        {
-            if (source && use)
-                return ModEntry.T("dir_source") + " / " + ModEntry.T("dir_use");
-            if (source) return ModEntry.T("dir_source");
-            if (use) return ModEntry.T("dir_use");
-            return null;
-        }
-
-        private static bool ProducesCurrent(RecipeInfo recipe)
-        {
-            if (recipe == null || _entry == null) return false;
-
-            for (int i = 0; i < recipe.Outputs.Count; i++)
-            {
-                var output = recipe.Outputs[i];
-                if (output != null &&
-                    string.Equals(output.Id, _entry.Id, StringComparison.Ordinal))
-                    return true;
-            }
-
-            return false;
-        }
-
-        private static bool UsesCurrent(RecipeInfo recipe)
-        {
-            if (recipe == null || _entry == null) return false;
-
-            return HasIngredientId(recipe.Tools, _entry.Id) ||
-                   HasIngredientId(recipe.Materials, _entry.Id);
-        }
-
-        private static bool HasIngredientId(List<RecipeIngredient> list, string id)
-        {
-            if (list == null || string.IsNullOrEmpty(id)) return false;
-
-            for (int i = 0; i < list.Count; i++)
-            {
-                var ing = list[i];
-                if (ing == null || ing.Ids == null) continue;
-
-                for (int k = 0; k < ing.Ids.Count; k++)
-                    if (string.Equals(ing.Ids[k], id, StringComparison.Ordinal)) return true;
-            }
-
-            return false;
-        }
-
         /// <summary>
         /// 合成大类，**按方向取配方**：左键（来源）= 产出它的配方；
         /// 右键（用途）= 把它当材料用掉的配方。类名都叫「合成」，
@@ -3264,14 +3215,6 @@ namespace ItemCatalog.UI
             var use = uses[useIndex];
             if (use == null) return;
 
-            // 同一页两个方向共用，但当前物品在这条关系里的角色不同：
-            // 在来源里 = 用途（被消耗），在产物里 = 来源（被产出）。
-            string role = RoleLabel(
-                ContainsId(use.Produces, _entry == null ? null : _entry.Id),
-                ContainsId(use.Sources, _entry == null ? null : _entry.Id));
-            if (!string.IsNullOrEmpty(role))
-                builder.AddLabel(role, "record_role");
-
             var sources = new List<string>(use.Sources ?? new string[0]);
 
             // 标签源是一整类，看有没有能画的（比如 SPECIES_HUMAN 只挂在
@@ -3546,11 +3489,6 @@ namespace ItemCatalog.UI
 
             var recipe = recipes[recipeIndex];
 
-            // 当前物品在这条配方里的角色（同一页两个方向共用）
-            string role = RoleLabel(ProducesCurrent(recipe), UsesCurrent(recipe));
-            if (!string.IsNullOrEmpty(role))
-                builder.AddLabel(role, "record_role");
-
             builder.AddLabel(MachineName(recipe), "rec_machine");
             RenderRecipe(builder, recipe);
         }
@@ -3611,16 +3549,6 @@ namespace ItemCatalog.UI
             if (_vanillaVariant >= variants.Length) _vanillaVariant = 0;
             var recipe = variants[_vanillaVariant];
             if (recipe == null) return;
-
-            // 反查页：当前物品在这条机器配方里的角色
-            if (filterVariants)
-            {
-                string role = RoleLabel(
-                    ContainsId(recipe.Outputs, _entry.Id),
-                    ContainsId(recipe.Inputs, _entry.Id) || ContainsId(recipe.Modules, _entry.Id));
-                if (!string.IsNullOrEmpty(role))
-                    builder.AddLabel(role, "record_role");
-            }
 
             // 顶部第一行：配方名 + 机器图标。
             builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
