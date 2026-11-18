@@ -948,6 +948,17 @@ namespace ItemCatalog.UI
         /// </summary>
         private static void AddReactionCategory()
         {
+            if (_entry == null) return;
+
+            // 加热板：和熔炉的配方页一样，把所有需要温度的反应挂到它名下
+            if (string.Equals(_entry.Id, "heating_plate", StringComparison.Ordinal))
+            {
+                var heated = LiquidReactions.Heated();
+                if (heated.Count > 0)
+                    _categories.Add(new Category { Kind = CatReaction, Reactions = heated });
+                return;
+            }
+
             string liquidId = QueryLiquidId();
             if (string.IsNullOrEmpty(liquidId)) return;
 
@@ -2877,7 +2888,8 @@ namespace ItemCatalog.UI
 
                         hit = _asUse
                             ? ContainsId(recipe.Inputs, _entry.Id) || ContainsId(recipe.Modules, _entry.Id)
-                            : ContainsId(recipe.Outputs, _entry.Id);
+                            : ContainsId(recipe.Outputs, _entry.Id) ||
+                              InputProducesLiquid(recipe, QueryLiquidId());
                     }
 
                     if (hit) matched.Add(group);
@@ -2911,7 +2923,8 @@ namespace ItemCatalog.UI
 
                 bool hit = _asUse
                     ? ContainsId(recipe.Inputs, _entry.Id) || ContainsId(recipe.Modules, _entry.Id)
-                    : ContainsId(recipe.Outputs, _entry.Id);
+                    : ContainsId(recipe.Outputs, _entry.Id) ||
+                      InputProducesLiquid(recipe, QueryLiquidId());
 
                 if (hit) list.Add(recipe);
             }
@@ -2925,6 +2938,25 @@ namespace ItemCatalog.UI
 
             for (int i = 0; i < ids.Length; i++)
                 if (string.Equals(ids[i], id, StringComparison.Ordinal)) return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// 配方的投入物品里有没有主成分是这种液体的。
+        /// 搅拌机把物品里的成分搅进容器，产物是液体而不是物品，
+        /// 所以液体条目反查来源时只能按投入物品的 LiquidTag 匹配。
+        /// </summary>
+        private static bool InputProducesLiquid(MachinePanels.Recipe recipe, string liquidId)
+        {
+            if (recipe == null || string.IsNullOrEmpty(liquidId) || recipe.Inputs == null) return false;
+
+            for (int i = 0; i < recipe.Inputs.Length; i++)
+            {
+                var entry = RecipeIndex.FindEntry(recipe.Inputs[i]);
+                if (entry != null && string.Equals(entry.LiquidTag, liquidId, StringComparison.Ordinal))
+                    return true;
+            }
 
             return false;
         }
@@ -3942,17 +3974,7 @@ namespace ItemCatalog.UI
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaMachine = new VanillaMachinePanel();
 
-            // 没有实物产物的反应（分解 / 灭菌 / 中和 / 蒸发）：右列写结果文字
-            string[] resultLines = null;
-            if (reaction.Products == null || reaction.Products.Length == 0)
-            {
-                string text = string.IsNullOrEmpty(reaction.ResultKey)
-                    ? reaction.ResultFallback
-                    : Loc(reaction.ResultKey, reaction.ResultFallback);
-                if (!string.IsNullOrEmpty(text)) resultLines = new[] { text };
-            }
-
-            if (!_vanillaMachine.BuildReactionShell(ReactionConditionLines(reaction), resultLines))
+            if (!_vanillaMachine.BuildReactionShell(ReactionConditionLines(reaction)))
             {
                 if (ModEntry.Log != null) ModEntry.Log.Warning("[reaction] build failed");
                 _vanillaMachine.Destroy();
@@ -4010,8 +4032,31 @@ namespace ItemCatalog.UI
             builder.AddFlexibleSpace();
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
-            RenderLiquidComposition(builder, LiquidManager.Components(_vanillaMachine.ProductSample),
-                                    "react_out_");
+            if (reaction.Products == null || reaction.Products.Length == 0)
+            {
+                // 无实物产物：容器保持空，底下写残留的溶剂；没有溶剂就写「无」
+                string label;
+                string liquidId = null;
+
+                if (!string.IsNullOrEmpty(reaction.Solvent))
+                {
+                    label = "<u>" + LiquidManager.NameOf(reaction.Solvent) + "</u>";
+                    liquidId = reaction.Solvent;
+                }
+                else
+                {
+                    label = Loc("react_none", "无");
+                }
+
+                builder.AddLabel(label, "react_out_none");
+                SetCompositionFont(builder.Last);
+                if (liquidId != null) AttachLiquidLookup(builder.Last, liquidId);
+            }
+            else
+            {
+                RenderLiquidComposition(builder, LiquidManager.Components(_vanillaMachine.ProductSample),
+                                        "react_out_");
+            }
             builder.End();
 
             builder.End();

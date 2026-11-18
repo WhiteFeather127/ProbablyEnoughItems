@@ -299,35 +299,26 @@ namespace ItemCatalog.UI
         /// 造成分反应页的面板（不是机器）：左 = 反应物容器，中间 = 条件文字，右 = 产物容器。
         /// 三块都是原版控件，容器里的混合液体由 <see cref="FillReaction"/> 灌入。
         /// </summary>
-        internal bool BuildReactionShell(string[] conditionLines, string[] resultLines = null)
+        internal bool BuildReactionShell(string[] conditionLines)
         {
             try
             {
                 _containerSlot = new GameSlotInventory();
+                _productSlot = new GameSlotInventory();
+
                 _containerSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _productSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+
                 try { _containerSlot.SetBackgroundFadeSprite("Items/water_container4", "xl", 0.5f, 0.5f); }
                 catch { }
-
-                // 有实物产物：右列放容器槽；没有产物（分解 / 灭菌 / 中和）：右列写结果文字
-                PixelElement output;
-                if (resultLines != null && resultLines.Length > 0)
-                {
-                    output = BuildTextStack(resultLines);
-                }
-                else
-                {
-                    _productSlot = new GameSlotInventory();
-                    _productSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
-                    try { _productSlot.SetBackgroundFadeSprite("Items/water_container4", "xl", 0.5f, 0.5f); }
-                    catch { }
-                    output = _productSlot;
-                }
+                try { _productSlot.SetBackgroundFadeSprite("Items/water_container4", "xl", 0.5f, 0.5f); }
+                catch { }
 
                 var panels = new[]
                 {
                     MachineHelper.Panel(ModEntry.T("react_input"), _containerSlot, "react_input", true),
                     MachineHelper.Panel(ModEntry.T("react_condition"), BuildTextStack(conditionLines), "react_condition", true),
-                    MachineHelper.Panel(ModEntry.T("react_output"), output, "react_output", true)
+                    MachineHelper.Panel(ModEntry.T("react_output"), _productSlot, "react_output", true)
                 };
 
                 var row = new MachineryPanelRow(panels);

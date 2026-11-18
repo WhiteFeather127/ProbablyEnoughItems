@@ -22,7 +22,9 @@ namespace ItemCatalog.Catalog
         internal string Solvent;
         internal bool SolventIsCatalyst;
 
-        /// <summary>达到最佳效率所需的溶剂量（ml，和反应物一起装进容器）。</summary>
+        /// <summary>
+        /// 装进容器的最佳溶剂量（ml）。0 = 不装进容器（不限量的催化剂只写中间那列）。
+        /// </summary>
         internal float SolventMl;
 
         internal float TempMin;    // °C；0 = 常温
@@ -31,13 +33,6 @@ namespace ItemCatalog.Catalog
         /// <summary>额外条件（本地化键 + 兜底文本），可为空。</summary>
         internal string ConditionKey;
         internal string ConditionFallback;
-
-        /// <summary>
-        /// 没有实物产物的反应（分解 / 灭菌 / 中和 / 蒸发）右侧显示的结果文字。
-        /// 有产物时忽略。
-        /// </summary>
-        internal string ResultKey;
-        internal string ResultFallback;
 
         internal bool HasReactant(string liquidId)
         {
@@ -63,7 +58,7 @@ namespace ItemCatalog.Catalog
     /// <summary>
     /// 液体之间的全部成分反应。数据抄自 ChemicalHelper 的 Handle* 规则：
     /// 只用公开可见的液体 identifier，不依赖任何 id 猜测。
-    /// 溶剂 / 催化剂的量取「达到最佳效率所需的最小量」，展示时和反应物一起装进容器。
+    /// 溶剂装进容器（按最佳量）；不限量的催化剂只写中间条件列。
     /// </summary>
     internal static class LiquidReactions
     {
@@ -94,6 +89,20 @@ namespace ItemCatalog.Catalog
             return result;
         }
 
+        /// <summary>需要温度的反应（加热板页用）。</summary>
+        internal static List<LiquidReaction> Heated()
+        {
+            var result = new List<LiquidReaction>();
+
+            for (int i = 0; i < All.Length; i++)
+            {
+                var reaction = All[i];
+                if (reaction != null && reaction.TempMin > 0f) result.Add(reaction);
+            }
+
+            return result;
+        }
+
         private static LiquidReaction[] Build()
         {
             return new[]
@@ -110,7 +119,7 @@ namespace ItemCatalog.Catalog
                   null, false, 0f, 0f, 0f,
                   "react_cond_acid_or_base", "酸或碱均可"),
 
-                // 有机废物矿化：废物 → 矿物（酸作催化剂，1 酸 : 40 废物）
+                // 有机废物矿化：废物 → 矿物（酸是消耗型催化剂，1 酸 : 40 废物）
                 R("mineralize", new[] { "organic_waste" }, new[] { 10f },
                   new[] { "mineral" }, new[] { 1f },
                   "acid", true, 0.25f, 0f, 0f,
@@ -140,10 +149,10 @@ namespace ItemCatalog.Catalog
                   "alcohol", false, 50f, 40f, 0f,
                   "react_cond_solvent_ratio", "酒精足量（≥5:1）"),
 
-                // nomore：梦帽提取物 + 还原剂，脂粘合剂最佳量 = 提取物 / 4
+                // nomore：梦帽提取物 + 还原剂（脂粘合剂是不限量催化剂，只写中间）
                 R("nomore", new[] { "dream_cap_extract", "reducing_agent" }, new[] { 10f, 10f },
                   new[] { "nomore", "debris" }, new[] { 6f, 4f },
-                  "lipobond_agent", true, 2.5f, 45f, 55f,
+                  "lipobond_agent", true, 0f, 45f, 55f,
                   "react_cond_nomore_alcohol", "酒精 ≤ 总体积 10%"),
 
                 // 芬达：甲基醇 + 还原剂 → 10% 芬达（还原剂消耗 75%）
@@ -173,64 +182,53 @@ namespace ItemCatalog.Catalog
                 // 酸碱中和：两者等量消耗，没有产物
                 RN("neutralize", new[] { "acid", "base" }, new[] { 10f, 10f },
                    null, false, 0f, 0f,
-                   null, null,
-                   "react_result_neutralize", "中和（无产物）"),
+                   null, null),
 
                 // 酸碱杀菌：每 100 只微生物消耗 1 单位酸/碱
                 RN("microbe_acid", new[] { "microbe", "acid" }, new[] { 10f, 0.1f },
                    null, false, 0f, 0f,
-                   "react_cond_acid_or_base", "酸或碱均可",
-                   "react_result_kill", "微生物被杀死"),
+                   "react_cond_acid_or_base", "酸或碱均可"),
 
                 // 酒精杀菌：酒精 ≥ 总体积 40%
                 RN("microbe_alcohol", new[] { "microbe" }, new[] { 10f },
                    "alcohol", false, 7f, 0f,
-                   "react_cond_alcohol_ratio", "酒精 ≥ 总体积 40%",
-                   "react_result_kill", "微生物被杀死"),
+                   "react_cond_alcohol_ratio", "酒精 ≥ 总体积 40%"),
 
                 // 加热杀菌：≥70 °C 开始减少，≥100 °C 全灭
                 RN("microbe_heat", new[] { "microbe" }, new[] { 10f },
                    null, false, 0f, 70f,
-                   "react_cond_microbe_heat", "≥100 °C 时全灭",
-                   "react_result_kill", "微生物被杀死"),
+                   "react_cond_microbe_heat", "≥100 °C 时全灭"),
 
                 // 氯消毒：杀微生物 + 去除化学污染物
                 RN("chlorine", new[] { "chlorine", "microbe" }, new[] { 10f, 10f },
                    null, false, 0f, 0f,
-                   null, null,
-                   "react_result_chlorine", "灭菌 + 清除化学污染物"),
+                   null, null),
 
                 // 梦帽提取物受热分解
                 RN("dream_extract_heat", new[] { "dream_cap_extract" }, new[] { 10f },
                    null, false, 0f, 60f,
-                   null, null,
-                   "react_result_decompose", "分解"),
+                   null, null),
 
                 // 梦魇提取物受热分解
                 RN("nightmare_extract_heat", new[] { "nightmare_extract" }, new[] { 10f },
                    null, false, 0f, 50f,
-                   null, null,
-                   "react_result_decompose", "分解"),
+                   null, null),
 
                 // 芬达受热：≥130 °C 每秒损失 2%
                 RN("fanta_heat", new[] { "fanta" }, new[] { 10f },
                    null, false, 0f, 130f,
-                   null, null,
-                   "react_result_evaporate", "蒸发（每秒 2%）"),
+                   null, null),
 
                 // 沸腾：温度超过沸点后该液体每秒减少 2%
                 RN("boil_water", new[] { "water" }, new[] { 10f },
                    null, false, 0f, 100f,
-                   null, null,
-                   "react_result_evaporate", "蒸发（每秒 2%）"),
+                   null, null),
                 RN("boil_alcohol", new[] { "alcohol" }, new[] { 10f },
                    null, false, 0f, 78.37f,
-                   null, null,
-                   "react_result_evaporate", "蒸发（每秒 2%）"),
+                   null, null),
                 RN("boil_lipobond", new[] { "lipobond_agent" }, new[] { 10f },
                    null, false, 0f, 55f,
-                   null, null,
-                   "react_result_evaporate", "蒸发（每秒 2%）")
+                   null, null)
             };
         }
 
@@ -258,20 +256,16 @@ namespace ItemCatalog.Catalog
             };
         }
 
-        /// <summary>没有实物产物的反应：右侧显示结果文字（分解 / 灭菌 / 中和 / 蒸发）。</summary>
+        /// <summary>没有实物产物的反应：右侧放空容器，底下写「无」或残留的溶剂。</summary>
         private static LiquidReaction RN(string id,
             string[] reactants, float[] reactantMl,
             string solvent, bool catalyst, float solventMl,
             float tempMin,
-            string conditionKey, string conditionFallback,
-            string resultKey, string resultFallback)
+            string conditionKey, string conditionFallback)
         {
-            var reaction = R(id, reactants, reactantMl, null, null,
-                             solvent, catalyst, solventMl, tempMin, 0f,
-                             conditionKey, conditionFallback);
-            reaction.ResultKey = resultKey;
-            reaction.ResultFallback = resultFallback;
-            return reaction;
+            return R(id, reactants, reactantMl, null, null,
+                     solvent, catalyst, solventMl, tempMin, 0f,
+                     conditionKey, conditionFallback);
         }
     }
 }

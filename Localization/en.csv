@@ -146,11 +146,7 @@ react_cond_fanta_order,Methylol > stabilizing agent
 react_cond_waste_full,Fully converted at ≥100 °C
 react_cond_alcohol_ratio,Alcohol ≥ 40% of total volume
 react_cond_microbe_heat,All killed at ≥100 °C
-react_result_neutralize,Neutralized (no products)
-react_result_kill,Microbes killed
-react_result_chlorine,Sterilized + chemical contaminants removed
-react_result_decompose,Decomposes
-react_result_evaporate,Evaporates (2% per second)
+react_none,None
 mach_trap_output,Trap output
 mach_note_evap,Dry an alcoholic container: solvent recovery module + alcohol
 mach_note_evap_beer,Any alcoholic container yields alcohol
