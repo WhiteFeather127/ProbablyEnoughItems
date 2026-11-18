@@ -365,9 +365,35 @@ namespace ItemCatalog.UI
             try
             {
                 AcceptMixture(_containerSlot, reactantIds, reactantMl);
-                AcceptMixture(_productSlot, productIds, productMl);
+
+                // 没有实物产物时也给一只空容器（反应完留下的空瓶）
+                if (productIds == null || productIds.Length == 0)
+                    AcceptEmptyContainer(_productSlot);
+                else
+                    AcceptMixture(_productSlot, productIds, productMl);
             }
             finally { _filling = false; }
+        }
+
+        /// <summary>往槽里放一只空的 bottled_water（无产物反应的「空瓶」）。</summary>
+        private void AcceptEmptyContainer(GameSlotInventory slot)
+        {
+            if (slot == null) return;
+
+            GameItem item = null;
+            try
+            {
+                item = CatalogWindow.CreatePreviewItem(LiquidManager.ContainerId);
+                if (item == null) return;
+
+                Accept(slot, item);
+                item = null;   // Accept 成功后样本由面板管理
+            }
+            catch (Exception e) { Warn("empty container: " + e.Message); }
+            finally
+            {
+                if (item != null) { try { item.Destroy(); } catch { } }
+            }
         }
 
         private void AcceptMixture(GameSlotInventory slot, string[] liquidIds, float[] ml)
