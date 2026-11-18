@@ -3651,11 +3651,10 @@ namespace ItemCatalog.UI
                 builder.End();
             }
 
-            // 蒸发器没有固定配方：页面只说明能蒸出什么成分、完美蒸馏要多少质量加成，
-            // 不画原版面板（用户要求只保留这两项信息）。
+            // 蒸发器没有固定配方：页面只标记能蒸出哪些成分，不画原版面板。
             if (string.Equals(machineId, "evaporator", StringComparison.Ordinal))
             {
-                RenderEvaporatorInfo(builder, recipe);
+                RenderEvaporatorInfo(builder);
                 return;
             }
 
@@ -4105,11 +4104,11 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 蒸发器页：可蒸出的成分（液体名带下划线，左右键追溯）+ 完美蒸馏所需质量加成。
-        /// 依据 MachineEvaporator/&lt;Evaporator&gt;b__7：只有 isEvaporative 的成分会被蒸出，
-        /// 馏出量 = 蒸出量 × 质量加成%（钳 0..100），所以 100% 才能全部收回。
+        /// 蒸发器页：只标记能蒸出的成分（液体名带下划线，左右键追溯）。
+        /// 依据 MachineEvaporator/&lt;Evaporator&gt;b__7：只有 <c>Liquid.isEvaporative</c>
+        /// 的成分会被蒸出，具体是哪些由游戏数据决定，不维护名单。
         /// </summary>
-        private static void RenderEvaporatorInfo(CustomUIBuilder builder, MachinePanels.Recipe recipe)
+        private static void RenderEvaporatorInfo(CustomUIBuilder builder)
         {
             builder.AddLabel(Loc("mach_evap_components", "可蒸出的成分"), "mach_evap_components");
 
@@ -4121,13 +4120,6 @@ namespace ItemCatalog.UI
                 SetCompositionFont(builder.Last);
                 AttachLiquidLookup(builder.Last, ids[i]);
                 builder.End();
-            }
-
-            string quality = QualityRequirementText(recipe);
-            if (!string.IsNullOrEmpty(quality))
-            {
-                builder.AddLabel(Loc("mach_evap_perfect", "完美蒸馏") + "  " + quality, "mach_evap_perfect");
-                SetCompositionFont(builder.Last);
             }
         }
 

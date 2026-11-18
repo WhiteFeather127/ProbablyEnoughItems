@@ -133,7 +133,6 @@ mach_modules,模块
 mach_outputs,产物
 mach_evap_output,蒸馏产出
 mach_evap_components,可蒸出的成分
-mach_evap_perfect,完美蒸馏
 mach_trap_output,捕鼠夹产出
 mach_note_evap,把含酒精的容器蒸干：留下溶剂回收模块，馏出酒精
 mach_note_evap_beer,任何含酒精的液体容器都能蒸出酒精

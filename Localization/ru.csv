@@ -131,7 +131,6 @@ mach_modules,Модули
 mach_outputs,Выход
 mach_evap_output,Перегонка
 mach_evap_components,Испаряемые компоненты
-mach_evap_perfect,Идеальная перегонка
 mach_trap_output,Ловушка
 mach_note_evap,Сушка ёмкости: модуль + спирт
 mach_note_evap_beer,Любая ёмкость со спиртом даёт спирт

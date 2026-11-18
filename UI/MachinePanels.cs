@@ -457,7 +457,7 @@ namespace ItemCatalog.UI
         ///   · 只有 <c>Liquid.isEvaporative</c> 的成分会被蒸出（当前是水 / 酒精 / 脂粘合剂）；
         ///   · 馏出量 = 蒸出量 × 质量加成% / 100，质量加成被钳在 0..100；
         ///   · 装了溶剂回收模块时只有酒精能进馏出瓶。
-        /// 所以页面只回答两件事：能蒸出什么成分、完美（100% 回收）要多少质量加成。
+        /// 页面只标记「能蒸出什么成分」，不写质量要求。
         /// </summary>
         private static readonly RecipeGroup[] EvaporatorGroups = BuildEvaporatorGroups();
 
@@ -476,7 +476,7 @@ namespace ItemCatalog.UI
                     Variants = new[]
                     {
                         // 输入 / 产出都是这些液体的条目：液体页正反查都能看到蒸发器
-                        new Recipe(entries, null, entries, null, null, 100)
+                        new Recipe(entries, null, entries, null, null)
                     }
                 }
             };
