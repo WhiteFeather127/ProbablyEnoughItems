@@ -288,5 +288,200 @@ namespace ItemCatalog.Catalog
 
             return "Total volume: " + WaterScannerUIManager.FormatAmount(total);
         }
+
+        // ------------------------------------------------------- 卖水的容器
+
+        /// <summary>
+        /// 水的液体 id：pure / hq / base / rust / ghost / gutterflow
+        /// 都是同一种液体，差别只在纯度与杂质。
+        /// </summary>
+        internal const string WaterId = "water";
+
+        /// <summary>来源配置的 `water` 列是不是「不灌水」（留空 / empty / none / no_water / -）。</summary>
+        internal static bool IsEmptyWater(string water)
+        {
+            string kind = (water ?? string.Empty).Trim().ToLowerInvariant();
+
+            return kind.Length == 0
+                   || kind == "empty"
+                   || kind == "none"
+                   || kind == "no_water"
+                   || kind == "nowater"
+                   || kind == "-";
+        }
+
+        /// <summary>
+        /// `water` 列允许限定「只有哪几件容器有货水」，写法：
+        ///   `base@large_bottled_water`            只给这一件灌
+        ///   `base@large_bottled_water|water_pitcher`  多件用 `|` 分隔
+        /// 不带 `@` 就是该来源所有容器统一按这个水种算；不在名单里的返回 null。
+        /// </summary>
+        internal static string WaterFor(string water, string itemId)
+        {
+            if (string.IsNullOrEmpty(water)) return water;
+
+            int at = water.IndexOf('@');
+            if (at < 0) return water;
+
+            string grade = water.Substring(0, at).Trim();
+            string list = water.Substring(at + 1);
+
+            if (string.IsNullOrEmpty(itemId)) return null;
+
+            string[] ids = list.Split('|');
+            for (int i = 0; i < ids.Length; i++)
+            {
+                string id = ids[i].Trim();
+                if (id.Length > 0 && string.Equals(id, itemId, StringComparison.Ordinal))
+                    return grade;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// `WaterHelper.AddWater` 里按 grade 索引的纯度档位表（千分比，照 IL 抄的）：
+        /// 0 → 9990~9999、1 → 9900~9989、2 → 9800~9899、
+        /// 3 → 9600~9799、4 → 9000~9599、5 → 3500~8999。
+        /// 各水种调的 grade：pure=0、hq=1、base=2、ghost=3、rust=4、gutterflow=5，
+        /// 所以水的占比是**算出来的**，不需要采样去猜。
+        /// </summary>
+        internal static void PurityBand(string water, out int lo, out int hi)
+        {
+            switch ((water ?? string.Empty).Trim().ToLowerInvariant())
+            {
+                case "pure": lo = 9990; hi = 9999; return;
+                case "hq": lo = 9900; hi = 9989; return;
+                case "ghost": lo = 9600; hi = 9799; return;
+                case "rust": lo = 9000; hi = 9599; return;
+                case "gutterflow":
+                case "gutter": lo = 3500; hi = 8999; return;
+                default: lo = 9800; hi = 9899; return;      // base
+            }
+        }
+
+        /// <summary>水质 → 对应的杂质分布表（原版 5 张，按水种区分）。</summary>
+        internal static Dictionary<string, float> Distribution(string water)
+        {
+            string kind = (water ?? string.Empty).Trim().ToLowerInvariant();
+
+            try
+            {
+                switch (kind)
+                {
+                    case "pure":
+                    case "hq":
+                        return WaterPremadeHelper.waterContaminantDistribution;
+                    case "rust":
+                        return WaterPremadeHelper.rustWaterContaminantDistribution;
+                    case "ghost":
+                        return WaterPremadeHelper.ghostwaterContaminantDistribution;
+                    case "gutterflow":
+                    case "gutter":
+                        return WaterPremadeHelper.gutterflowContaminantDistribution;
+                    default:
+                        return WaterPremadeHelper.baseWaterContaminantDistribution;
+                }
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// 卖水的容器成分（区间文本，供来源页与提示框）：水占比按档位表、
+        /// 杂质按该水种的分布表分摊剩余容量。**是区间不是实例值**——
+        /// 同一件容器在不同来源灌的水不同，不能当成某一瓶的真实含量。
+        /// </summary>
+        internal static string WaterComposition(int capacity, string water)
+        {
+            int lo, hi;
+            PurityBand(water, out lo, out hi);
+
+            string head = ModEntry.T("tt_ingredient") + ": " + NameOf(WaterId)
+                          + " " + PercentRange(lo / 100f, hi / 100f);
+
+            var dist = Distribution(water);
+            if (capacity <= 0 || dist == null || dist.Count == 0) return head;
+
+            float sum = 0f;
+            foreach (var pair in dist)
+            {
+                if (pair.Value > 0f) sum += pair.Value;
+            }
+            if (sum <= 0f) return head;
+
+            // 非水部分：水最多时最少，水最少时最多（容量与 CURRENT_PART 同一单位）
+            int nonWaterMin = (int)(capacity * (100f - hi / 100f) / 100f);
+            int nonWaterMax = (int)(capacity * (100f - lo / 100f) / 100f);
+            if (nonWaterMax < nonWaterMin) nonWaterMax = nonWaterMin;
+
+            var impurities = new List<string>();
+            foreach (var pair in dist)
+            {
+                if (pair.Value <= 0f) continue;
+
+                float share = pair.Value / sum;
+                int min = (int)(nonWaterMin * share);
+                int max = (int)(nonWaterMax * share);
+                if (max <= 0) continue;
+
+                // 分布表的键是标签名（`CURRENT_PART_ORGANIC_WASTE`），
+                // 直接拿去查液体表查不到，会原样打印出标签名。
+                string line = NameOf(PartToLiquidId(pair.Key)) + " " + FormatAmount(min);
+                if (max != min) line += "~" + FormatAmount(max);
+
+                impurities.Add(line);
+            }
+
+            return AppendImpurityLines(head, impurities);
+        }
+
+        /// <summary>杂质分布表的键是标签名（`CURRENT_PART_HEAVY_METAL`），液体表用的是 id。</summary>
+        private static string PartToLiquidId(string part)
+        {
+            if (string.IsNullOrEmpty(part)) return part;
+
+            const string prefix = "CURRENT_PART_";
+
+            return part.StartsWith(prefix, StringComparison.Ordinal)
+                ? part.Substring(prefix.Length).ToLowerInvariant()
+                : part;
+        }
+
+        /// <summary>主成分的百分比区间；单值就只写一个。</summary>
+        private static string PercentRange(float lo, float hi)
+        {
+            if (hi <= 0f) return string.Empty;
+            if (lo <= 0f || lo > hi) lo = hi;
+
+            if (hi - lo < 0.005f) return hi.ToString("0.#") + "%";
+            return lo.ToString("0.#") + "%~" + hi.ToString("0.#") + "%";
+        }
+
+        /// <summary>`CURRENT_PART_*` 是绝对量（单位 1/1000 ml），不是千分比。</summary>
+        private static string FormatAmount(int thousandths)
+        {
+            if (thousandths <= 0) return "0ml";
+
+            float ml = thousandths / 1000f;
+
+            if (ml >= 1f) return ml.ToString("0.#") + "ml";
+            if (ml >= 0.01f) return ml.ToString("0.##") + "ml";
+            return thousandths + "µl";
+        }
+
+        private static string AppendImpurityLines(string head, List<string> impurities)
+        {
+            if (impurities == null || impurities.Count == 0) return head;
+
+            var sb = new System.Text.StringBuilder(head);
+            sb.Append('\n').Append(ModEntry.T("tt_impurity")).Append(':');
+
+            for (int i = 0; i < impurities.Count; i++)
+            {
+                sb.Append('\n').Append(impurities[i]);
+            }
+
+            return sb.ToString();
+        }
     }
 }

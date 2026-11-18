@@ -3301,36 +3301,6 @@ namespace ItemCatalog.UI
             new Dictionary<string, ClientVariants>(StringComparer.Ordinal);
 
         /// <summary>
-        /// `water` 列允许限定「只有哪几件容器有货水」，写法：
-        ///   `base@large_bottled_water`            只给这一件灌
-        ///   `base@large_bottled_water|water_pitcher`  多件用 `|` 分隔
-        /// 不带 `@` 就是该客人所有容器统一按这个水种算。
-        /// 不在名单里的容器返回 null，按「空瓶」处理。
-        /// </summary>
-        private static string WaterForItem(string water, string itemId)
-        {
-            if (string.IsNullOrEmpty(water)) return water;
-
-            int at = water.IndexOf('@');
-            if (at < 0) return water;
-
-            string grade = water.Substring(0, at).Trim();
-            string list = water.Substring(at + 1);
-
-            if (string.IsNullOrEmpty(itemId)) return null;
-
-            string[] ids = list.Split('|');
-            for (int i = 0; i < ids.Length; i++)
-            {
-                string id = ids[i].Trim();
-                if (id.Length > 0 && string.Equals(id, itemId, StringComparison.Ordinal))
-                    return grade;
-            }
-
-            return null;
-        }
-
-        /// <summary>
         /// **只给来源窗口用**：同一件容器，不同客人卖的成分不同，所以成分与瓶身精灵按客人算。
         /// 两者都**由代码直接算出**，不采样、不造实例、不往物品里灌水：
         ///   · 瓶身 = 按 `SpriteHelper.UpdateWaterContainerSprite` 的命名规则
@@ -3349,8 +3319,8 @@ namespace ItemCatalog.UI
 
             // 同一客人可能只给某几件容器灌水（供应商就是只灌 `large_bottled_water`，
             // 水壶/小瓶/量筒都是空的），所以先按物品过滤一遍水种。
-            // water 列留空 = 这个客人没灌水，卖的是空瓶（IsEmptyWater 会走空瓶分支）。
-            water = WaterForItem(water, itemId);
+            // water 列留空 = 这个客人没灌水，卖的是空瓶（LiquidManager.IsEmptyWater 走空瓶分支）。
+            water = LiquidManager.WaterFor(water, itemId);
 
             string cacheKey = itemId + "|" + (water ?? string.Empty);
 
@@ -3374,7 +3344,7 @@ namespace ItemCatalog.UI
 
             var fullList = new List<Sprite>();
 
-            if (IsEmptyWater(water))
+            if (LiquidManager.IsEmptyWater(water))
             {
                 // 只卖空瓶的客人（`water` 留空）：上架的是原始容器，全程不灌水，
                 // 所以既没有成分，图标也得是图集里不带液体段的那张 `<size>`，
@@ -3406,7 +3376,7 @@ namespace ItemCatalog.UI
             // 所以杂质含量的阈值就是混色落到这些 HSV 边界的点。沿该客人的水占比
             // 区间扫一遍，能变出几种颜色就出几张图。
             int pctLo, pctHi;
-            PurityBand(water, out pctLo, out pctHi);
+            LiquidManager.PurityBand(water, out pctLo, out pctHi);
 
             foreach (var sprite in ContainerColorSprites(entry, water, pctLo, pctHi))
                 fullList.Add(sprite);
@@ -3420,7 +3390,7 @@ namespace ItemCatalog.UI
             }
 
             // 成分：水占比还是那张档位表（pctLo/pctHi 上面已经算过）
-            composition = ComposeFromDistribution(capacity, "water", pctLo / 100f, pctHi / 100f, water);
+            composition = LiquidManager.WaterComposition(capacity, water);
 
             var packed = new ClientVariants
             {
@@ -3452,7 +3422,7 @@ namespace ItemCatalog.UI
         /// </summary>
         internal static bool ClientHasFilledBottle(string water, string itemId)
         {
-            return !IsEmptyWater(WaterForItem(water, itemId));
+            return !LiquidManager.IsEmptyWater(LiquidManager.WaterFor(water, itemId));
         }
 
         /// <summary>该物品是不是按容量灌装的液体容器（决定来源页要不要拆出空瓶那一格）。</summary>
@@ -3471,25 +3441,6 @@ namespace ItemCatalog.UI
             catch { return false; }
         }
 
-        /// <summary>
-        /// 这个客人卖的是**空瓶**还是装好水的瓶子，由 `clients.csv` 的 `water` 列定：
-        /// 留空 / `empty` / `none` / `no_water` / `-` = 只卖空瓶（原版多数客人就是把
-        /// 原始容器直接上架）；显式写水种（pure/hq/base/rust/ghost/gutterflow）
-        /// 才显示满瓶图标和成分行。`水种@物品id` 没匹配上时
-        /// <see cref="WaterForItem"/> 返回 null，同样按空瓶处理。
-        /// </summary>
-        private static bool IsEmptyWater(string water)
-        {
-            string kind = (water ?? string.Empty).Trim().ToLowerInvariant();
-
-            return kind.Length == 0
-                   || kind == "empty"
-                   || kind == "none"
-                   || kind == "no_water"
-                   || kind == "nowater"
-                   || kind == "-";
-        }
-
         private const string WaterContainerAtlas3 = "Items/water_container3";
         private const string WaterContainerAtlas4 = "Items/water_container4";
 
@@ -3506,7 +3457,7 @@ namespace ItemCatalog.UI
             string size, atlas;
             if (!ContainerSizeAndAtlas(entry.Id, out size, out atlas)) return list;
 
-            var dist = DistributionFor(water);
+            var dist = LiquidManager.Distribution(water);
             float lo = pctLo / 10000f;
             float hi = pctHi / 10000f;
 
@@ -3727,8 +3678,8 @@ namespace ItemCatalog.UI
 
             // 与 BuildClientVariants 用同一套规则：留空 = 空瓶客人，不灌；
             // `@物品id` 没匹配上也不灌。
-            string water = WaterForItem(RecipeWindow.SourceWater, itemId);
-            if (IsEmptyWater(water)) return;
+            string water = LiquidManager.WaterFor(RecipeWindow.SourceWater, itemId);
+            if (LiquidManager.IsEmptyWater(water)) return;
 
             try
             {
@@ -3757,113 +3708,6 @@ namespace ItemCatalog.UI
                 case "gutter": WaterHelper.FillWithGutterflow(item); return;
                 default: WaterHelper.FillWithBaseWater(item); return;
             }
-        }
-
-        /// <summary>
-        /// `WaterHelper.AddWater` 里按 grade 索引的纯度档位表（千分比，照 IL 抄的）：
-        /// 0 → 9990~9999、1 → 9900~9989、2 → 9800~9899、
-        /// 3 → 9600~9799、4 → 9000~9599、5 → 3500~8999。
-        /// 各水种调的 grade：pure=0、hq=1、base=2、ghost=3、rust=4、gutterflow=5
-        /// （`FillWithXxx` 的第一条 IL 指令就是 grade）。所以水的占比是**算出来的**，
-        /// 不需要采样去猜。
-        /// </summary>
-        private static void PurityBand(string water, out int lo, out int hi)
-        {
-            switch ((water ?? string.Empty).Trim().ToLowerInvariant())
-            {
-                case "pure": lo = 9990; hi = 9999; return;
-                case "hq": lo = 9900; hi = 9989; return;
-                case "ghost": lo = 9600; hi = 9799; return;
-                case "rust": lo = 9000; hi = 9599; return;
-                case "gutterflow":
-                case "gutter": lo = 3500; hi = 8999; return;
-                default: lo = 9800; hi = 9899; return;      // base
-            }
-        }
-
-        /// <summary>水质 → 对应的杂质分布表（原版 5 张，按水种区分）。</summary>
-        private static Dictionary<string, float> DistributionFor(string water)
-        {
-            string kind = (water ?? string.Empty).Trim().ToLowerInvariant();
-
-            try
-            {
-                switch (kind)
-                {
-                    case "pure":
-                    case "hq":
-                        return WaterPremadeHelper.waterContaminantDistribution;
-                    case "rust":
-                        return WaterPremadeHelper.rustWaterContaminantDistribution;
-                    case "ghost":
-                        return WaterPremadeHelper.ghostwaterContaminantDistribution;
-                    case "gutterflow":
-                    case "gutter":
-                        return WaterPremadeHelper.gutterflowContaminantDistribution;
-                    default:
-                        return WaterPremadeHelper.baseWaterContaminantDistribution;
-                }
-            }
-            catch { return null; }
-        }
-
-        private static string ComposeFromDistribution(
-            int capacity, string majorId, float waterPctMin, float waterPctMax, string water)
-        {
-            if (string.IsNullOrEmpty(majorId)) return null;
-
-            string head = ModEntry.T("tt_ingredient") + ": " + LiquidName(majorId)
-                          + " " + PercentRange(waterPctMin, waterPctMax);
-
-            Dictionary<string, float> dist = DistributionFor(water);
-            if (capacity <= 0 || dist == null || dist.Count == 0) return head;
-
-            float sum = 0f;
-            foreach (var pair in dist)
-            {
-                if (pair.Value > 0f) sum += pair.Value;
-            }
-            if (sum <= 0f) return head;
-
-            // 非水部分：水最多时最少，水最少时最多（容量与 CURRENT_PART 同一单位）
-            int nonWaterMin = (int)(capacity * (100f - waterPctMax) / 100f);
-            int nonWaterMax = (int)(capacity * (100f - waterPctMin) / 100f);
-            if (nonWaterMax < nonWaterMin) nonWaterMax = nonWaterMin;
-
-            var impurities = new List<string>();
-            foreach (var pair in dist)
-            {
-                if (pair.Value <= 0f) continue;
-
-                float share = pair.Value / sum;
-                int lo = (int)(nonWaterMin * share);
-                int hi = (int)(nonWaterMax * share);
-                if (hi <= 0) continue;
-
-                // 分布表的键是标签名（`CURRENT_PART_ORGANIC_WASTE`），
-                // 直接拿去查液体表查不到，会原样打印出标签名。
-                string line = LiquidName(PartToLiquidId(pair.Key)) + " " + Amount(lo);
-                if (hi != lo) line += "~" + Amount(hi);
-
-                impurities.Add(line);
-            }
-
-            return AppendImpurityLines(head, impurities);
-        }
-
-        /// <summary>
-        /// 杂质分布表的键是标签名（`CURRENT_PART_HEAVY_METAL`），
-        /// 液体表用的是 id（`heavy_metal`）。不换算的话提示框里会直接印出标签名。
-        /// </summary>
-        private static string PartToLiquidId(string part)
-        {
-            if (string.IsNullOrEmpty(part)) return part;
-
-            const string prefix = "CURRENT_PART_";
-
-            return part.StartsWith(prefix, StringComparison.Ordinal)
-                ? part.Substring(prefix.Length).ToLowerInvariant()
-                : part;
         }
 
         private static string LiquidName(string liquidId)
