@@ -2447,8 +2447,7 @@ namespace ItemCatalog.UI
             {
                 if (string.IsNullOrEmpty(ids[i])) continue;
 
-                bool match = matchEnabled && _entry != null &&
-                             string.Equals(ids[i], _entry.Id, StringComparison.Ordinal);
+                bool match = matchEnabled && MatchesCurrent(ids[i]);
                 RenderGoods(builder, ids[i], match, idBase + i, false);
             }
 
@@ -2630,6 +2629,38 @@ namespace ItemCatalog.UI
             }
 
             return LiquidManager.ContentLiquid(entry.Item);
+        }
+
+        /// <summary>
+        /// 格子的查询对象是不是当前条目（绿底判定）。
+        /// - id 精确相等；
+        /// - 别名 / 本体等价：满装盒（full_*）、占位（random_*）、状态变体这类
+        ///   走 <see cref="LootSource.BaseItemId"/> 解析到同一个本体的，也算同一件；
+        /// - 容器格的可查对象是它灌装的液体（与 <see cref="RenderGoods"/> 同一替换规则），
+        ///   查的正是那种液体时整格命中。
+        /// 垃圾倾倒场里同一件东西既有本体 id 又有别名 id 的格子都会变绿。
+        /// </summary>
+        private static bool MatchesCurrent(string id)
+        {
+            if (string.IsNullOrEmpty(id) || _entry == null || string.IsNullOrEmpty(_entry.Id))
+                return false;
+
+            if (string.Equals(id, _entry.Id, StringComparison.Ordinal)) return true;
+
+            string baseId = BaseItemId(id);
+            if (!string.IsNullOrEmpty(baseId) &&
+                string.Equals(baseId, _entry.Id, StringComparison.Ordinal)) return true;
+
+            string entryBase = BaseItemId(_entry.Id);
+            if (!string.IsNullOrEmpty(baseId) && !string.IsNullOrEmpty(entryBase) &&
+                string.Equals(baseId, entryBase, StringComparison.Ordinal)) return true;
+
+            var entry = RecipeIndex.FindEntry(id);
+            if (entry == null && PreBuiltItems.IsPreBuilt(id)) entry = CatalogWindow.PreBuiltEntry(id);
+
+            string content = ContainerContentLiquid(entry, id, false);
+            return content != null &&
+                   string.Equals(LiquidCatalog.EntryPrefix + content, _entry.Id, StringComparison.Ordinal);
         }
 
         /// <summary>无图标格子的左键动作；找不到目录条目时给个空动作，别把 null 传给按钮。</summary>
@@ -3271,7 +3302,7 @@ namespace ItemCatalog.UI
                 var item = items[i];
                 if (item == null || string.IsNullOrEmpty(item.Id)) continue;
 
-                bool match = _entry != null && string.Equals(item.Id, _entry.Id, StringComparison.Ordinal);
+                bool match = MatchesCurrent(item.Id);
                 RenderGoods(builder, item.Id, match, slot++, false);
             }
 
