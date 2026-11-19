@@ -1,4 +1,4 @@
-﻿# Probably Enough Items — 客人表（改完重启游戏生效，不需要重新编译）
+﻿﻿# Probably Enough Items — 客人表（改完重启游戏生效，不需要重新编译）
 #
 # 一个阵营一节：# ===== 阵营 ===== 标题 + 一行 faction，下面逐行写该阵营的客人。
 # 客人行不带 faction 列，阵营由上方最近的 faction 行决定。
@@ -11,6 +11,9 @@
 #   第 14 列 exclude     从继承货单里剔掉的 id（原 goods.csv 的 exclude）
 #   第 15 列 random_items 随机分支的全部可能产出（原 goods.csv 的 random_items）
 #   第 16 列 dynamic     动态货单标记（如 commissary，原 goods.csv 的 dynamic）
+#   第 17 列 buys_water  收购 WATER 时承认的水质档位（pure / hq / base / ghost…，| 分隔）；
+#                        从客人 willAcceptItem 谓词里的 WaterFeatureHelper.*_WATER_DISPLAY 抄的
+#                        （囤水者 pure|hq、口渴太空人 base|hq|ghost）。留空 = 任意水。
 #   goods.csv 仍会被读取并与上面 12~16 列叠加，但新数据只需要写这一张表。
 # kind          faction=阵营分节 / client=上门客人 / location=地点商店
 #               alias =同一个角色在游戏代码里的另一个 id（如 abby2..5、inventor、
@@ -141,7 +144,7 @@ client,Georgio2,name_georgio,,,其他,george,,,,,packet_red_cigarette|birth_cont
 client,InventorVisit,name_dr._jackson,,src_doctor_shop,其他,pool:GetInventorSpriteName,,,MATERIAL,system_module_corrupt|system_module_ruined,,dr_jackson,satchel|backpack_large|backpack_medium|backpack_small|energy_credit_dis|advanced_flux_agent|turbo_booster_adv,,
 client,MentorClientVisualInspection,name_the_mentor,,,其他,mentor,,,,,cigarette_color|cigarette_guide|magnifier|sign_food|sign_household|sign_material|sign_water,,,,
 client,StoryAppraisalBoard,name_appraiser_board_member,,,其他,pool:GetClerkSpriteName,,,,,cert1|hand_guide|magnifier,,,,
-client,ThirstySpacer,name_thirsty_spacer,,,其他,pool:GetRandomLowerLevelSpriteName,,,WATER,,bottled_water|small_bottled_water,,,,
+client,ThirstySpacer,name_thirsty_spacer,,,其他,pool:GetRandomLowerLevelSpriteName,,,WATER,,bottled_water|small_bottled_water,,,,,base|hq|ghost
 client,Wanted1,name_james_bailey,,,其他,wanted1,,,,,sec_keycard|stun_baton|heavy_pistol_ammo|stun_gun,,,,
 client,Wanted2,name_the_butcher,,,其他,wanted2,,,,,common_electronic|crowbar|energy_drink|fat_meat|postit|processed_meat|raw_meat|satchel|scav_token|small_raw_meat,,,,
 client,Wanted6,name_li_bei_wen,,,其他,wanted6,,,,,pink_alt_injector,,,,
@@ -149,7 +152,7 @@ client,Wanted7,name_juan,,,其他,wanted7,,,,,processed_juice|processed_meat|pro
 # ===== 上层 =====
 faction,faction_name_upper_level,,,,,
 # ---- 水商/水类 ----
-client,WaterStockPiler,name_water_stockpiler,,,水商/囤水,pool:GetRandomUpperSpriteName,,,WATER,bottled_water_premium,bottled_water_premium|large_bottled_water|water_jug,,,,
+client,WaterStockPiler,name_water_stockpiler,,,水商/囤水,pool:GetRandomUpperSpriteName,,,WATER,bottled_water_premium,bottled_water_premium|large_bottled_water|water_jug,,,,,pure|hq
 client,upperLowerVisitorLuxury,name_upper_level_visitor,,,访客/奢侈品,pool:GetRandomUpperSpriteName,,,LUXURY_ITEM|SUBSTANCE,,,,,,
 # ---- 医药/化学 ----
 client,CourrierPharma,name_courrier,,,医药/化学,pool:GetRandomShadySpriteName,,,,,pink_injector,,,,

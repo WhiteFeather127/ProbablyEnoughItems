@@ -340,6 +340,12 @@ namespace ItemCatalog.UI
             internal int Base;                      // 格子 id 起点
             internal string CurrentId;              // 当前详情物品，用于「它自己就在标签里」判定
             internal HashSet<string> Exclude;       // 已经单独列出的具体物品，别在标签格里重复画
+
+            /// <summary>
+            /// 收购 WATER 时客人要的水质（pure / hq / base…，来自 willAcceptItem 谓词）。
+            /// 标签格下面的说明写这几个档位，而不是空样本的「未知的水」。
+            /// </summary>
+            internal string[] WaterQualities;
         }
 
         /// <summary>机器静态配方的一条轮播：一个纯度组一个，逐秒切到下一条配方。</summary>
@@ -601,12 +607,11 @@ namespace ItemCatalog.UI
 
         /// <summary>
         /// 标签格下面那行说明。
-        /// 水是特例：客人收「水」其实管的是**水质**，所以这里写当前那瓶水的档位名
-        /// （`WaterFeatureHelper.GetWaterDisplayName` → `mech_condition_pure_water`
-        /// / `..._high_quality_water` / `basewater` / `ghostwater` / `rustwater` /
-        /// `gutterflow`），成分交给 tooltip，不再写「水」。
+        /// 水是特例：客人收「水」看的是**水质**——`willAcceptItem` 谓词限定了能收的档位
+        /// （水囤积者只要纯水 / 优质水、拾荒者只要基础水 / 幽灵水……），这里直接写这些档位。
+        /// 不能读轮播样本的实例：样本是空瓶，`GetWaterDisplayName` 只会回「未知的水」。
         /// </summary>
-        private static string CaptionFor(string tag, string currentId)
+        private static string CaptionFor(string tag, string currentId, string[] waterQualities)
         {
             // 内部 `_TAG` 已经展开成物品了，不需要再写一行标签
             if (IsInternalTag(tag)) return null;
@@ -614,34 +619,27 @@ namespace ItemCatalog.UI
             if (!string.Equals(tag, "WATER", StringComparison.OrdinalIgnoreCase))
                 return DescribeTags(new[] { tag });
 
-            var ids = ItemsWithTag(tag);
-            if (ids.Count == 0) return null;
-
-            string showId;
-            if (!string.IsNullOrEmpty(currentId) && ids.Contains(currentId))
+            if (waterQualities != null && waterQualities.Length > 0)
             {
-                showId = currentId;
-            }
-            else
-            {
-                int index;
-                if (!_tagRollIndex.TryGetValue(tag, out index)) index = 0;
-                showId = ids[((index % ids.Count) + ids.Count) % ids.Count];
-            }
-
-            var entry = RecipeIndex.FindEntry(showId);
-            var item = entry != null ? entry.Item : null;
-            if (item != null)
-            {
-                try
+                var names = new List<string>();
+                for (int i = 0; i < waterQualities.Length; i++)
                 {
-                    string name = WaterFeatureHelper.GetWaterDisplayName(item);
-                    if (!string.IsNullOrEmpty(name)) return name;
+                    string name = LiquidManager.WaterQualityName(waterQualities[i]);
+                    if (!string.IsNullOrEmpty(name) && !names.Contains(name)) names.Add(name);
                 }
-                catch { }
+
+                if (names.Count > 0) return string.Join("/", names.ToArray());
             }
 
             return ModEntry.T("use_tag_water");
+        }
+
+        /// <summary>查的是液体条目时，收购标签（WATER 等）就是这种液体 → 整格标绿。</summary>
+        private static bool TagMatchesQueriedLiquid(string tag)
+        {
+            string liquidId = QueryLiquidId();
+            return !string.IsNullOrEmpty(liquidId) &&
+                   string.Equals(tag, liquidId, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>把一条标签格重画到它自己的容器里（清空 → 新建 builder → 画格子）。</summary>
@@ -698,11 +696,13 @@ namespace ItemCatalog.UI
                     continue;
                 }
 
-                // 当前物品自己就在这一类里 → 固定显示它；否则按轮播索引取一件
-                bool self = !string.IsNullOrEmpty(strip.CurrentId) && ids.Contains(strip.CurrentId);
+                // 当前物品自己就在这一类里 → 固定显示它；否则按轮播索引取一件。
+                // 查液体时同样算命中：查水 → WATER 这一类标绿（液体不是具体物品 id）。
+                bool selfId = !string.IsNullOrEmpty(strip.CurrentId) && ids.Contains(strip.CurrentId);
+                bool self = selfId || TagMatchesQueriedLiquid(tag);
 
                 string showId;
-                if (self)
+                if (selfId)
                 {
                     showId = strip.CurrentId;
                 }
@@ -716,7 +716,8 @@ namespace ItemCatalog.UI
 
                 // 绿底表示「这一类里有当前这件」，与轮播到哪一件无关（MatchMatch 用 self 判定）
                 RenderGoods(builder, showId, self, strip.Base + i, false);
-                AddOverlayCaption(builder, builder.Last, CaptionFor(tag, strip.CurrentId), "tagcap" + (strip.Base + i));
+                AddOverlayCaption(builder, builder.Last,
+                    CaptionFor(tag, strip.CurrentId, strip.WaterQualities), "tagcap" + (strip.Base + i));
             }
 
             // 具体物品紧接在标签格后面，同一张网格里往下排——列数够时就在同一行，
@@ -728,7 +729,7 @@ namespace ItemCatalog.UI
                     string id = strip.Items[i];
                     if (string.IsNullOrEmpty(id)) continue;
 
-                    bool match = _entry != null && string.Equals(id, _entry.Id, StringComparison.Ordinal);
+                    bool match = MatchesCurrent(id);
                     RenderGoods(builder, id, match, strip.Base + 200 + i, false);
                 }
             }
@@ -2415,7 +2416,8 @@ namespace ItemCatalog.UI
                     Items = items,
                     Base = 800 + _tagStripSeq * 8,
                     CurrentId = matchCurrent && _entry != null ? _entry.Id : null,
-                    Exclude = exclude
+                    Exclude = exclude,
+                    WaterQualities = source.BuysWater
                 };
                 _tagStripSeq++;
                 _tagStrips.Add(buyStrip);

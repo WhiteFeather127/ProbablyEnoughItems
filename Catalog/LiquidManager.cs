@@ -705,6 +705,24 @@ namespace ItemCatalog.Catalog
             }
         }
 
+        /// <summary>水种（pure / hq / base…）→ 游戏里的水质显示名（纯水 / 优质水…）。</summary>
+        internal static string WaterQualityName(string grade)
+        {
+            if (string.IsNullOrEmpty(grade)) return null;
+
+            int lo, hi;
+            PurityBand(grade, out lo, out hi);
+
+            try
+            {
+                string name = WaterFeatureHelper.GetWaterDisplayName(hi);
+                if (!string.IsNullOrEmpty(name)) return name;
+            }
+            catch { }
+
+            return grade.Trim();
+        }
+
         /// <summary>水质 → 对应的杂质分布表（原版 5 张，按水种区分）。</summary>
         internal static Dictionary<string, float> Distribution(string water)
         {

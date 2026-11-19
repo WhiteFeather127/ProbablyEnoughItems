@@ -33,6 +33,12 @@ namespace ItemCatalog.Catalog
         internal bool SellsEmpty;     // 他是否也摆空瓶（拾荒者这类：有水也有原始容器）
         internal string[] BuysTags;   // 他收购的物品**种类标签**（WATER / FOOD / WEAPON…）
         internal string[] BuysItems;  // 他收购的**具体物品 id**（例如 bottled_water_premium）
+
+        /// <summary>
+        /// 收购 WATER 时承认的水质档位（pure / hq / base…），来自 willAcceptItem 谓词；
+        /// 空 = 任意水。标签格下面写这几个档位。
+        /// </summary>
+        internal string[] BuysWater;
         internal string[] Items;      // 该来源可能摆出的全部物品 id（固定 + 随机，已去重）
     }
 
@@ -69,6 +75,7 @@ namespace ItemCatalog.Catalog
             internal string[] Items;         // 固定会摆出的货
             internal string[] RandomItems;   // 随机分支的所有可能产出（全部列出，不漏）
             internal string Dynamic;         // non-null 表示商品运行时补，自己不列物品
+            internal string BuysWater;       // 收购 WATER 时要的水质档位（pure|hq…）
         }
 
         /// <summary>物品 id → 来源列表。</summary>
@@ -186,6 +193,7 @@ namespace ItemCatalog.Catalog
                     SellsEmpty = def.Empty,
                     BuysTags = SplitIds(def.BuysTags),
                     BuysItems = SplitIds(def.BuysItems),
+                    BuysWater = SplitIds(def.BuysWater),
                     Items = CombineItems(def.Items, def.RandomItems)
                 };
 
@@ -466,6 +474,12 @@ namespace ItemCatalog.Catalog
 
                 bool hit = false;
 
+                // 查液体条目时只按液体本身匹配标签：被查询的样本瓶是 bottled_water，
+                // 直接 IsTag("WATER") 会把收水的客人带到所有液体（酒精、酸…）的用途里。
+                string liquidId = LiquidCatalog.IsLiquidEntry(itemId)
+                    ? itemId.Substring(LiquidCatalog.EntryPrefix.Length)
+                    : null;
+
                 if (!string.IsNullOrEmpty(itemId) && source.BuysItems != null)
                 {
                     for (int k = 0; k < source.BuysItems.Length; k++)
@@ -483,8 +497,18 @@ namespace ItemCatalog.Catalog
                     for (int k = 0; k < source.BuysTags.Length; k++)
                     {
                         string word = source.BuysTags[k];
-                        try { hit = item.IsTag(word) || item.IsGameItemType(word); }
-                        catch { hit = false; }
+
+                        if (liquidId != null)
+                        {
+                            // 只有标签就是这种液体才命中：水 → WATER。
+                            hit = string.Equals(word, liquidId, StringComparison.OrdinalIgnoreCase);
+                        }
+                        else
+                        {
+                            try { hit = item.IsTag(word) || item.IsGameItemType(word); }
+                            catch { hit = false; }
+                        }
+
                         if (hit) break;
                     }
                 }

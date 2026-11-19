@@ -251,6 +251,9 @@ namespace ItemCatalog.Catalog
                     Exclude = cols.Length > 13 ? SplitIds(cols[13]) : new string[0],
                     RandomItems = cols.Length > 14 ? SplitIds(cols[14]) : new string[0],
                     Dynamic = cols.Length > 15 ? NullIfEmpty(cols[15]) : null,
+                    // 第 17 列可选：收购 WATER 时要的水质档位（pure|hq…）
+                    // alias 行的第 17 列是「并入哪一行」的资料字段，那些行整行忽略，不冲突
+                    BuysWater = cols.Length > 16 ? NullIfEmpty(cols[16]) : null,
                     Items = new string[0]
                 });
             }
