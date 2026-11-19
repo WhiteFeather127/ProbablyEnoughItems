@@ -2340,8 +2340,7 @@ namespace ItemCatalog.UI
                 for (int i = from; i < to; i++)
                 {
                     var cell = cells[i];
-                    bool match = !_asUse && _entry != null &&
-                                 string.Equals(cell.Id, _entry.Id, StringComparison.Ordinal);
+                    bool match = !_asUse && MatchesCurrent(cell.Id, cell.Empty);
                     RenderGoods(builder, cell.Id, match, i - from, cell.Empty);
                 }
 
@@ -2636,11 +2635,11 @@ namespace ItemCatalog.UI
         /// - id 精确相等；
         /// - 别名 / 本体等价：满装盒（full_*）、占位（random_*）、状态变体这类
         ///   走 <see cref="LootSource.BaseItemId"/> 解析到同一个本体的，也算同一件；
-        /// - 容器格的可查对象是它灌装的液体（与 <see cref="RenderGoods"/> 同一替换规则），
-        ///   查的正是那种液体时整格命中。
-        /// 垃圾倾倒场里同一件东西既有本体 id 又有别名 id 的格子都会变绿。
+        /// - 查的是液体条目时，**容器里含有这种液体**就整格命中——判定与机器页
+        ///   <c>VanillaMachinePanel.HighlightLiquid</c> 同一条（液体管理器 Parts，
+        ///   不要求它是主成分）。垃圾倾倒场里装着水 / 酒精的格子都会变绿。
         /// </summary>
-        private static bool MatchesCurrent(string id)
+        private static bool MatchesCurrent(string id, bool emptyOnly = false)
         {
             if (string.IsNullOrEmpty(id) || _entry == null || string.IsNullOrEmpty(_entry.Id))
                 return false;
@@ -2655,12 +2654,23 @@ namespace ItemCatalog.UI
             if (!string.IsNullOrEmpty(baseId) && !string.IsNullOrEmpty(entryBase) &&
                 string.Equals(baseId, entryBase, StringComparison.Ordinal)) return true;
 
+            if (!LiquidCatalog.IsLiquidEntry(_entry.Id)) return false;
+
             var entry = RecipeIndex.FindEntry(id);
             if (entry == null && PreBuiltItems.IsPreBuilt(id)) entry = CatalogWindow.PreBuiltEntry(id);
 
-            string content = ContainerContentLiquid(entry, id, false);
-            return content != null &&
-                   string.Equals(LiquidCatalog.EntryPrefix + content, _entry.Id, StringComparison.Ordinal);
+            var item = entry == null ? null : entry.Item;
+            if (item == null) return false;
+
+            string liquidId = _entry.Id.Substring(LiquidCatalog.EntryPrefix.Length);
+
+            // 显示层判据：容器格被换成灌装液体时的那一种（来源页按客人水种推断）
+            string content = ContainerContentLiquid(entry, id, emptyOnly);
+            if (content != null && string.Equals(content, liquidId, StringComparison.Ordinal)) return true;
+
+            // 成分判据：只要容器里有这种液体就算（不要求它是主成分）
+            try { return LiquidManager.Parts(item).ContainsKey(liquidId); }
+            catch { return false; }
         }
 
         /// <summary>无图标格子的左键动作；找不到目录条目时给个空动作，别把 null 传给按钮。</summary>
