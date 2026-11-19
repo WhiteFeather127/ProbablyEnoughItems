@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 using ItemCatalog.Catalog;
@@ -244,11 +244,17 @@ namespace ItemCatalog.UI
             /// <summary>水培机每周期耗水（ml），用于面板下面的成分变化。</summary>
             internal int WaterUse;
 
-            /// <summary>水槽里矿物的最佳浓度（百分比，nutrimentLevel/10）。</summary>
+            /// <summary>水槽里矿物的最佳浓度（万分比：矿物占水量的 1/10000，150 = 1.5%）。</summary>
             internal int NutrientPercent;
 
-            /// <summary>每周期消耗的矿物（同百分比单位）。</summary>
+            /// <summary>每周期消耗的矿物（绝对量，单位 1/1000 ml，与 RemoveContaminantFromContainer 一致）。</summary>
             internal int MineralUse;
+
+            /// <summary>
+            /// 产物样本的实例工厂（下标 = <see cref="Outputs"/> 的下标）。
+            /// 返回 null 时按 Outputs 里的 id 造普通实例；作物用它显示最佳品质（大果）。
+            /// </summary>
+            internal Func<int, GameItem> OutputItem;
 
             /// <summary>
             /// 达成这一条配方还需要的模块品质加成（百分比）。
@@ -1079,13 +1085,14 @@ namespace ItemCatalog.UI
                     var built = BuildHydroponicGroups(entry.Id, item);
                     if (built == null) continue;
 
-                    // 水槽最佳矿物浓度 = 养分等级 / 10（等级是千分比：150 → 15%）
+                    // 养分等级是万分比（与 WaterHelper.GetContaminantPercentage 同口径：150 = 矿物占水量的 1.5%）；
+                    // 矿物消耗是绝对量（1/1000 ml，机器用 RemoveContaminantFromContainer 按它扣）。
                     int percent = 0;
                     int mineralUse = 0;
-                    try { percent = HydroponicHelper.GetNutrimentLevel(item) / 10; } catch { }
-                    try { mineralUse = HydroponicHelper.GetMineralUseRate(item) / 10; } catch { }
+                    try { percent = HydroponicHelper.GetNutrimentLevel(item); } catch { }
+                    try { mineralUse = HydroponicHelper.GetMineralUseRate(item); } catch { }
                     if (percent < 0) percent = 0;
-                    if (percent > 100) percent = 100;
+                    if (percent > 10000) percent = 10000;
 
                     for (int g = 0; g < built.Length; g++)
                     {
@@ -1159,14 +1166,14 @@ namespace ItemCatalog.UI
                            HydroOut("kotton_fabric", 9, "kotton_seed", 2),
                            "织机模块直接出布料", new[] { 10 }, null, 176));
 
-                // 梦帽菇：返 1 颗种子
+                // 梦帽菇：返 1 颗种子。装了梦帽模块后收成变成**食用帽菇**（CreateDreamCap(true)）
                 case "dream_cap_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("dream_cap", 8, "dream_cap_seed", 1),
                            "满健康：8 个大果 + 1 颗种子", null, null, 100),
                         HV("farm_module_dream_cap",
-                           HydroOut("dream_cap", 10, "dream_cap_seed", 1),
-                           "每装 1 个梦帽模块 +2 个", null, null, 100),
+                           HydroOut("meal_cap", 10, "dream_cap_seed", 1),
+                           "每装 1 个梦帽模块 +2 个，并变成食用帽菇", null, null, 100),
                         HV("farm_module_nightmare_cap",
                            HydroOut("nightmare_cap", 8, "dream_cap_seed", 1),
                            "改装梦魇模块后整株改出梦魇菇", null, null, 100));
@@ -1200,7 +1207,7 @@ namespace ItemCatalog.UI
                     return H(seedId, env,
                         HV(null, HydroOut("wine_berry", 8, null, 0),
                            "满健康：8 颗", new[] { 0 },
-                           "品质概率：1 级 60% / 2 级 40%（满健康）", 100));
+                           "1 级 60% / 2 级 40%（满健康）", 100));
             }
 
             return GenericHydroponicGroups(seedId, seed, env);
@@ -1217,9 +1224,14 @@ namespace ItemCatalog.UI
             for (int i = 0; i < variants.Length; i++)
             {
                 var v = variants[i];
-                string note = string.IsNullOrEmpty(env) ? v.Note : v.Note + " · " + env;
+
+                // 最下面那行只写生长条件（养分 / 污染物影响），不写产物数量和种类：
+                // 产物已经逐格画在面板里了，再写一遍只是噪音。
+                string note = env;
+                // 概率说明统一写「生成概率：X%」；必定产出的物品不带这句（见 VanillaMachinePanel 的按元素标注）
                 string uncertainNote = v.Uncertain != null && v.Uncertain.Length > 0
-                    ? (string.IsNullOrEmpty(v.UncertainNote) ? "50%" : v.UncertainNote)
+                    ? ModEntry.T("mach_hydro_chance",
+                                 string.IsNullOrEmpty(v.UncertainNote) ? "50%" : v.UncertainNote)
                     : null;
 
                 var recipe = new Recipe(new[] { seedId },
@@ -1228,6 +1240,9 @@ namespace ItemCatalog.UI
                                         "mach_hydroponic_note", note,
                                         0, LiquidManager.ContainerId, LiquidManager.WaterId, 0,
                                         v.Uncertain, uncertainNote, v.WaterUse);
+
+                // 作物产物按最佳品质（大果）显示：与「图鉴分格列出的最佳那一格」完全一致
+                recipe.OutputItem = BestQualityOutputs(v.Outputs);
 
                 groups.Add(new RecipeGroup
                 {
@@ -1239,6 +1254,21 @@ namespace ItemCatalog.UI
             }
 
             return groups.ToArray();
+        }
+
+        /// <summary>
+        /// 产物样本工厂：作物按最佳品质档（大果）造实例，其余产物返回 null（按 id 造普通实例）。
+        /// </summary>
+        private static Func<int, GameItem> BestQualityOutputs(string[] outputs)
+        {
+            return delegate (int index)
+            {
+                if (outputs == null || index < 0 || index >= outputs.Length) return null;
+
+                string id = outputs[index];
+                int best = CropVariants.BestIndex(id);
+                return best < 0 ? null : CropVariants.Create(id, best);
+            };
         }
 
         /// <summary>产物列表：主产物 × count + 返种 × seeds。</summary>
@@ -1264,8 +1294,12 @@ namespace ItemCatalog.UI
             try { mineral = HydroponicHelper.GetMineralUseRate(seed); } catch { }
             try { contaminant = HydroponicHelper.GetContaminantEffect(seed); } catch { contaminant = 1.0; }
 
-            // 耗水 / 矿物消耗由面板下面的成分变化体现，这里只写养分浓度与污染物影响
-            return "养分 " + level + "±" + range
+            // 耗水 / 矿物消耗由面板下面的成分变化体现，这里只写矿物质浓度与污染物影响。
+            // 矿物质名用液体管理器里的本地化名（和成分列表、提示框是同一个来源）；
+            // 浓度是万分比，展示成百分比（150 → 1.5%）。
+            string best = (level / 100.0).ToString("0.##") + "%";
+            string span = (range / 100.0).ToString("0.##") + "%";
+            return LiquidManager.NameOf("mineral") + " " + best + "±" + span
                    + " · 污染物影响 ×" + contaminant.ToString("0.##");
         }
 

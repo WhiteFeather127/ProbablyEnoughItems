@@ -152,3 +152,5 @@ mach_note_evap,Сушка ёмкости: модуль + спирт
 mach_note_evap_beer,Любая ёмкость со спиртом даёт спирт
 mach_note_trap,Приманка: сыр → переработанный сыр
 mach_note_trap_food,Любая еда подходит
+mach_hydro_chance,Шанс: {0}
+mach_hydro_purify,Очистка

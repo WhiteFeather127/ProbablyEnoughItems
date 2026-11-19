@@ -152,3 +152,5 @@ mach_note_evap,Dry an alcoholic container: solvent recovery module + alcohol
 mach_note_evap_beer,Any alcoholic container yields alcohol
 mach_note_trap,Bait with cheese → processed cheese
 mach_note_trap_food,Any food works as bait
+mach_hydro_chance,Chance: {0}
+mach_hydro_purify,Purification

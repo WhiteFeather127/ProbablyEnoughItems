@@ -3642,35 +3642,171 @@ namespace ItemCatalog.UI
             }
         }
 
-        /// <summary>水培机「一个周期的成分变化」：水 + 矿物（总量 = 两者之和）。</summary>
-        private static List<LiquidManager.Component> HydroComponents(int waterMl, int mineralMl)
+        /// <summary>
+        /// 水培机「一个周期后」：在液体管理器读到的实际内容物上按配方消耗量扣。
+        /// 水按 ml（<see cref="MachinePanels.Recipe.WaterUse"/>，机器调 <c>WaterHelper.RemoveMl</c>），
+        /// 矿物按绝对量 UL（机器调 <c>RemoveContaminantFromContainer(…, mineralUseRate, …)</c>）。
+        /// 两者都是 1/1000 ml，乘 1000 换成水用的 ml。
+        /// </summary>
+        private static List<LiquidManager.Component> HydroAfterCycle(
+            List<LiquidManager.Component> before, MachinePanels.Recipe recipe)
         {
-            int total = waterMl + mineralMl;
-            var list = new List<LiquidManager.Component>();
+            var after = new List<LiquidManager.Component>();
+            if (before == null || before.Count == 0 || recipe == null) return after;
 
-            if (waterMl > 0)
+            int water = 0, mineral = 0, other = 0;
+            for (int i = 0; i < before.Count; i++)
             {
-                list.Add(new LiquidManager.Component
+                var component = before[i];
+                if (string.Equals(component.Id, LiquidManager.WaterId, StringComparison.Ordinal))
+                    water += component.Amount;
+                else if (string.Equals(component.Id, "mineral", StringComparison.Ordinal))
+                    mineral += component.Amount;
+                else
+                    other += component.Amount;
+            }
+
+            int waterAfter = Mathf.Max(0, water - recipe.WaterUse * 1000);   // WaterUse 是 ml
+            int mineralAfter = Mathf.Max(0, mineral - recipe.MineralUse);     // MineralUse 是 UL
+
+            int total = waterAfter + mineralAfter + other;
+
+            if (waterAfter > 0)
+            {
+                after.Add(new LiquidManager.Component
                 {
                     Id = LiquidManager.WaterId,
                     Name = LiquidManager.NameOf(LiquidManager.WaterId),
-                    Amount = waterMl,
+                    Amount = waterAfter,
                     Total = total
                 });
             }
 
-            if (mineralMl > 0)
+            if (mineralAfter > 0)
             {
-                list.Add(new LiquidManager.Component
+                after.Add(new LiquidManager.Component
                 {
                     Id = "mineral",
                     Name = LiquidManager.NameOf("mineral"),
-                    Amount = mineralMl,
+                    Amount = mineralAfter,
                     Total = total
                 });
             }
 
-            return list;
+            // 其它成分（水培正常只有水和矿物）原样保留，只更新总量
+            for (int i = 0; i < before.Count; i++)
+            {
+                var component = before[i];
+                if (string.Equals(component.Id, LiquidManager.WaterId, StringComparison.Ordinal)) continue;
+                if (string.Equals(component.Id, "mineral", StringComparison.Ordinal)) continue;
+
+                component.Total = total;
+                after.Add(component);
+            }
+
+            return after;
+        }
+
+        /// <summary>水培页面板下方要预留的高度：成分变化（前/后）+ 净水块 + 生长条件。</summary>
+        private static float HydroExtraHeight(MachinePanels.Recipe recipe)
+        {
+            float height = 96f;
+
+            int lines = PurifyLineCount(recipe);
+            if (lines > 0) height += (lines + 1) * 20f + 6f;   // 标题 + 每行一种污染物
+
+            return height;
+        }
+
+        /// <summary>净水块会画几行（不含标题）；植物没有 purifying 特性时返回 0。</summary>
+        private static int PurifyLineCount(MachinePanels.Recipe recipe)
+        {
+            if (recipe == null || recipe.Inputs == null || recipe.Inputs.Length == 0) return 0;
+
+            var seedEntry = RecipeIndex.FindEntry(recipe.Inputs[0]);
+            var seed = seedEntry == null ? null : seedEntry.Item;
+            if (seed == null) return 0;
+
+            int rank = 0;
+            try { rank = PlantGeneticsHelper.GetTraitRank(seed, "purifying"); } catch { }
+            if (rank <= 0) return 0;
+
+            int count = 0;
+            for (int i = 0; i < PurifyPollutants.Length; i++)
+            {
+                try
+                {
+                    var dict = Liquid.LiquidDict;
+                    if (dict != null && dict.ContainsKey(PurifyPollutants[i])) count++;
+                }
+                catch { }
+            }
+
+            return count;
+        }
+
+        /// <summary>
+        /// 游戏水质系统实际使用的污染物（<c>WaterPremadeHelper</c> 的各张分布表里的键）。
+        /// 净水特性只清这几种里可被过滤器移除的；<c>mineral</c> 不在其中（矿物质会被保留）。
+        /// </summary>
+        private static readonly string[] PurifyPollutants =
+        {
+            "heavy_metal", "organic_waste", "microplastic", "microbe",
+            "chemical_contaminant", "physical_contaminant"
+        };
+
+        /// <summary>
+        /// 水培「净水」：<c>purifying</c> 特性每周期清掉每种污染物的一定比例，
+        /// 但会停在各自的下限（<see cref="PlantWaterQuality.PurifyingFloor"/>）。
+        /// 这里把下限按**百分比**写出来，每行一种污染物。
+        /// </summary>
+        private static void RenderPurifyEffect(CustomUIBuilder builder, MachinePanels.Recipe recipe)
+        {
+            if (builder == null || recipe == null) return;
+            if (recipe.Inputs == null || recipe.Inputs.Length == 0) return;
+
+            var seedEntry = RecipeIndex.FindEntry(recipe.Inputs[0]);
+            var seed = seedEntry == null ? null : seedEntry.Item;
+            if (seed == null) return;
+
+            int rank = 0;
+            try { rank = PlantGeneticsHelper.GetTraitRank(seed, "purifying"); } catch { }
+            if (rank <= 0) return;
+
+            var lines = new List<string>();
+            for (int i = 0; i < PurifyPollutants.Length; i++)
+            {
+                string id = PurifyPollutants[i];
+
+                Liquid liquid = null;
+                try
+                {
+                    var dict = Liquid.LiquidDict;
+                    if (dict != null) dict.TryGetValue(id, out liquid);
+                }
+                catch { }
+                if (liquid == null) continue;
+
+                int floorBp = 0;   // 保留底线，万分比（10000 = 100%）
+                try { floorBp = PlantWaterQuality.PurifyingFloor(liquid, rank); } catch { }
+                if (floorBp < 0) floorBp = 0;
+
+                string percent = (floorBp / 100.0).ToString("0.##") + "%";
+                lines.Add(LiquidManager.NameOf(id) + "：" + percent);
+            }
+
+            if (lines.Count == 0) return;
+
+            builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
+            builder.AddLabel(Loc("mach_hydro_purify", "净水"), "hydro_purify");
+            SetCompositionFont(builder.Last);
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                builder.AddLabel(lines[i], "hydro_purify_" + i);
+                SetCompositionFont(builder.Last);
+            }
+            builder.End();
         }
 
         private static void SetCompositionFont(CustomUIElement element)
@@ -4036,7 +4172,7 @@ namespace ItemCatalog.UI
             if (HasMachineComposition(machineId))
                 panelMaxH -= MachineCompositionHeight(recipe);
             else if (string.Equals(machineId, "hydroponic", StringComparison.Ordinal))
-                panelMaxH -= 96f;   // 面板下面：成分变化（前/后）+ 生长条件
+                panelMaxH -= HydroExtraHeight(recipe);   // 面板下面：成分变化（前/后）+ 净水 + 生长条件
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
@@ -4097,25 +4233,22 @@ namespace ItemCatalog.UI
             // 水培机：概率产物标黄底 + 提示框写概率；面板下面写一个周期的成分变化
             if (string.Equals(machineId, "hydroponic", StringComparison.Ordinal))
             {
-                _vanillaMachine.MarkUncertain(recipe.Uncertain, recipe.UncertainNote);
-
-                // 水槽按最佳养分浓度重灌：水 + 矿物，总量 = 容器容量
+                // 水槽按最佳养分浓度重灌（养分等级是万分比：矿物占水量的 1.5%）
                 _vanillaMachine.FillHydroponicWater(recipe.NutrientPercent);
 
-                // 左 = 变化前，右 = 一个周期后（水 -耗水，矿物 -矿物消耗）
-                int totalMl = LiquidManager.WaterCapacityUl() / 1000;
-                int mineralMl = totalMl * recipe.NutrientPercent / 100;
-                int beforeWater = totalMl - mineralMl;
-                int afterWater = Mathf.Max(0, beforeWater - recipe.WaterUse);
-                int afterMineral = Mathf.Max(0, mineralMl - recipe.MineralUse);
+                // 变化前：直接读水槽实际灌进去的液体（液体管理器，单位 UL，
+                // 与容器提示框的总体积同一口径，不再自己按容量换算）
+                var before = LiquidManager.Components(_vanillaMachine, false);
+
+                // 标黄放在灌水之后：灌水会更新容器样本，别让高亮被后续重建盖掉
+                _vanillaMachine.MarkUncertain(recipe.Outputs, recipe.Uncertain, recipe.UncertainNote);
 
                 builder.BeginRow(12f, UnityEngine.TextAnchor.UpperLeft);
 
                 builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
                 builder.AddLabel(Loc("mach_hydro_before", "变化前"), "hydro_before");
                 SetCompositionFont(builder.Last);
-                RenderLiquidComposition(builder,
-                    HydroComponents(beforeWater, mineralMl), "hydro_before_");
+                RenderLiquidComposition(builder, before, "hydro_before_");
                 builder.End();
 
                 builder.AddFlexibleSpace();
@@ -4123,12 +4256,15 @@ namespace ItemCatalog.UI
                 builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
                 builder.AddLabel(Loc("mach_hydro_after", "一个周期后"), "hydro_after");
                 SetCompositionFont(builder.Last);
-                RenderLiquidComposition(builder,
-                    HydroComponents(afterWater, afterMineral), "hydro_after_");
+                RenderLiquidComposition(builder, HydroAfterCycle(before, recipe), "hydro_after_");
                 builder.End();
 
                 builder.End();
 
+                // 倒数第二块：净水（purifying）——每种污染物一行，写它最终能降到的百分比
+                RenderPurifyEffect(builder, recipe);
+
+                // 最后一行：矿物质最佳浓度 + 污染物影响
                 string growNote = Loc(recipe.NoteKey, recipe.NoteFallback);
                 if (!string.IsNullOrEmpty(growNote))
                 {
@@ -4538,7 +4674,8 @@ namespace ItemCatalog.UI
         {
             if (_vanillaMachine == null || recipe == null) return;
             _vanillaMachine.Fill(recipe.Inputs, recipe.Modules, recipe.Outputs, purity,
-                                 recipe.Container, recipe.ContainerLiquid, recipe.ContainerVolume);
+                                 recipe.Container, recipe.ContainerLiquid, recipe.ContainerVolume,
+                                 recipe.OutputItem);
         }
 
         private static void RenderMachineRecipeStrip(MachineRecipeStrip strip)

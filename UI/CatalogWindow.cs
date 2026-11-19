@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using ProbablyEnoughItems.Api;
@@ -957,6 +957,10 @@ namespace ItemCatalog.UI
                 if (count > 1) return count;
             }
 
+            // ② 作物品质档（小 / 普通 / 大 / 巨大）：游戏为每一档写了独立的预构建工厂
+            int cropTiers = CropVariants.Count(entry.Id);
+            if (cropTiers > 1) return cropTiers;
+
             // 刮刮乐：奖品随机，只保留一张（不展开成多格）
             if (IsScratcherEntry(entry)) return 1;
 
@@ -1324,6 +1328,13 @@ namespace ItemCatalog.UI
                 {
                     Warn("variant provider create '" + entry.Id + "' #" + index + ": " + e.Message);
                 }
+            }
+
+            // ② 作物品质档：直接调游戏为该档写好的预构建工厂
+            if (CropVariants.Has(entry.Id))
+            {
+                var crop = CropVariants.Create(entry.Id, index);
+                if (crop != null) return crop;
             }
 
             // ② 模块：先按占格形状（精灵）排列，同一形状内再按效果排列
@@ -2229,6 +2240,10 @@ namespace ItemCatalog.UI
 
             try { GeneralHelper.SetItemOwned(copy, true); } catch { }
 
+            // 按 id 新造的只是工厂默认版本：作物品质档（巨大果）、随机词条模块这些
+            // 样本上的差异都在数据里，必须整体抄到副本上，否则拖出来的和看到的不一样。
+            CopyItemSnapshot(sample, copy);
+
             // 药品这类成分随机的物品：拿取统一用图鉴展示的实验室纯级（100% 活性物质）
             try
             {
@@ -2302,6 +2317,52 @@ namespace ItemCatalog.UI
                 try { SpriteHelper.UpdateWaterContainerSprite(copy); } catch { }
             }
             catch (Exception e) { Warn("copy liquids: " + e.Message); }
+        }
+
+        /// <summary>
+        /// 把「屏幕上这份样本」的数据整体抄到拿取副本上。
+        /// 样本可能不是工厂默认版本：作物品质档（小 / 普通 / 大 / 巨大）、
+        /// 随机词条模块、灌装过的容器——只按 id 重造会退回默认品质。
+        /// 标签与特性用克隆，不共享引用，免得拖拽过程改坏图鉴里那份。
+        /// </summary>
+        private static void CopyItemSnapshot(GameItem source, GameItem target)
+        {
+            if (source == null || target == null || ReferenceEquals(source, target)) return;
+
+            try { target.identifier = source.identifier; } catch { }
+            try { target.name = source.name; } catch { }
+            try { target.shortDescription = source.shortDescription; } catch { }
+            try { target.longDescription = source.longDescription; } catch { }
+            try { target.flavorText = source.flavorText; } catch { }
+            try { target.unitValue = source.unitValue; } catch { }
+            try { target.unitBaseValue = source.unitBaseValue; } catch { }
+            try { target.spriteAtlasPath = source.spriteAtlasPath; } catch { }
+            try { target.spritePath = source.spritePath; } catch { }
+            try { target.useSpriteFromMod = source.useSpriteFromMod; } catch { }
+
+            try
+            {
+                target.itemTypes = source.itemTypes == null
+                    ? new List<string>()
+                    : new List<string>(source.itemTypes);
+            }
+            catch { }
+
+            try
+            {
+                target.itemFeatures = source.itemFeatures == null
+                    ? new List<ItemFeature>()
+                    : new List<ItemFeature>(source.itemFeatures);
+            }
+            catch { }
+
+            try { target.state = source.state == null ? null : source.state.Clone(); }
+            catch (Exception e) { Warn("copy snapshot state: " + e.Message); }
+
+            try { target.modifiedState = source.modifiedState == null ? null : source.modifiedState.Clone(); }
+            catch (Exception e) { Warn("copy snapshot modifiedState: " + e.Message); }
+
+            try { target.effects = source.effects; } catch { }
         }
 
         private static void BeginDrag(ItemEntry entry)

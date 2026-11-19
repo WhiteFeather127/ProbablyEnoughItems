@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -677,7 +677,8 @@ namespace ItemCatalog.UI
         /// </summary>
         internal void Fill(string[] inputs, string[] modules, string[] outputs,
                            string purity = null, string container = null,
-                           string containerLiquid = null, int containerVolume = 0)
+                           string containerLiquid = null, int containerVolume = 0,
+                           Func<int, GameItem> outputItems = null)
         {
             ClearSamples();
 
@@ -689,7 +690,20 @@ namespace ItemCatalog.UI
                 if (inputs != null)
                     for (int i = 0; i < inputs.Length; i++) Accept(_inputGrid, inputs[i]);
                 if (outputs != null)
-                    for (int i = 0; i < outputs.Length; i++) Accept(_outputGrid, outputs[i], purity);
+                {
+                    for (int i = 0; i < outputs.Length; i++)
+                    {
+                        GameItem sample = null;
+                        if (outputItems != null)
+                        {
+                            try { sample = outputItems(i); }
+                            catch (Exception e) { Warn("output item '" + outputs[i] + "': " + e.Message); }
+                        }
+
+                        if (sample != null) Accept(_outputGrid, sample, purity);
+                        else Accept(_outputGrid, outputs[i], purity);
+                    }
+                }
 
                 // 搅拌机 / 化学制剂成型机 / 蒸发器：容器槽放一只液体容器（默认 bottled_water）。
                 // 搅拌机把投入的液体成分灌进去；化学制剂成型机与蒸发器按配方灌入指定液体。
@@ -785,7 +799,11 @@ namespace ItemCatalog.UI
         /// 水培水槽：按最佳养分浓度重灌容器（水 + 矿物），总量 = 容器容量。
         /// 矿物浓度是千分比换算后的百分比（nutrimentLevel/10）。
         /// </summary>
-        internal void FillHydroponicWater(int mineralPercent)
+        /// <param name="mineralBasisPoints">
+        /// 矿物占**水量**的万分比，与游戏 <c>WaterHelper.GetContaminantPercentage</c> 同口径
+        /// （150 = 1.5%）。内容物总量正好等于容器容量，矿物 = 总量 × bp / (10000 + bp)。
+        /// </param>
+        internal void FillHydroponicWater(int mineralBasisPoints)
         {
             var container = ContainerSample;
             if (container == null) return;
@@ -794,11 +812,11 @@ namespace ItemCatalog.UI
             try { total = container.GetTagReadonly("LIQUID_CONTAINER_CAPACITY").GetInt(); } catch { }
             if (total <= 0) total = LiquidManager.WaterCapacityUl();
 
-            int percent = mineralPercent;
-            if (percent < 0) percent = 0;
-            if (percent > 100) percent = 100;
+            int bp = mineralBasisPoints;
+            if (bp < 0) bp = 0;
+            if (bp > 10000) bp = 10000;
 
-            int mineral = total * percent / 100;
+            int mineral = bp <= 0 ? 0 : (int)((long)total * bp / (10000 + bp));
             int water = total - mineral;
 
             try
@@ -906,59 +924,180 @@ namespace ItemCatalog.UI
             }
         }
 
-        private void HighlightElement(GameItemElement element,
-                                      RenderHandler.BackgroundColor color = RenderHandler.BackgroundColor.Green)
+        private int HighlightElement(GameItemElement element,
+                                     RenderHandler.BackgroundColor color = RenderHandler.BackgroundColor.Green)
         {
             var inventory = element == null ? null : element.parentInventory;
-            if (inventory == null) return;
+            if (inventory == null) return 0;
 
             try
             {
                 var slot = inventory.GetIncompleteItemInventorySlot(element);
                 var nodes = inventory.HighlightSlot(slot, color, true);
-                if (nodes != null) _matchHighlights.AddRange(nodes);
+                if (nodes != null && nodes.Count > 0)
+                {
+                    _matchHighlights.AddRange(nodes);
+                    return nodes.Count;
+                }
             }
             catch (Exception e) { Warn("highlight element: " + e.Message); }
+
+            return 0;
         }
 
-        /// <summary>概率产物：物品 id → 提示框末尾追加的说明（例如「50%」）。</summary>
-        private readonly Dictionary<string, string> _tooltipNotes =
-            new Dictionary<string, string>(StringComparer.Ordinal);
+        /// <summary>
+        /// 概率产物：**具体的那个产物样本** → 提示框末尾追加的说明（例如「生成概率：50%」）。
+        /// 必须按元素记，不能按 id：同一 id 的另一份是必定产出的（例如第一颗种子），
+        /// 按 id 记会让它也显示概率。
+        /// </summary>
+        private readonly List<KeyValuePair<GameItemElement, string>> _tooltipNotes =
+            new List<KeyValuePair<GameItemElement, string>>();
 
         /// <summary>产物格里放入的样本元素（按放置顺序，概率产物按这个下标定位）。</summary>
         private readonly List<GameItemElement> _outputElements = new List<GameItemElement>();
 
         /// <summary>
-        /// 标出概率产物：产物格按放置顺序取下标，格子上黄底，提示框末尾追加概率。
+        /// 标出概率产物：格子上黄底（原版没有 Yellow，用最接近的 Tan），提示框末尾追加概率。
+        /// 不能按 <c>Outputs</c> 的下标取 <c>_outputElements</c>：样本按形状排布，
+        /// 被网格拒绝或堆叠合并时两者会错位（首颗种子与第二颗同 id 时尤其明显）。
+        /// 这里按「这个 id 在 Outputs 里第几次出现」去找对应的产物样本。
         /// </summary>
-        internal void MarkUncertain(int[] indexes, string note)
+        internal void MarkUncertain(string[] outputs, int[] indexes, string note)
         {
-            if (indexes == null || indexes.Length == 0 || string.IsNullOrEmpty(note)) return;
+            if (outputs == null || indexes == null || indexes.Length == 0 || string.IsNullOrEmpty(note)) return;
 
             for (int i = 0; i < indexes.Length; i++)
             {
                 int index = indexes[i];
-                if (index < 0 || index >= _outputElements.Count) continue;
+                if (index < 0 || index >= outputs.Length) continue;
 
-                var el = _outputElements[index];
-                if (string.IsNullOrEmpty(el.identifier)) continue;
+                string id = outputs[index];
+                if (string.IsNullOrEmpty(id)) continue;
 
-                _tooltipNotes[el.identifier] = note;
-                // 原版高亮没有 Yellow，用最接近的 Tan（棕黄底）
-                HighlightElement(el, RenderHandler.BackgroundColor.Tan);
+                int occurrence = 0;
+                for (int k = 0; k <= index && k < outputs.Length; k++)
+                    if (string.Equals(outputs[k], id, StringComparison.Ordinal)) occurrence++;
+
+                var el = FindOutputElement(id, occurrence);
+                if (el == null)
+                {
+                    if (ModEntry.Log != null && _uncertainLogs < 8)
+                    {
+                        _uncertainLogs++;
+                        ModEntry.Log.Warning("[hydro] uncertain '" + id + "' #" + occurrence
+                                             + " has no output element (samples=" + _outputElements.Count + ")");
+                    }
+                    continue;
+                }
+
+                SetTooltipNote(el, note);
+
+                // 原版的 HighlightSlot 在这个网格里画出来也看不见（节点存在但被底板盖住），
+                // 直接用一层纯色块：Image 不挂 sprite 时就是纯色，不依赖图集里有没有 tan。
+                int marks = OverlayUncertain(el);
+
+                if (ModEntry.Log != null && _uncertainLogs < 8)
+                {
+                    _uncertainLogs++;
+                    ModEntry.Log.Log("[hydro] uncertain '" + id + "' #" + occurrence
+                                     + " elements=" + _outputElements.Count + " marks=" + marks);
+                }
             }
+        }
+
+        private int _uncertainLogs;
+
+        /// <summary>把概率说明挂到这一个样本上（同一元素重复标注时覆盖）。</summary>
+        private void SetTooltipNote(GameItemElement element, string note)
+        {
+            if (element == null || string.IsNullOrEmpty(note)) return;
+
+            for (int i = _tooltipNotes.Count - 1; i >= 0; i--)
+            {
+                if (ReferenceEquals(_tooltipNotes[i].Key, element)) _tooltipNotes.RemoveAt(i);
+            }
+
+            _tooltipNotes.Add(new KeyValuePair<GameItemElement, string>(element, note));
+        }
+
+        /// <summary>
+        /// 概率产物格子的黄底：在物品图标上叠一层半透明纯色块。
+        /// 做成子节点是为了保证可见（兄弟节点会被格子底板盖住），并且跟随图标一起移动、销毁。
+        /// </summary>
+        private int OverlayUncertain(GameItemElement element)
+        {
+            try
+            {
+                if (element == null) return 0;
+
+                var target = element.background != null
+                    ? element.background.rectTransform
+                    : element.rectTransform;
+                if (target == null) return 0;
+
+                var go = new GameObject("hydroUncertain",
+                    typeof(RectTransform), typeof(UnityEngine.UI.Image));
+                go.transform.SetParent(target, false);
+
+                var rect = go.GetComponent<RectTransform>();
+                rect.anchorMin = Vector2.zero;
+                rect.anchorMax = Vector2.one;
+                rect.offsetMin = Vector2.zero;
+                rect.offsetMax = Vector2.zero;
+                rect.localScale = Vector3.one;
+
+                var image = go.GetComponent<UnityEngine.UI.Image>();
+                image.sprite = null;                  // 无贴图 = 纯色块
+                image.color = new Color(1f, 0.82f, 0.22f, 0.42f);
+                image.raycastTarget = false;
+
+                _highlightOverlays.Add(go);
+                return 1;
+            }
+            catch (Exception e)
+            {
+                Warn("uncertain overlay: " + e.Message);
+                return 0;
+            }
+        }
+
+        private readonly List<GameObject> _highlightOverlays = new List<GameObject>();
+
+        /// <summary>按 id 找第 occurrence 个产物样本；数量对不上时退回该 id 的最后一格。</summary>
+        private GameItemElement FindOutputElement(string id, int occurrence)
+        {
+            GameItemElement last = null;
+            int seen = 0;
+
+            for (int i = 0; i < _outputElements.Count; i++)
+            {
+                var el = _outputElements[i];
+                if (el == null || !string.Equals(el.identifier, id, StringComparison.Ordinal)) continue;
+
+                seen++;
+                last = el;
+                if (occurrence > 0 && seen == occurrence) return el;
+            }
+
+            return last;
         }
 
         /// <summary>
         /// 概率说明挂到原版提示框末尾（提示框每帧重建，所以每次刷新都要挂）。
         /// RichText 的属性只读，只能按原值建一个新对象。
         /// </summary>
-        private RichText WithTooltipNote(RichText rich, string id)
+        private RichText WithTooltipNote(RichText rich, GameItemElement element)
         {
-            if (rich == null || string.IsNullOrEmpty(id)) return rich;
+            if (rich == null || element == null) return rich;
 
-            string note;
-            if (!_tooltipNotes.TryGetValue(id, out note) || string.IsNullOrEmpty(note)) return rich;
+            string note = null;
+            for (int i = 0; i < _tooltipNotes.Count; i++)
+            {
+                if (!ReferenceEquals(_tooltipNotes[i].Key, element)) continue;
+                note = _tooltipNotes[i].Value;
+                break;
+            }
+            if (string.IsNullOrEmpty(note)) return rich;
 
             try
             {
@@ -994,6 +1133,13 @@ namespace ItemCatalog.UI
             _samples.Clear();
             _outputElements.Clear();
             _tooltipNotes.Clear();
+
+            // 兜底底色是物品图标的兄弟节点，不会随样本销毁，必须自己收
+            for (int i = 0; i < _highlightOverlays.Count; i++)
+            {
+                if (_highlightOverlays[i] != null) UnityEngine.Object.Destroy(_highlightOverlays[i]);
+            }
+            _highlightOverlays.Clear();
         }
 
         /// <summary>
@@ -1241,7 +1387,7 @@ namespace ItemCatalog.UI
                                      + " overlay=" + (OverlayHandler.current != null));
 
                 if (rich == null) return;
-                rich = WithTooltipNote(rich, element.identifier);
+                rich = WithTooltipNote(rich, element);
 
                 // 每帧重建：原版徽章 / 其它模组追加内容靠这个时间戳保持最新
                 TooltipFollower.Begin(rich, ItemTooltipHandler.BASE_TOOLTIP_CHAR_WIDTH,
@@ -1250,7 +1396,7 @@ namespace ItemCatalog.UI
                         try
                         {
                             var rebuilt = element != null ? element.GetTooltip() : null;
-                            if (element != null) rebuilt = WithTooltipNote(rebuilt, element.identifier);
+                            if (element != null) rebuilt = WithTooltipNote(rebuilt, element);
                             return rebuilt;
                         }
                         catch { return null; }

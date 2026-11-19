@@ -57,7 +57,7 @@ It gathers all 27 item directories in the game, along with entries injected by o
 [tr]
 [td]Machine[/td]
 [td]Both[/td]
-[td]The machine's own interface restored, with its recipes below — furnace purity tiers (flux, blast, junk processing) and the blender's input + container with the blended composition[/td]
+[td]The machine's own interface restored, with its recipes below — furnace purity tiers (flux, blast, junk processing), the blender's input + container with the blended composition, the chem finisher, evaporator and hydroponics[/td]
 [/tr]
 [tr]
 [td]Crafting[/td]
@@ -78,7 +78,7 @@ It gathers all 27 item directories in the game, along with entries injected by o
 
 [h2]States[/h2]
 [list]
-[*]Enumerable looks occupy separate cells: cigarettes 5, immunity injectors 5, food stamps 30, module footprint by effect, berries 6
+[*]Enumerable looks occupy separate cells: cigarettes 5, immunity injectors 5, food stamps 30, module footprint by effect, berries 6, crop sizes
 [*]Values that change continuously stay in one cell and are re-rolled every second
 [/list]
 
@@ -162,7 +162,7 @@ Verified against game version 0.46D.
 [tr]
 [td]机器[/td]
 [td]双 向[/td]
-[td]还原机器自身的界面，下方是配方：熔炉按纯度档位展示投料、助熔剂、爆燃与垃圾处理；搅拌机展示输入与容器，并列出搅拌后的总体积和成分[/td]
+[td]还原机器自身的界面，下方是配方：熔炉按纯度档位展示投料、助熔剂、爆燃与垃圾处理；搅拌机展示输入与容器，并列出搅拌后的总体积和成分；化学制剂成型机、蒸发器、水培机[/td]
 [/tr]
 [tr]
 [td]合成[/td]
@@ -183,7 +183,7 @@ Verified against game version 0.46D.
 
 [h2]状态[/h2]
 [list]
-[*]可枚举外观各自占格：香烟 5、免疫宁注射器 5、食品券 30、模块「占格形状 × 效果」、浆果 6
+[*]可枚举外观各自占格：香烟 5、免疫宁注射器 5、食品券 30、模块「占格形状 × 效果」、浆果 6、作物大小
 [*]连续变化的值保持单格，每秒重掷
 [/list]
 

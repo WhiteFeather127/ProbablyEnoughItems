@@ -154,3 +154,5 @@ mach_note_evap,把含酒精的容器蒸干：留下溶剂回收模块，馏出�
 mach_note_evap_beer,任何含酒精的液体容器都能蒸出酒精
 mach_note_trap,放上奶酪作诱饵，周期结束后得到加工奶酪
 mach_note_trap_food,任何食物都能当诱饵
+mach_hydro_chance,生成概率：{0}
+mach_hydro_purify,净水
