@@ -192,6 +192,11 @@ namespace ItemCatalog.Catalog
         {
             if (item == null) return null;
 
+            // 只有真正的液体容器 / 化学产品才谈「主要液体成分」。
+            // 家居用品也带 CURRENT_PART 成分标签（净水药片 = 15ml 氯），
+            // 但它是固体用品，不能因此被当成某种液体的来源。
+            if (!IsContainer(item) && !IsChemicalProduct(item)) return null;
+
             try
             {
                 string active = item.GetTagReadonly("ACTIVATE_INGREDIENT_TAG").GetString();
@@ -219,7 +224,11 @@ namespace ItemCatalog.Catalog
             return major;
         }
 
-        /// <summary>是不是液体容器（有容量标签 / 是液体容器类型 / 已经有内容物）。</summary>
+        /// <summary>
+        /// 是不是**液体容器**：只认容量标签 / 液体容器类型。
+        /// 不能按 CURRENT_PART_* 兜底——药片这类固体也会用成分标签记录有效成分，
+        /// 那样净水药片会被误认成「装着氯的容器」（液体氯）。
+        /// </summary>
         internal static bool IsContainer(GameItem item)
         {
             if (item == null) return false;
@@ -236,18 +245,6 @@ namespace ItemCatalog.Catalog
             }
             catch { }
 
-            var liquids = Liquid.Liquids;
-            if (liquids == null) return false;
-
-            for (int i = 0; i < liquids.Count; i++)
-            {
-                var liquid = liquids[i];
-                if (liquid == null) continue;
-
-                try { if (item.GetTagReadonly(liquid.currentPart).GetInt() > 0) return true; }
-                catch { }
-            }
-
             return false;
         }
 
@@ -255,6 +252,20 @@ namespace ItemCatalog.Catalog
         internal static string ContentLiquid(GameItem item)
         {
             return IsContainer(item) ? MainComponent(item) : null;
+        }
+
+        /// <summary>化学产品（药片这类）：游戏用 CHEMICAL_PRODUCT_TAG / CHEMICAL 类型标记。</summary>
+        internal static bool IsChemicalProduct(GameItem item)
+        {
+            if (item == null) return false;
+
+            try { if (item.IsTag("CHEMICAL_PRODUCT_TAG")) return true; }
+            catch { }
+
+            try { if (item.IsGameItemType("CHEMICAL")) return true; }
+            catch { }
+
+            return false;
         }
 
         // ------------------------------------------------------- 容器成分

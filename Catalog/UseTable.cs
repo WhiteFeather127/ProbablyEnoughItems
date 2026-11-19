@@ -219,16 +219,24 @@ namespace ItemCatalog.Catalog
                 try { soluble = item.IsTag("SOLUBLE_TAG"); }
                 catch { soluble = false; }
 
-                // 容器：有 CURRENT_PART_* 内容物才算（空瓶子不登记）
-                bool filled = !soluble && LiquidManager.Parts(item).Count > 0;
+                // 容器：必须是真正的液体容器（有容量 / 液体容器类型）且有内容物。
+                // 药片这类固体也用 CURRENT_PART_* 记录有效成分，不能凭内容物标签当容器
+                // （否则净水药片会被登记成「装了氯的容器」）。
+                bool filled = !soluble
+                              && LiquidManager.IsContainer(item)
+                              && LiquidManager.Parts(item).Count > 0;
 
                 if (!soluble && !filled) continue;
-                if (HasDissolveUse(entry.Id)) continue;
 
-                // 产物 = 代表该液体主成分的液体条目，两个方向查到的都是同一条记录
+                // 产物 = 代表该液体主成分的液体条目，两个方向查到的都是同一条记录。
+                // 认不出成分（液体管理器不认为它是容器 / 化学产品）就不登记：
+                // 净水药片这类家居用品也带成分标签，但不该被当成液体氯的来源。
                 string product = string.IsNullOrEmpty(entry.LiquidTag)
                     ? null
                     : LiquidCatalog.EntryPrefix + entry.LiquidTag;
+                if (product == null) continue;
+
+                if (HasDissolveUse(entry.Id)) continue;
 
                 var info = new UseInfo
                 {
