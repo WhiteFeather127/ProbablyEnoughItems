@@ -682,6 +682,8 @@ namespace ItemCatalog.UI
                     ? ModEntry.T("use_tag_water")
                     : LiquidManager.WaterQualityName(quality);
 
+                int cellId = strip.Base + 100 + tagIndex * 8 + k;
+
                 string showId;
                 if (containers.Count == 0)
                 {
@@ -689,14 +691,23 @@ namespace ItemCatalog.UI
                 }
                 else
                 {
-                    int index = ((roll + k) % containers.Count + containers.Count) % containers.Count;
+                    // 每格自己的相位：同一秒各格停在不同的容器上，各自独立轮播
+                    int index = ((roll + WaterCellPhase(cellId)) % containers.Count + containers.Count) % containers.Count;
                     showId = containers[index];
                 }
 
-                int cellId = strip.Base + 100 + tagIndex * 8 + k;
-
                 RenderGoods(builder, showId, queryingWater, cellId, false);
                 AddOverlayCaption(builder, builder.Last, caption, "tagcapw" + cellId);
+            }
+        }
+
+        /// <summary>每格自己的轮播相位（由格子 id 稳定算出），各格互不对齐。</summary>
+        private static int WaterCellPhase(int cellId)
+        {
+            unchecked
+            {
+                uint hash = (uint)cellId * 2654435761u;
+                return (int)(hash % 100003u);
             }
         }
 
