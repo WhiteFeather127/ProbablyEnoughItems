@@ -260,10 +260,12 @@ namespace ItemCatalog.UI
         {
             try
             {
-                _moduleGrid = new GameGridInventory(3, 2);
+                // 原版模块仓就是熔炉那块 7×5 机械网格
+                _moduleGrid = new GameGridInventory("10000010001000001110000010001000001", 7);
+                _moduleGrid.SetMachineryStyle();
                 _inputGrid = new GameGridInventory(1, 1);
                 _containerSlot = new GameSlotInventory();
-                _outputGrid = new GameGridInventory(6, 4);
+                _outputGrid = new GameGridInventory(9, 6);
 
                 _moduleGrid.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
                 _inputGrid.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
@@ -873,7 +875,8 @@ namespace ItemCatalog.UI
             }
         }
 
-        private void HighlightElement(GameItemElement element)
+        private void HighlightElement(GameItemElement element,
+                                      RenderHandler.BackgroundColor color = RenderHandler.BackgroundColor.Green)
         {
             var inventory = element == null ? null : element.parentInventory;
             if (inventory == null) return;
@@ -881,10 +884,69 @@ namespace ItemCatalog.UI
             try
             {
                 var slot = inventory.GetIncompleteItemInventorySlot(element);
-                var nodes = inventory.HighlightSlot(slot, RenderHandler.BackgroundColor.Green, true);
+                var nodes = inventory.HighlightSlot(slot, color, true);
                 if (nodes != null) _matchHighlights.AddRange(nodes);
             }
             catch (Exception e) { Warn("highlight element: " + e.Message); }
+        }
+
+        /// <summary>概率产物：物品 id → 提示框末尾追加的说明（例如「50%」）。</summary>
+        private readonly Dictionary<string, string> _tooltipNotes =
+            new Dictionary<string, string>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 标出概率产物：产物格按放置顺序取下标，格子上黄底，提示框末尾追加概率。
+        /// </summary>
+        internal void MarkUncertain(int[] indexes, string note)
+        {
+            if (indexes == null || indexes.Length == 0 || string.IsNullOrEmpty(note)) return;
+
+            var outputs = new List<GameItemElement>();
+            for (int i = 0; i < _samples.Count; i++)
+            {
+                var el = _samples[i] as GameItemElement;
+                if (el == null || el.parentInventory != _outputGrid) continue;
+                outputs.Add(el);
+            }
+
+            for (int i = 0; i < indexes.Length; i++)
+            {
+                int index = indexes[i];
+                if (index < 0 || index >= outputs.Count) continue;
+
+                var el = outputs[index];
+                if (string.IsNullOrEmpty(el.identifier)) continue;
+
+                _tooltipNotes[el.identifier] = note;
+                // 原版高亮没有 Yellow，用最接近的 Tan（棕黄底）
+                HighlightElement(el, RenderHandler.BackgroundColor.Tan);
+            }
+        }
+
+        /// <summary>
+        /// 概率说明挂到原版提示框末尾（提示框每帧重建，所以每次刷新都要挂）。
+        /// RichText 的属性只读，只能按原值建一个新对象。
+        /// </summary>
+        private RichText WithTooltipNote(RichText rich, string id)
+        {
+            if (rich == null || string.IsNullOrEmpty(id)) return rich;
+
+            string note;
+            if (!_tooltipNotes.TryGetValue(id, out note) || string.IsNullOrEmpty(note)) return rich;
+
+            try
+            {
+                return new RichText(
+                    (rich.nakedText ?? string.Empty) + "\n" + note,
+                    rich.richTextStrikethrough,
+                    rich.richTextUnderline,
+                    (rich.richTextForeground ?? string.Empty) + "\n" + note,
+                    rich.richTextBackground,
+                    rich.recommendedWidth,
+                    rich.recommendedHeight,
+                    rich.isTruncated);
+            }
+            catch { return rich; }
         }
 
         private void ClearSamples()
@@ -904,6 +966,7 @@ namespace ItemCatalog.UI
                 try { it.Destroy(); } catch { }
             }
             _samples.Clear();
+            _tooltipNotes.Clear();
         }
 
         /// <summary>
@@ -1151,12 +1214,18 @@ namespace ItemCatalog.UI
                                      + " overlay=" + (OverlayHandler.current != null));
 
                 if (rich == null) return;
+                rich = WithTooltipNote(rich, element.identifier);
 
                 // 每帧重建：原版徽章 / 其它模组追加内容靠这个时间戳保持最新
                 TooltipFollower.Begin(rich, ItemTooltipHandler.BASE_TOOLTIP_CHAR_WIDTH,
                     delegate
                     {
-                        try { return element != null ? element.GetTooltip() : null; }
+                        try
+                        {
+                            var rebuilt = element != null ? element.GetTooltip() : null;
+                            if (element != null) rebuilt = WithTooltipNote(rebuilt, element.identifier);
+                            return rebuilt;
+                        }
                         catch { return null; }
                     });
 

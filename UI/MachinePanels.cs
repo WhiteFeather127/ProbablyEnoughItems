@@ -235,6 +235,15 @@ namespace ItemCatalog.UI
 
             internal int ContainerVolume;
 
+            /// <summary>概率产物在 <see cref="Outputs"/> 里的下标（图鉴标黄底、提示框写概率）。</summary>
+            internal int[] Uncertain;
+
+            /// <summary>概率产物的提示文字（例如「50%」）。</summary>
+            internal string UncertainNote;
+
+            /// <summary>水培机每周期耗水（ml），用于面板下面的成分变化。</summary>
+            internal int WaterUse;
+
             /// <summary>
             /// 达成这一条配方还需要的模块品质加成（百分比）。
             /// 熔炉页顶部显示「需品质加成 +X%」，和下面的材料 / 助熔剂一起轮播。
@@ -244,7 +253,9 @@ namespace ItemCatalog.UI
             internal Recipe(string[] inputs, string[] modules, string[] outputs,
                             string noteKey, string noteFallback,
                             int requiredQualityPercent = 0, string container = null,
-                            string containerLiquid = null, int containerVolume = 0)
+                            string containerLiquid = null, int containerVolume = 0,
+                            int[] uncertain = null, string uncertainNote = null,
+                            int waterUse = 0)
             {
                 Inputs = inputs ?? empty;
                 Modules = modules ?? empty;
@@ -255,6 +266,9 @@ namespace ItemCatalog.UI
                 Container = container;
                 ContainerLiquid = containerLiquid;
                 ContainerVolume = containerVolume;
+                Uncertain = uncertain;
+                UncertainNote = uncertainNote;
+                WaterUse = waterUse;
             }
         }
 
@@ -1064,24 +1078,34 @@ namespace ItemCatalog.UI
             return _hydroponicGroups = groups.ToArray();
         }
 
-        /// <summary>水培的一个配方变体：模块（可空）+ 产物 + 说明。</summary>
+        /// <summary>水培的一个配方变体：模块（可空）+ 产物 + 说明 + 概率产物下标 + 每周期耗水。</summary>
         private sealed class HydroVariant
         {
             internal string Module;
             internal string[] Outputs;
             internal string Note;
+            internal int[] Uncertain;
+            internal int WaterUse;
         }
 
-        private static HydroVariant HV(string module, string[] outputs, string note)
+        private static HydroVariant HV(string module, string[] outputs, string note,
+                                       int[] uncertain = null, int waterUse = 0)
         {
-            return new HydroVariant { Module = module, Outputs = outputs, Note = note };
+            return new HydroVariant
+            {
+                Module = module,
+                Outputs = outputs,
+                Note = note,
+                Uncertain = uncertain,
+                WaterUse = waterUse
+            };
         }
 
         /// <summary>
-        /// 一个种子一页，只写**默认**配方（不装模块）。
+        /// 一个种子一页。图鉴统一按**满健康（最大产量 / 最好品质）**写：
+        /// 产量不打折、尺寸全按大果，概率产物照最大产量列出（黄底 + 提示框写概率）。
         /// 收成规则没有运行时接口（写在 `PlantList.Harvest*` 的回调 IL 里），按种子 id 静态收录；
-        /// 产量按健康度 `SplitByHealth` 切成小 / 中 / 大三档，图鉴只写基础数量。
-        /// 未知种子（模组作物）退回通用规则：收成标签里的产物 × 数量。
+        /// 改变产物的模块各出一条变体。未知种子（模组作物）退回通用规则。
         /// </summary>
         private static RecipeGroup BuildHydroponicGroup(string seedId, GameItem seed)
         {
@@ -1093,43 +1117,61 @@ namespace ItemCatalog.UI
                 case "nutrifruit_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("nutrifruit", 5, "nutrifruit_seed", 3),
-                           "收 5 个 + 返 3 颗种子"));
+                           "满健康：5 个大果 + 3 颗种子", null, 100),
+                        HV("farm_module_nutrifruit",
+                           HydroOut("nutrifruit", 6, "nutrifruit_seed", 3),
+                           "每装 1 个营养果模块 +1 个果实", null, 100));
 
-                // 棉花：返种 1~2 颗
+                // 棉花：最多返 2 颗种子（第二颗 50%）
                 case "kotton_seed":
                     return H(seedId, env,
-                        HV(null, HydroOut("kotton_fiber", 9, "kotton_seed", 1),
-                           "返种 1~2 颗（健康度越高越多）"));
+                        HV(null, HydroOut("kotton_fiber", 9, "kotton_seed", 2),
+                           "满健康：9 个大果 + 返种", new[] { 10 }, 176),
+                        HV("farm_module_kotton_loom",
+                           HydroOut("kotton_fabric", 9, "kotton_seed", 2),
+                           "织机模块直接出布料", new[] { 10 }, 176));
 
                 // 梦帽菇：返 1 颗种子
                 case "dream_cap_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("dream_cap", 8, "dream_cap_seed", 1),
-                           "收 8 个 + 返 1 颗种子"));
+                           "满健康：8 个大果 + 1 颗种子", null, 100),
+                        HV("farm_module_dream_cap",
+                           HydroOut("dream_cap", 10, "dream_cap_seed", 1),
+                           "每装 1 个梦帽模块 +2 个", null, 100),
+                        HV("farm_module_nightmare_cap",
+                           HydroOut("nightmare_cap", 8, "dream_cap_seed", 1),
+                           "改装梦魇模块后整株改出梦魇菇", null, 100));
 
-                // 咖啡豆：不返种，产量按健康度打折
+                // 咖啡豆：不返种
                 case "coffee_bean":
                     return H(seedId, env,
                         HV(null, HydroOut("coffee_bean", 8, null, 0),
-                           "收 8 颗；健康度越低越少（≤15 → 50%）"));
+                           "满健康：8 颗", null, 100));
 
-                // 杂草：返 1 颗种子（50% 多 1 颗）
+                // 杂草：最多返 2 颗种子（第二颗 50%）
                 case "fillerweed_seed":
                     return H(seedId, env,
-                        HV(null, HydroOut("fillerweed", 4, "fillerweed_seed", 1),
-                           "另 50% 多返 1 颗种子"));
+                        HV(null, HydroOut("fillerweed", 4, "fillerweed_seed", 2),
+                           "满健康：4 个 + 返种", new[] { 5 }, 287),
+                        HV("farm_module_fillerweed_production",
+                           HydroOut("fillerweed", 8, null, 0),
+                           "生产模块 +4 个，不返种", null, 287));
 
-                // 水芦：本体没有收成，只返种（滤芯要靠过滤模块）
+                // 水芦：无主产物；返种最多 2 颗（第二颗 50%）
                 case "hydroreed_seed":
                     return H(seedId, env,
-                        HV(null, HydroOut(null, 0, "hydroreed_seed", 1),
-                           "只返种（另 50% 多 1 颗）；滤芯要靠过滤模块"));
+                        HV(null, HydroOut(null, 0, "hydroreed_seed", 2),
+                           "只返种；滤芯要靠过滤模块", new[] { 1 }, 20),
+                        HV("farm_module_hydroreed_filter",
+                           HydroOut("hydroreed_filter", 1, "hydroreed_seed", 2),
+                           "每个过滤模块 +1 个滤芯", new[] { 2 }, 20));
 
-                // 花莓：收成是酿酒浆果，品质随机
+                // 花莓：收成是酿酒浆果
                 case "bloomberry_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("wine_berry", 8, null, 0),
-                           "每颗浆果品质随机"));
+                           "满健康：8 颗（品质随机）", null, 100));
             }
 
             return GenericHydroponicGroup(seedId, seed, env);
@@ -1143,12 +1185,14 @@ namespace ItemCatalog.UI
             {
                 var v = variants[i];
                 string note = string.IsNullOrEmpty(env) ? v.Note : v.Note + " · " + env;
+                string uncertainNote = v.Uncertain != null && v.Uncertain.Length > 0 ? "50%" : null;
 
                 recipes[i] = new Recipe(new[] { seedId },
                                         string.IsNullOrEmpty(v.Module) ? null : new[] { v.Module },
                                         v.Outputs,
                                         "mach_hydroponic_note", note,
-                                        0, LiquidManager.ContainerId, LiquidManager.WaterId, 1000);
+                                        0, LiquidManager.ContainerId, LiquidManager.WaterId, 1000,
+                                        v.Uncertain, uncertainNote, v.WaterUse);
             }
 
             return new RecipeGroup

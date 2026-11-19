@@ -3642,6 +3642,21 @@ namespace ItemCatalog.UI
             }
         }
 
+        /// <summary>水培机「一个周期的成分变化」用的单项水成分（总体积 = 水量）。</summary>
+        private static List<LiquidManager.Component> HydroWaterComponents(int volume)
+        {
+            return new List<LiquidManager.Component>
+            {
+                new LiquidManager.Component
+                {
+                    Id = LiquidManager.WaterId,
+                    Name = LiquidManager.NameOf(LiquidManager.WaterId),
+                    Amount = volume,
+                    Total = volume
+                }
+            };
+        }
+
         private static void SetCompositionFont(CustomUIElement element)
         {
             if (element == null || element.text == null) return;
@@ -4005,7 +4020,7 @@ namespace ItemCatalog.UI
             if (HasMachineComposition(machineId))
                 panelMaxH -= MachineCompositionHeight(recipe);
             else if (string.Equals(machineId, "hydroponic", StringComparison.Ordinal))
-                panelMaxH -= 18f;   // 面板下面一行生长条件
+                panelMaxH -= 96f;   // 面板下面：成分变化（前/后）+ 生长条件
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
@@ -4063,9 +4078,35 @@ namespace ItemCatalog.UI
                 }
             }
 
-            // 水培机：面板下面写这一页的生长条件（每周期耗水 / 养分 / 矿物 / 污染物影响）
+            // 水培机：概率产物标黄底 + 提示框写概率；面板下面写一个周期的成分变化
             if (string.Equals(machineId, "hydroponic", StringComparison.Ordinal))
             {
+                _vanillaMachine.MarkUncertain(recipe.Uncertain, recipe.UncertainNote);
+
+                // 左 = 变化前（水槽灌满），右 = 一个周期后（扣掉每周期耗水）
+                const int beforeVolume = 1000;
+                int afterVolume = Mathf.Max(0, beforeVolume - recipe.WaterUse);
+
+                builder.BeginRow(12f, UnityEngine.TextAnchor.UpperLeft);
+
+                builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
+                builder.AddLabel(Loc("mach_hydro_before", "变化前"), "hydro_before");
+                SetCompositionFont(builder.Last);
+                RenderLiquidComposition(builder,
+                    HydroWaterComponents(beforeVolume), "hydro_before_");
+                builder.End();
+
+                builder.AddFlexibleSpace();
+
+                builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
+                builder.AddLabel(Loc("mach_hydro_after", "一个周期后"), "hydro_after");
+                SetCompositionFont(builder.Last);
+                RenderLiquidComposition(builder,
+                    HydroWaterComponents(afterVolume), "hydro_after_");
+                builder.End();
+
+                builder.End();
+
                 string growNote = Loc(recipe.NoteKey, recipe.NoteFallback);
                 if (!string.IsNullOrEmpty(growNote))
                 {
