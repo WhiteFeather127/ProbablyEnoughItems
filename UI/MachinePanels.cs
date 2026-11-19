@@ -1064,16 +1064,152 @@ namespace ItemCatalog.UI
             return _hydroponicGroups = groups.ToArray();
         }
 
-        /// <summary>一个种子一页：种子 → 收成（按产量铺满产物格）+ 生长条件备注。</summary>
+        /// <summary>水培的一个配方变体：模块（可空）+ 产物 + 说明。</summary>
+        private sealed class HydroVariant
+        {
+            internal string Module;
+            internal string[] Outputs;
+            internal string Note;
+        }
+
+        private static HydroVariant HV(string module, string[] outputs, string note)
+        {
+            return new HydroVariant { Module = module, Outputs = outputs, Note = note };
+        }
+
+        /// <summary>
+        /// 一个种子一页。收成规则没有运行时接口（写在 `PlantList.Harvest*` 的回调 IL 里），
+        /// 这里按种子 id 静态收录；模块会换产物 / 加产量，所以和熔炉一样做成多个变体。
+        /// 产量按健康度 `SplitByHealth` 切成小 / 中 / 大三档，图鉴只写基础数量。
+        /// 未知种子（模组作物）退回通用规则：收成标签里的产物 × 数量。
+        /// </summary>
         private static RecipeGroup BuildHydroponicGroup(string seedId, GameItem seed)
+        {
+            string env = HydroEnvNote(seed);
+
+            switch (seedId)
+            {
+                // 营养果：固定返 3 颗种子；模块每个 +1 个果实
+                case "nutrifruit_seed":
+                    return H(seedId, env,
+                        HV(null, HydroOut("nutrifruit", 5, "nutrifruit_seed", 3),
+                           "收 5 个 + 返 3 颗种子"),
+                        HV("farm_module_nutrifruit",
+                           HydroOut("nutrifruit", 6, "nutrifruit_seed", 3),
+                           "每装 1 个营养果模块 +1 个果实"));
+
+                // 棉花：返种 1~2 颗；装织机模块后直接出布料
+                case "kotton_seed":
+                    return H(seedId, env,
+                        HV(null, HydroOut("kotton_fiber", 9, "kotton_seed", 1),
+                           "返种 1~2 颗（健康度越高越多）"),
+                        HV("farm_module_kotton_loom",
+                           HydroOut("kotton_fabric", 9, "kotton_seed", 1),
+                           "装织机模块直接出布料，不再出籽棉"));
+
+                // 梦帽菇：返 1 颗种子；梦帽模块 +2 个/个，梦魇模块把整株换掉
+                case "dream_cap_seed":
+                    return H(seedId, env,
+                        HV(null, HydroOut("dream_cap", 8, "dream_cap_seed", 1),
+                           "收 8 个 + 返 1 颗种子"),
+                        HV("farm_module_dream_cap",
+                           HydroOut("dream_cap", 10, "dream_cap_seed", 1),
+                           "每装 1 个梦帽模块 +2 个"),
+                        HV("farm_module_nightmare_cap",
+                           HydroOut("nightmare_cap", 8, "dream_cap_seed", 1),
+                           "改装梦魇模块后整株改出梦魇菇"));
+
+                // 咖啡豆：不返种，产量按健康度打折
+                case "coffee_bean":
+                    return H(seedId, env,
+                        HV(null, HydroOut("coffee_bean", 8, null, 0),
+                           "收 8 颗；健康度越低越少（≤15 → 50%）"));
+
+                // 杂草：返 1 颗种子（50% 多 1 颗）；生产模块 +4 个但不再返种
+                case "fillerweed_seed":
+                    return H(seedId, env,
+                        HV(null, HydroOut("fillerweed", 4, "fillerweed_seed", 1),
+                           "另 50% 多返 1 颗种子"),
+                        HV("farm_module_fillerweed_production",
+                           HydroOut("fillerweed", 8, null, 0),
+                           "装生产模块 +4 个，但不再返种"));
+
+                // 水芦：本体没有收成，只返种；滤芯靠过滤模块，每个 +1
+                case "hydroreed_seed":
+                    return H(seedId, env,
+                        HV(null, HydroOut(null, 0, "hydroreed_seed", 1),
+                           "不装模块只返种（另 50% 多 1 颗）"),
+                        HV("farm_module_hydroreed_filter",
+                           HydroOut("hydroreed_filter", 1, "hydroreed_seed", 1),
+                           "每个过滤模块 +1 个滤芯"));
+
+                // 花莓：收成是酿酒浆果，品质随机
+                case "bloomberry_seed":
+                    return H(seedId, env,
+                        HV(null, HydroOut("wine_berry", 8, null, 0),
+                           "每颗浆果品质随机"));
+            }
+
+            return GenericHydroponicGroup(seedId, seed, env);
+        }
+
+        /// <summary>一组水培配方变体；水槽统一放一只装了水的容器。</summary>
+        private static RecipeGroup H(string seedId, string env, params HydroVariant[] variants)
+        {
+            var recipes = new Recipe[variants.Length];
+            for (int i = 0; i < variants.Length; i++)
+            {
+                var v = variants[i];
+                string note = string.IsNullOrEmpty(env) ? v.Note : v.Note + " · " + env;
+
+                recipes[i] = new Recipe(new[] { seedId },
+                                        string.IsNullOrEmpty(v.Module) ? null : new[] { v.Module },
+                                        v.Outputs,
+                                        "mach_hydroponic_note", note,
+                                        0, LiquidManager.ContainerId, LiquidManager.WaterId, 1000);
+            }
+
+            return new RecipeGroup
+            {
+                TitleItemId = seedId,
+                TitleKey = "mach_hydroponic_recipe",
+                TitleFallback = "可种植作物",
+                Variants = recipes
+            };
+        }
+
+        /// <summary>产物列表：主产物 × count + 返种 × seeds。</summary>
+        private static string[] HydroOut(string harvest, int count, string seedBack, int seeds)
+        {
+            var list = new List<string>(count + seeds);
+
+            for (int i = 0; i < count && !string.IsNullOrEmpty(harvest); i++) list.Add(harvest);
+            for (int i = 0; i < seeds && !string.IsNullOrEmpty(seedBack); i++) list.Add(seedBack);
+
+            return list.ToArray();
+        }
+
+        /// <summary>生长条件（耗水 / 养分 / 矿物 / 污染物影响），追加在每条变体说明后面。</summary>
+        private static string HydroEnvNote(GameItem seed)
+        {
+            int waterUse = 0, level = 0, range = 0, mineral = 0;
+            double contaminant = 1.0;
+
+            try { waterUse = HydroponicHelper.GetWaterUsePerCycle(seed); } catch { }
+            try { level = HydroponicHelper.GetNutrimentLevel(seed); } catch { }
+            try { range = HydroponicHelper.GetNutrimentRange(seed); } catch { }
+            try { mineral = HydroponicHelper.GetMineralUseRate(seed); } catch { }
+            try { contaminant = HydroponicHelper.GetContaminantEffect(seed); } catch { contaminant = 1.0; }
+
+            return "每周期耗水 " + waterUse + "ml · 养分 " + level + "±" + range
+                   + " · 矿物消耗 " + mineral + " · 污染物影响 ×" + contaminant.ToString("0.##");
+        }
+
+        /// <summary>未知种子（模组作物）：按标签里的收成产物 × 数量兜底。</summary>
+        private static RecipeGroup GenericHydroponicGroup(string seedId, GameItem seed, string env)
         {
             string harvest = null;
             int quantity = 1;
-            int waterUse = 0;
-            int nutrimentLevel = 0;
-            int nutrimentRange = 0;
-            int mineralRate = 0;
-            double contaminant = 1.0;
 
             try { harvest = HydroponicHelper.GetHarvestItemId(seed); } catch { }
             if (string.IsNullOrEmpty(harvest)) return null;
@@ -1081,34 +1217,8 @@ namespace ItemCatalog.UI
             try { quantity = HydroponicHelper.GetBaseHarvestQuantity(seed); } catch { }
             if (quantity <= 0) quantity = 1;
 
-            try { waterUse = HydroponicHelper.GetWaterUsePerCycle(seed); } catch { }
-            try { nutrimentLevel = HydroponicHelper.GetNutrimentLevel(seed); } catch { }
-            try { nutrimentRange = HydroponicHelper.GetNutrimentRange(seed); } catch { }
-            try { mineralRate = HydroponicHelper.GetMineralUseRate(seed); } catch { }
-            try { contaminant = HydroponicHelper.GetContaminantEffect(seed); } catch { contaminant = 1.0; }
-
-            var outputs = new string[quantity];
-            for (int k = 0; k < quantity; k++) outputs[k] = harvest;
-
-            string note = "每周期耗水 " + waterUse + "ml"
-                          + " · 养分 " + nutrimentLevel + "±" + nutrimentRange
-                          + " · 矿物消耗 " + mineralRate
-                          + " · 污染物影响 ×" + contaminant.ToString("0.##");
-
-            return new RecipeGroup
-            {
-                TitleItemId = seedId,
-                TitleKey = "mach_hydroponic_recipe",
-                TitleFallback = "可种植作物",
-                Variants = new[]
-                {
-                    // 水槽放一只装了水的容器（容器槽不支持"灌水"时也至少能看清是水）
-                    new Recipe(new[] { seedId }, null, outputs,
-                               "mach_hydroponic_note", note,
-                               0, LiquidManager.ContainerId,
-                               LiquidManager.WaterId, 1000)
-                }
-            };
+            return H(seedId, env,
+                HV(null, HydroOut(harvest, quantity, null, 0), "收 " + quantity + " 个"));
         }
     }
 }
