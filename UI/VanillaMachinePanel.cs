@@ -53,6 +53,12 @@ namespace ItemCatalog.UI
         /// <summary>成分反应页的产物槽（反应页不是机器，单独一个槽）。</summary>
         private GameSlotInventory _productSlot;
 
+        /// <summary>DNA 编辑器的输出磁盘槽（放空白盘，extract 方向用）。</summary>
+        private GameSlotInventory _outputDiskSlot;
+
+        /// <summary>DNA 编辑器的种子单槽（Fill 的 inputs 放这里；网格机器仍用 _inputGrid）。</summary>
+        private GameSlotInventory _seedSlot;
+
         /// <summary>只有 Fill 自己往预览格塞物品时允许入格；外部拖拽一律拒绝。</summary>
         private bool _filling;
 
@@ -300,6 +306,66 @@ namespace ItemCatalog.UI
                 Warn("build hydroponic shell: " + e.Message);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 造 DNA 编辑器的原版窗口外壳（只保留「提取 DNA」需要的部分）。
+        /// 种子 / 空白盘 / 产出三块；模块与特性数据盘面板按用户要求不显示。
+        /// </summary>
+        internal bool BuildDnaManipulatorShell()
+        {
+            try
+            {
+                _seedSlot = new GameSlotInventory();            // 种子
+                _outputDiskSlot = new GameSlotInventory();      // 空白盘
+                _outputGrid = new GameGridInventory(2, 2);      // 弹出
+
+                _seedSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _outputDiskSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _outputGrid.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+
+                // 槽底图照原版 Setup*Slot：输出磁盘=空白盘，种子=营养果种子
+                try { _outputDiskSlot.SetBackgroundFadeSprite("Items/items_hydroponic_plant", "dna_disk_black_empty", 0.5f, 0.5f); }
+                catch { }
+                try { _seedSlot.SetBackgroundFadeSprite("Items/items_hydroponic_plant", "nutrifruit_seed", 0.5f, 0.5f); }
+                catch { }
+
+                var panels = new[]
+                {
+                    MachineHelper.Panel(PlantGeneticsText.LabelTarget(), _seedSlot, "seed", true),
+                    MachineHelper.Panel(PlantGeneticsText.LabelBlankDisk(), _outputDiskSlot, "output_disk", true),
+                    MachineHelper.Panel(PlantGeneticsText.LabelOutput(), _outputGrid, "eject", true)
+                };
+
+                var row = new MachineryPanelRow(panels);
+                row.SetColumns(3);   // 种子 / 空白盘 / 产出 横向一排
+
+                _window = new PixelWindow(false, null, WindowStyle.Machinery);
+                _window.Attach(row);
+                _window.Validate();
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] dna shell size="
+                                     + _window.widthPixels + "x" + _window.heightPixels);
+                return _window != null;
+            }
+            catch (Exception e)
+            {
+                Warn("build dna shell: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>DNA 页：输出磁盘槽放一只空白盘（extract 的写入目标）。</summary>
+        internal void FillDnaBlankDisk()
+        {
+            if (_outputDiskSlot == null) return;
+
+            var blank = DnaManager.CreateBlankDisk();
+            if (blank == null) return;
+
+            _filling = true;
+            try { Accept(_outputDiskSlot, blank); }
+            finally { _filling = false; }
         }
 
         /// <summary>
@@ -678,7 +744,8 @@ namespace ItemCatalog.UI
         internal void Fill(string[] inputs, string[] modules, string[] outputs,
                            string purity = null, string container = null,
                            string containerLiquid = null, int containerVolume = 0,
-                           Func<int, GameItem> outputItems = null)
+                           Func<int, GameItem> outputItems = null,
+                           Func<int, GameItem> inputItems = null)
         {
             ClearSamples();
 
@@ -688,7 +755,23 @@ namespace ItemCatalog.UI
                 if (modules != null)
                     for (int i = 0; i < modules.Length; i++) Accept(_moduleGrid, modules[i]);
                 if (inputs != null)
-                    for (int i = 0; i < inputs.Length; i++) Accept(_inputGrid, inputs[i]);
+                {
+                    // DNA 编辑器是单格种子槽；其他机器仍是投入网格
+                    GameInventory inputTarget = _seedSlot != null ? (GameInventory)_seedSlot : _inputGrid;
+
+                    for (int i = 0; i < inputs.Length; i++)
+                    {
+                        GameItem sample = null;
+                        if (inputItems != null)
+                        {
+                            try { sample = inputItems(i); }
+                            catch (Exception e) { Warn("input item '" + inputs[i] + "': " + e.Message); }
+                        }
+
+                        if (sample != null) Accept(inputTarget, sample);
+                        else Accept(inputTarget, inputs[i]);
+                    }
+                }
                 if (outputs != null)
                 {
                     for (int i = 0; i < outputs.Length; i++)
@@ -719,7 +802,17 @@ namespace ItemCatalog.UI
                         if (!string.IsNullOrEmpty(containerLiquid))
                             FillContainerPreview(liquidContainer, containerLiquid, containerVolume);
                         else if (inputs != null && inputs.Length > 0)
-                            BlendIntoPreview(liquidContainer, inputs[0]);
+                        {
+                            // 品质档作物：搅拌成分也按这一档的实例算，不能退回本体
+                            GameItem blendSample = null;
+                            if (inputItems != null)
+                            {
+                                try { blendSample = inputItems(0); }
+                                catch (Exception e) { Warn("blend sample '" + inputs[0] + "': " + e.Message); }
+                            }
+
+                            BlendIntoPreview(liquidContainer, inputs[0], blendSample);
+                        }
 
                         Accept(_containerSlot, liquidContainer);
                     }
@@ -743,16 +836,16 @@ namespace ItemCatalog.UI
         /// <summary>
         /// 把投入物品的液体成分灌进容器样本。直接用游戏自己的 BlendInto，
         /// 保证容器图标 / 提示框显示的是搅拌后的内容物。
+        /// chemical 非空时直接用该实例（品质档作物），不再按 id 造本体。
         /// loss = 0：图鉴只展示成分，不模拟模块损失。
         /// </summary>
-        private static void BlendIntoPreview(GameItem container, string inputId)
+        private static void BlendIntoPreview(GameItem container, string inputId, GameItem chemical = null)
         {
             if (container == null || string.IsNullOrEmpty(inputId)) return;
 
-            GameItem chemical = null;
             try
             {
-                chemical = CatalogWindow.CreatePreviewItem(inputId);
+                if (chemical == null) chemical = CatalogWindow.CreatePreviewItem(inputId);
                 if (chemical == null) return;
                 if (!chemical.IsTag("BLENDABLE_TAG")) return;
 
@@ -1498,6 +1591,8 @@ namespace ItemCatalog.UI
                 _containerSlot = null;
                 _distillateSlot = null;
                 _productSlot = null;
+                _outputDiskSlot = null;
+                _seedSlot = null;
                 if (_window != null && _window.rectTransform != null)
                     UnityEngine.Object.Destroy(_window.rectTransform.gameObject);
             }

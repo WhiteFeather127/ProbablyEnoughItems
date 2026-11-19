@@ -121,15 +121,12 @@ namespace ItemCatalog.UI
                     PR(Slot, "mech_evaporator_label_container", "容器", RoleInput),
                     PR(Slot, "mech_evaporator_label_distillate", "馏出", RoleOutput),
                     P(Note, null, "纸条") } },
-                { "dna_manipulator", new[] {
-                    P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
-                    P(Module, null, "模块"),
-                    P(Slot, null, "输入磁盘"),
-                    P(Slot, null, "种子"),
-                    P(Slot, null, "输出磁盘"),
-                    P(Note, null, "纸条"),
-                    P(Slot, null, "弹出") } },
+                { "plant_dna_manipulator", new[] {
+                    // 机器页只还原「提取 DNA」需要的部分：种子 / 空白盘 / 产出。
+                    // 模块与特性数据盘面板按用户要求不显示。
+                    PR(Slot, null, "种子", RoleInput),
+                    P(Slot, null, "空白磁盘"),
+                    PR(Slot, null, "产出", RoleOutput) } },
                 { "desequencer", new[] {
                     P(Grid, null, "容器网格"),
                     P(Battery, null, "电池"),
@@ -257,6 +254,12 @@ namespace ItemCatalog.UI
             internal Func<int, GameItem> OutputItem;
 
             /// <summary>
+            /// 投入样本的实例工厂（下标 = <see cref="Inputs"/> 的下标）。
+            /// 返回 null 时按 Inputs 里的 id 造普通实例；搅拌机用它显示作物的某一品质档。
+            /// </summary>
+            internal Func<int, GameItem> InputItem;
+
+            /// <summary>
             /// 达成这一条配方还需要的模块品质加成（百分比）。
             /// 熔炉页顶部显示「需品质加成 +X%」，和下面的材料 / 助熔剂一起轮播。
             /// </summary>
@@ -299,6 +302,9 @@ namespace ItemCatalog.UI
 
             /// <summary>标题直接用这个物品的显示名（搅拌机一物品一页）；null = 用 TitleKey。</summary>
             internal string TitleItemId;
+
+            /// <summary>标题后缀（作物品质档用，例如「（大）」）。</summary>
+            internal string TitleSuffix;
 
             /// <summary>熔炉纯度常量（INGOT_PURITY_*）：预览产物按它写纯度特性；其他机器为 null。</summary>
             internal string Purity;
@@ -605,29 +611,59 @@ namespace ItemCatalog.UI
         private static int _blenderDiscoveryGeneration = -1;
 
         /// <summary>
-        /// 搅拌机配方：一物品一页。配方面板只还原输入与容器两个槽——
+        /// 搅拌机配方：一物品一页；有品质档的作物（营养果 / 梦帽菇 / 食用菇）每档各一页，
+        /// 投入格与搅拌前成分都用该档实例，其余物品仍是一页。
         /// 容器用液体管理器的默认容器（bottled_water），模块/电池/控制不参与展示。
         /// </summary>
         private static RecipeGroup[] BuildBlenderGroups(string[] ids)
         {
-            var groups = new RecipeGroup[ids.Length];
+            var groups = new List<RecipeGroup>(ids.Length);
+
             for (int i = 0; i < ids.Length; i++)
             {
                 string id = ids[i];
-                groups[i] = new RecipeGroup
+                int tiers = CropVariants.Count(id);
+
+                if (tiers <= 1)
                 {
-                    TitleItemId = id,
-                    TitleKey = "mach_blender_recipe",
-                    TitleFallback = "可搅拌物品",
-                    Variants = new[]
+                    groups.Add(new RecipeGroup
                     {
-                        new Recipe(new[] { id }, null, null, null, null,
-                                   0, LiquidManager.ContainerId)
-                    }
-                };
+                        TitleItemId = id,
+                        TitleKey = "mach_blender_recipe",
+                        TitleFallback = "可搅拌物品",
+                        Variants = new[]
+                        {
+                            new Recipe(new[] { id }, null, null, null, null,
+                                       0, LiquidManager.ContainerId)
+                        }
+                    });
+                    continue;
+                }
+
+                for (int v = 0; v < tiers; v++)
+                {
+                    int tier = v;
+                    var recipe = new Recipe(new[] { id }, null, null, null, null,
+                                            0, LiquidManager.ContainerId);
+
+                    // 投入格与「挤进容器的成分」都按这一档的实例来
+                    recipe.InputItem = delegate(int index)
+                    {
+                        return index == 0 ? CropVariants.Create(id, tier) : null;
+                    };
+
+                    groups.Add(new RecipeGroup
+                    {
+                        TitleItemId = id,
+                        TitleKey = "mach_blender_recipe",
+                        TitleFallback = "可搅拌物品",
+                        TitleSuffix = "（" + CropVariants.Label(id, v) + "）",
+                        Variants = new[] { recipe }
+                    });
+                }
             }
 
-            return groups;
+            return groups.ToArray();
         }
 
         private static RecipeGroup[] BlenderGroups = BuildBlenderGroups(BlenderInputs);
@@ -1046,6 +1082,10 @@ namespace ItemCatalog.UI
             if (string.Equals(machineId, "hydroponic", StringComparison.Ordinal))
                 return HydroponicRecipes();
 
+            // DNA 编辑器同样没有固定配方：一种盘一页，写它的可能来源
+            if (string.Equals(machineId, "plant_dna_manipulator", StringComparison.Ordinal))
+                return DnaRecipes();
+
             RecipeGroup[] groups;
             return Recipes.TryGetValue(machineId, out groups) ? groups : null;
         }
@@ -1108,6 +1148,57 @@ namespace ItemCatalog.UI
             }
 
             return _hydroponicGroups = groups.ToArray();
+        }
+
+        private static RecipeGroup[] _dnaGroups;
+        private static int _dnaGeneration = -1;
+
+        /// <summary>
+        /// DNA 编辑器：一种盘一页（页序 = <see cref="DnaManager"/> 的特质顺序）。
+        /// 每页就是那条「提取 DNA」的配方：种子 + 空白盘 → 该特质的盘。
+        /// 从盘反查来源时直接指向对应的这一页，不再另开「来源」页。
+        /// </summary>
+        private static RecipeGroup[] DnaRecipes()
+        {
+            if (_dnaGroups != null && _dnaGeneration == CatalogDataBuilder.Generation)
+                return _dnaGroups;
+
+            _dnaGeneration = CatalogDataBuilder.Generation;
+
+            var groups = new List<RecipeGroup>();
+
+            int count = DnaManager.Count;
+            for (int i = 0; i < count; i++)
+            {
+                var trait = DnaManager.TraitAt(i);
+                if (trait == null) continue;
+
+                // 种子格放一个能提供该特质的作物；没有兼容作物就留空
+                var sources = DnaManager.Sources(trait);
+                string seedId = sources.Count > 0 ? sources[0] : null;
+
+                var recipe = new Recipe(
+                    string.IsNullOrEmpty(seedId) ? null : new[] { seedId },
+                    null,
+                    new[] { DnaManager.DiskId },
+                    "mach_dna_extract", "从植株提取该特质，写入空白盘",
+                    0, null, null, 0);
+
+                int traitIndex = i;
+                recipe.OutputItem = delegate(int outputIndex)
+                {
+                    return DnaManager.CreateDisk(DnaManager.TraitAt(traitIndex));
+                };
+
+                groups.Add(new RecipeGroup
+                {
+                    TitleKey = "mach_dna_recipe",
+                    TitleFallback = trait.displayName + " DNA",
+                    Variants = new[] { recipe }
+                });
+            }
+
+            return _dnaGroups = groups.ToArray();
         }
 
         /// <summary>水培的一个配方变体：模块（可空）+ 产物 + 说明 + 概率产物下标 + 每周期耗水。</summary>

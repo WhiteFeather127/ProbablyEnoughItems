@@ -6,8 +6,9 @@
     全流程：
       1. Release 构建，并把安装目标重定向到 publish\stage（不碰游戏目录）
       2. 校验发布包内容：manifest.xml / dll / preview.png / Localization / Data
-      3. 按 manifest 里的名称、版本生成 .vdf：描述取自 workshop-description.txt
-         （可写 BBCode），改动说明取自 changenote.txt（同目录）；
+      3. 按 manifest 里的名称、版本生成 .vdf：默认语言描述取自
+         workshop-description.en.txt（可写 BBCode），改动说明取自 changenote.txt（同目录）；
+         其它语言另放 workshop-description.<代码>.txt，需在网页端按语言单独填；
          没有对应文件时退回 manifest 的 <Description> 与版本号
       4. 加 -Upload 时调用 steamcmd 上传；首次上传后用写回的 publishedfileid 更新已有物品
 
@@ -96,9 +97,12 @@ $modVer    = $manifest.Manifest.ModVersion
 $gameVers  = @($manifest.Manifest.GameVersions.Version) -join ", "
 if ([string]::IsNullOrWhiteSpace($Title))       { $Title = $modName }
 if ([string]::IsNullOrWhiteSpace($Description)) {
-    # Steam 描述单独放在 tools\publish\workshop-description.txt（可写 BBCode）；
-    # 没有这个文件时退回 manifest 的 <Description>（游戏内 Mods 菜单显示的纯文本）。
-    $descFile = Join-Path $PSScriptRoot "workshop-description.txt"
+    # Steam 描述按语言拆开：默认语言（英语）用 workshop-description.en.txt，
+    # 没有拆分文件时退回旧的 workshop-description.txt（可写 BBCode）。
+    # 简体中文说明放在 workshop-description.zh.txt —— steamcmd 的 workshop_build_item
+    # 没有语言字段，只会写默认语言那一份，中文那份必须到网页端按语言单独填。
+    $descFile = Join-Path $PSScriptRoot "workshop-description.en.txt"
+    if (-not (Test-Path $descFile)) { $descFile = Join-Path $PSScriptRoot "workshop-description.txt" }
     if (Test-Path $descFile) {
         $Description = [System.IO.File]::ReadAllText($descFile, [System.Text.Encoding]::UTF8).Trim()
     }
@@ -193,6 +197,25 @@ New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
 [System.IO.File]::WriteAllText($vdfPath, $vdf, $utf8)
 Write-Host ""
 Write-Host "vdf 已写入：$vdfPath"
+
+# 本地化说明：vdf 没有语言字段，只能到网页的「编辑文字」页按语言分别填写
+$localizedDesc = @(Get-ChildItem -Path $PSScriptRoot -Filter "workshop-description.*.txt" -File |
+    Where-Object { $_.Name -ne "workshop-description.en.txt" })
+if ($localizedDesc.Count -gt 0) {
+    Write-Host ""
+    Write-Host "本地化说明需在网页端按语言分别填写（steamcmd 只写默认语言）：" -ForegroundColor Yellow
+    Write-Host "  编辑页 : https://steamcommunity.com/sharedfiles/itemedittext/?id=$PublishedFileId"
+
+    $langNames = @{
+        zh = "简体中文"; ru = "Русский"; ja = "日本語"; ko = "한국어"
+        de = "Deutsch"; fr = "Français"; es = "Español"; pt = "Português"
+    }
+    foreach ($file in $localizedDesc) {
+        $code = ($file.BaseName -split '\.')[-1]
+        $label = if ($langNames.ContainsKey($code)) { $langNames[$code] } else { $code }
+        Write-Host ("  {0,-9}: {1}" -f $label, $file.FullName)
+    }
+}
 
 if (-not $Upload) {
     Write-Host ""

@@ -1,0 +1,106 @@
+[h1]Probably Enough Items[/h1]
+A catalog mod for looking up where an item comes from and what it is used for. It reads the game's own item directories, customer lists and tooltip chain, and introduces no new data format.
+
+It gathers all 27 item directories in the game, along with entries injected by other mods, into a single panel. Unused and debug entries stay hidden by default.
+
+[hr][/hr]
+[h2]Opening[/h2]
+[list]
+[*][b]Open the catalog[/b]: click the Catalog button docked to the right edge of the inventory window
+[*][b]Turn pages[/b]: click the paging buttons at the bottom; the current page is shown as x / y
+[/list]
+
+[h2]Search[/h2]
+[list]
+[*][b]By name[/b]: type an item name into the search box at the top
+[*][b]By item id[/b]: type an id into the same box, such as [b]water[/b]
+[*][b]By type[/b]: type a type name, such as [b]luxury[/b], [b]household good[/b] or [b]document[/b]. Every item carrying that type is listed
+[*][b]By tag[/b]: tag names work too, such as [b]ADV_GUN_TAG[/b]
+[/list]
+
+[h2]Tooltips[/h2]
+[list]
+[*][b]Item id[/b]: hover a cell; the tooltip gains an extra ID line
+[*][b]Ingredients and impurities[/b]: containers also report their ranges
+[/list]
+
+[h2]Item details[/h2]
+[list]
+[*]The item's own types are listed under the title, the same set the tooltip shows
+[*][b]Sources[/b]: left-click an item
+[*][b]Uses[/b]: right-click an item
+[*]Each side is a list of categories, switched with the [b]< Category >[/b] buttons at the top
+[/list]
+
+[h2]Category types[/h2]
+[table]
+[tr]
+[th]Category[/th]
+[th]Side[/th]
+[th]Content[/th]
+[/tr]
+[tr]
+[td]Clients[/td]
+[td]Both[/td]
+[td]Left click: customers stocking the item, one page per customer (faction, portrait, goods). Right click: customers buying the item — a Wants page each[/td]
+[/tr]
+[tr]
+[td]Ration Station[/td]
+[td]Source[/td]
+[td]The vending machine's stock, one page per location[/td]
+[/tr]
+[tr]
+[td]Dr. Jackson[/td]
+[td]Source[/td]
+[td]His shop stock, as its own category page[/td]
+[/tr]
+[tr]
+[td]Machine[/td]
+[td]Both[/td]
+[td]The machine's own interface restored, with its recipes below — furnace purity tiers (flux, blast, junk processing), the blender's input + container with the blended composition, the chem finisher, evaporator, hydroponics and the DNA manipulator (one extraction recipe page per disk)[/td]
+[/tr]
+[tr]
+[td]Crafting[/td]
+[td]Both[/td]
+[td]Left click: recipes producing it. Right click: recipes consuming it — the current item is highlighted in its own column, so the direction reads itself[/td]
+[/tr]
+[tr]
+[td]Use[/td]
+[td]Both[/td]
+[td]Left click: how to obtain it (use records where it is the product, incl. boxes containing it). Right click: what it yields (records where it is consumed, incl. box / key card openings). Above the [b]Products[/b] divider the grid shows what goes in, below it what comes out[/td]
+[/tr]
+[tr]
+[td]Loot pools[/td]
+[td]Both[/td]
+[td]Containers, locations and rolls that can yield it; every pool of one location is merged into a single page[/td]
+[/tr]
+[/table]
+
+[h2]States[/h2]
+[list]
+[*]Enumerable looks occupy separate cells: cigarettes 5, immunity injectors 5, food stamps 30, module footprint by effect, berries 6, crop sizes
+[*]DNA disks: the blank disk has its own cell; written disks are listed one cell per plant trait (1 use each), and each links back to the extraction page of the machine
+[*]Liquids: one full bottle per pure liquid is always listed, no search needed
+[*]Recipes that use graded crops are duplicated per grade, with the matching icon in the material cell
+[*]Values that change continuously stay in one cell and are re-rolled every second
+[/list]
+
+[h2]Customer pages[/h2]
+[list]
+[*]Containers show the fill water as that particular customer pours it, down to the bottle
+[*]On wanted pages the body lists what the customer buys — type tags plus specific items; water is shown as its quality tier, the composition stays in the tooltip
+[/list]
+
+[h2]Taking items[/h2]
+[list]
+[*][b]Dragging[/b]: enable the Take item checkbox at the top, then drag a cell out of the catalog
+[*]Without the checkbox a drag is ignored, and a plain click only opens the details
+[/list]
+
+[h2]Extension API[/h2]
+[list]
+[*][b]Variants[/b]: other mods call the API through reflection and add no dependency
+[*][b]Entries[/b]: whole catalog entries can be appended
+[/list]
+
+Verified against game version 0.46D.

@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 
-using ProbablyEnoughItems.Api;
-
 namespace ItemCatalog.UI
 {
     /// <summary>
@@ -90,7 +88,11 @@ namespace ItemCatalog.UI
 
         /// <summary>
         /// 造一档作物实例。工厂里会掷植物基因（<c>ApplyFactoryGenetics</c>），
-        /// 所以在隔离的随机流里跑并还原，不能污染存档的随机序列。
+        /// 所以统一走 <see cref="CatalogWindow.CreatePreviewItem(string, Func{GameItem})"/>
+        /// 的隔离随机流，不污染存档的随机序列。
+        /// 食用菇的工厂是从 dream_cap 实例改出来的（identifier 仍是 dream_cap），
+        /// 而目录里 meal_cap 是独立 id，这里把 identifier 归一到表键，
+        /// 图鉴 ID 行、拿取、按 id 反查才会一致。
         /// </summary>
         internal static GameItem Create(string id, int index)
         {
@@ -99,27 +101,21 @@ namespace ItemCatalog.UI
 
             int i = ((index % tiers.Length) + tiers.Length) % tiers.Length;
 
-            var savedRng = RNG.random;
-            var savedUnityState = UnityEngine.Random.state;
-            var store = PlayerStore.Instance;
-            int savedUniqueId = store == null ? 0 : store.currentUniqueId;
+            var item = CatalogWindow.CreatePreviewItem(id, tiers[i].Create);
+            if (item == null) return null;
 
             try
             {
-                return tiers[i].Create();
+                if (!string.Equals(item.identifier, id, StringComparison.Ordinal))
+                    item.identifier = id;
             }
             catch (Exception e)
             {
                 if (ModEntry.Log != null)
-                    ModEntry.Log.Warning("[crop] create '" + id + "' #" + index + ": " + e.Message);
-                return null;
+                    ModEntry.Log.Warning("[crop] id normalize '" + id + "': " + e.Message);
             }
-            finally
-            {
-                UnityEngine.Random.state = savedUnityState;
-                RNG.random = savedRng;
-                if (store != null) store.currentUniqueId = savedUniqueId;
-            }
+
+            return item;
         }
     }
 }

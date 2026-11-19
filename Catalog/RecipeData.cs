@@ -76,6 +76,29 @@ namespace ItemCatalog.Catalog
         {
             get { return Outputs.Count == 0 ? null : Outputs[0].Id; }
         }
+
+        /// <summary>
+        /// 这一份副本按哪个作物、哪一档品质展示（-1 = 不指定）。
+        /// 作物有品质档后，一条配方会按档复制几份，材料/产物格子分别显示对应档的实例。
+        /// </summary>
+        internal string DisplayCropId;
+        internal int DisplayCropVariant = -1;
+
+        /// <summary>复制一份，只为指定作物的某一品质档标记展示档位（材料/产物列表共享）。</summary>
+        internal RecipeInfo CopyForCrop(string cropId, int variant)
+        {
+            return new RecipeInfo
+            {
+                MachineId = MachineId,
+                MachineName = MachineName,
+                Name = Name,
+                Tools = Tools,
+                Materials = Materials,
+                Outputs = Outputs,
+                DisplayCropId = cropId,
+                DisplayCropVariant = variant
+            };
+        }
     }
 
     /// <summary>
@@ -370,8 +393,8 @@ namespace ItemCatalog.Catalog
             ItemEntry entry;
             if (id != null && _entryById.TryGetValue(id, out entry)) return entry;
 
-            // 液体条目（liquid:xxx）是搜索时动态生成的合成条目
-            return LiquidCatalog.Find(id);
+            // 液体条目（liquid:xxx）/ DNA 盘条目（dna:xxx）是搜索时动态生成的合成条目
+            return LiquidCatalog.Find(id) ?? DnaCatalog.Find(id);
         }
 
         /// <summary>全量条目（找钥匙卡这类「按标签扫一遍」的用途）。</summary>

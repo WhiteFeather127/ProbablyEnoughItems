@@ -54,6 +54,10 @@ namespace ItemCatalog.UI
         private static readonly Dictionary<string, ItemEntry> _preBuiltEntries =
             new Dictionary<string, ItemEntry>(StringComparer.Ordinal);
 
+        /// <summary>作物品质档的合成条目缓存：Id#档位 → 带实例的 ItemEntry（配方格子与图鉴共用）。</summary>
+        private static readonly Dictionary<string, ItemEntry> _cropVariantEntries =
+            new Dictionary<string, ItemEntry>(StringComparer.Ordinal);
+
         private static bool _dragging;
         private static ItemEntry _dragEntry;
         private static GameItem _dragItem;       // 拖拽中的实体物品（先放进 dummy 容器）
@@ -438,6 +442,7 @@ namespace ItemCatalog.UI
             _compositeByCell.Clear();
             DestroyCompositeStage();
             LiquidCatalog.Reset();
+            DnaCatalog.Reset();
 
             _window = null;
             _inputBlocker = null;
@@ -1547,10 +1552,30 @@ namespace ItemCatalog.UI
             return baseItem;
         }
 
+        /// <summary>
+        /// 图鉴浏览列表 = 注册表条目 + 管理器常驻条目
+        /// （每种液体一只满瓶、每种已写入的 DNA 盘一只）。
+        /// 这些条目和图鉴其它物品一样常显示，不需要搜索才出现。
+        /// </summary>
+        private static List<ItemEntry> BrowseEntries()
+        {
+            var flat = FlatEntries();
+            var liquids = LiquidCatalog.VisibleEntries();
+            var disks = DnaCatalog.VisibleEntries();
+
+            if (liquids.Count == 0 && disks.Count == 0) return flat;
+
+            var all = new List<ItemEntry>(flat.Count + liquids.Count + disks.Count);
+            all.AddRange(flat);
+            all.AddRange(liquids);
+            all.AddRange(disks);
+            return all;
+        }
+
         /// <summary>按搜索词过滤（id 或显示名，忽略大小写）；空串返回全部格子。</summary>
         private static List<ItemEntry> FilterItems()
         {
-            var all = FlatEntries();
+            var all = BrowseEntries();
             if (string.IsNullOrEmpty(_search) || _search.Trim().Length == 0) return all;
 
             string query = _search.Trim();
@@ -1595,13 +1620,6 @@ namespace ItemCatalog.UI
                 }
 
                 if (hit) result.Add(entry);
-            }
-
-            // 液体条目只在搜索时加入，不占普通物品网格
-            var liquids = LiquidCatalog.Search(query);
-            for (int i = 0; i < liquids.Count; i++)
-            {
-                if (liquids[i] != null) result.Add(liquids[i]);
             }
 
             return result;
@@ -2049,6 +2067,37 @@ namespace ItemCatalog.UI
             return baseEntry != null ? baseEntry.DisplayName : baseId;
         }
 
+        /// <summary>
+        /// 作物某一品质档的合成条目：实例由该档的工厂在隔离随机流里生成，
+        /// 配方格子用它就能显示/悬停到「小果 / 大果」那一档，而不是永远显示本体。
+        /// 条目 Id 仍是本体 id（正反查 / 点击跳转都按本体走）。
+        /// </summary>
+        internal static ItemEntry CropVariantEntry(string id, int index)
+        {
+            if (string.IsNullOrEmpty(id) || !CropVariants.Has(id)) return null;
+
+            string key = id + "#" + index;
+
+            ItemEntry cached;
+            if (_cropVariantEntries.TryGetValue(key, out cached) && cached != null) return cached;
+
+            var item = CropVariants.Create(id, index);
+            if (item == null) return null;
+
+            var entry = new ItemEntry
+            {
+                Id = id,
+                Name = BaseEntryName(id),
+                Item = item,
+                // 和图鉴展开条目同语义：拖拽拿取时 BuildItemForTake 按这个下标造同档实例，
+                // 否则从配方格拖出来的永远是「小」那一档。
+                VariantIndex = index
+            };
+
+            _cropVariantEntries[key] = entry;
+            return entry;
+        }
+
         /// <summary>取格子里真正接收射线的那个子物体（Image 通常挂在子节点上）。</summary>
         private static GameObject HitGraphic(CustomUIElement element)
         {
@@ -2071,6 +2120,15 @@ namespace ItemCatalog.UI
             _externalCells.Clear();
             _preBuiltEntries.Clear();
             HideNativeTooltip();
+
+            // 作物档位条目是配方格子的预览实例：旧页作废时一并销毁，
+            // 否则每次翻页都会攒下一批不挂在任何容器上的 GameItem。
+            foreach (var entry in _cropVariantEntries.Values)
+            {
+                var item = entry == null ? null : entry.Item;
+                if (item != null) { try { item.Destroy(); } catch { } }
+            }
+            _cropVariantEntries.Clear();
         }
 
         /// <summary>
@@ -5708,6 +5766,21 @@ namespace ItemCatalog.UI
 
         internal static GameItem CreatePreviewItem(string id)
         {
+            return CreatePreviewItem(id, null, false);
+        }
+
+        /// <summary>
+        /// 在**同一套**隔离随机流里跑调用方给的工厂（作物品质档这类工厂外变体用）。
+        /// 与 <see cref="CreatePreviewItem(string)"/> 共享 RNG / uniqueId 的保存与还原，
+        /// 不允许调用方自己再抄一份隔离逻辑。
+        /// </summary>
+        internal static GameItem CreatePreviewItem(string id, Func<GameItem> factory)
+        {
+            return CreatePreviewItem(id, factory, true);
+        }
+
+        private static GameItem CreatePreviewItem(string id, Func<GameItem> factory, bool useFactory)
+        {
             if (string.IsNullOrEmpty(id)) return null;
 
             var savedRng = RNG.random;
@@ -5726,6 +5799,9 @@ namespace ItemCatalog.UI
             {
                 RNG.random = _previewRng;
                 UnityEngine.Random.state = _previewState;   // 从预览流上次的位置继续
+
+                // 调用方工厂（作物品质档等）：直接跑，不走下面的 id 解析
+                if (useFactory) return factory == null ? null : factory();
 
                 // 正品/赝品、随机模块这类“随机性在生成器里而不在工厂里”的物品，
                 // 走 PreBuiltItemHelper 的对应生成器，工厂只能给出中性版本。

@@ -3074,7 +3074,7 @@ namespace ItemCatalog.UI
         /// 把对应的机器配方组加进来。只收录有原版面板外壳的机器
         /// （熔炉、搅拌机）；新增机器时把 id 加进 <see cref="KnownMachines"/>。
         /// </summary>
-        private static readonly string[] KnownMachines = { "furnace", "blender", "chem_finisher", "evaporator", "hydroponic" };
+        private static readonly string[] KnownMachines = { "furnace", "blender", "chem_finisher", "evaporator", "hydroponic", "plant_dna_manipulator" };
 
         private static void AddMachineRecipeCategories()
         {
@@ -3084,6 +3084,31 @@ namespace ItemCatalog.UI
             {
                 string machineId = KnownMachines[m];
                 if (string.Equals(_entry.Id, machineId, StringComparison.Ordinal)) continue;
+
+                // DNA 编辑器：已写入的盘（dna:*）在来源方向直接指向它自己那一页
+                // ——页序与 DnaManager 的特质顺序一致，所以用管理器拿到页码就行，
+                // 不按 plant_dna_disk 这个 id 匹配（所有写入盘共用本体 id）。
+                // 空白盘只是提取的耗材，不在此列。
+                if (string.Equals(machineId, "plant_dna_manipulator", StringComparison.Ordinal))
+                {
+                    if (_asUse) continue;
+
+                    var dnaTrait = DnaManager.TraitForEntry(_entry.Id);
+                    if (dnaTrait == null) continue;
+
+                    var dnaGroups = MachinePanels.RecipesFor(machineId);
+                    int page = DnaManager.IndexOf(dnaTrait);
+                    if (dnaGroups != null && page >= 0 && page < dnaGroups.Length)
+                    {
+                        _categories.Add(new Category
+                        {
+                            Kind = CatMachineRecipe,
+                            MachineId = machineId,
+                            MachineGroups = new List<MachinePanels.RecipeGroup> { dnaGroups[page] }
+                        });
+                    }
+                    continue;
+                }
 
                 var groups = MachinePanels.RecipesFor(machineId);
                 if (groups == null || groups.Length == 0) continue;
@@ -3220,7 +3245,73 @@ namespace ItemCatalog.UI
             }
 
             if (merged.Count > 0)
+            {
+                ExpandCropVariants(merged);
                 _categories.Add(new Category { Kind = CatCraft, Recipes = merged });
+            }
+        }
+
+        /// <summary>
+        /// 含品质档作物（小 / 普通 / 大…）的配方按档复制：一档一份，
+        /// 材料/产物格子显示对应档的实例。游戏配方只按本体 id 匹配，任何一档都能投料。
+        /// 一条配方里出现多种作物时只展开找到的第一种，避免组合爆炸。
+        /// </summary>
+        private static void ExpandCropVariants(List<RecipeInfo> recipes)
+        {
+            if (recipes == null) return;
+
+            for (int i = 0; i < recipes.Count; i++)
+            {
+                var recipe = recipes[i];
+                if (recipe == null) continue;
+
+                string cropId = FirstCropId(recipe);
+                int tiers = string.IsNullOrEmpty(cropId) ? 0 : CropVariants.Count(cropId);
+                if (tiers <= 1) continue;
+
+                recipes.RemoveAt(i);
+                for (int v = 0; v < tiers; v++) recipes.Insert(i + v, recipe.CopyForCrop(cropId, v));
+                i += tiers - 1;
+            }
+        }
+
+        /// <summary>配方里出现的第一种带品质档的作物 id（材料 → 工具 → 产物）。</summary>
+        private static string FirstCropId(RecipeInfo recipe)
+        {
+            if (recipe == null) return null;
+
+            string id = FirstCropIn(recipe.Materials);
+            if (id == null) id = FirstCropIn(recipe.Tools);
+            if (id != null) return id;
+
+            if (recipe.Outputs != null)
+            {
+                for (int i = 0; i < recipe.Outputs.Count; i++)
+                {
+                    var output = recipe.Outputs[i];
+                    if (output != null && CropVariants.Count(output.Id) > 1) return output.Id;
+                }
+            }
+
+            return null;
+        }
+
+        private static string FirstCropIn(List<RecipeIngredient> ingredients)
+        {
+            if (ingredients == null) return null;
+
+            for (int i = 0; i < ingredients.Count; i++)
+            {
+                var ing = ingredients[i];
+                if (ing == null || ing.Ids == null) continue;
+
+                for (int k = 0; k < ing.Ids.Count; k++)
+                {
+                    if (CropVariants.Count(ing.Ids[k]) > 1) return ing.Ids[k];
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -4151,6 +4242,8 @@ namespace ItemCatalog.UI
                 built = _vanillaMachine.BuildEvaporatorShell();
             else if (string.Equals(machineId, "hydroponic", StringComparison.Ordinal))
                 built = _vanillaMachine.BuildHydroponicShell();
+            else if (string.Equals(machineId, "plant_dna_manipulator", StringComparison.Ordinal))
+                built = _vanillaMachine.BuildDnaManipulatorShell();
 
             if (!built)
             {
@@ -4211,6 +4304,9 @@ namespace ItemCatalog.UI
             }
 
             FillVanillaMachine(recipe, group.Purity);
+            if (string.Equals(machineId, "plant_dna_manipulator", StringComparison.Ordinal))
+                _vanillaMachine.FillDnaBlankDisk();
+
             _vanillaMachine.HighlightItem(_entry == null ? null : _entry.Id);
             // 查询的是液体条目时，装着它的容器槽标绿（成分由液体管理器判定）
             _vanillaMachine.HighlightLiquid(QueryLiquidId());
@@ -4675,7 +4771,7 @@ namespace ItemCatalog.UI
             if (_vanillaMachine == null || recipe == null) return;
             _vanillaMachine.Fill(recipe.Inputs, recipe.Modules, recipe.Outputs, purity,
                                  recipe.Container, recipe.ContainerLiquid, recipe.ContainerVolume,
-                                 recipe.OutputItem);
+                                 recipe.OutputItem, recipe.InputItem);
         }
 
         private static void RenderMachineRecipeStrip(MachineRecipeStrip strip)
@@ -4871,14 +4967,17 @@ namespace ItemCatalog.UI
         {
             if (group == null) return "?";
 
+            // 品质档作物：同一物品的每档各占一页，标题带「（小 / 普通 / 大）」
+            string cropSuffix = group.TitleSuffix ?? string.Empty;
+
             // 搅拌机：一物品一页，标题直接用该物品的显示名
             if (!string.IsNullOrEmpty(group.TitleItemId))
             {
                 var entry = RecipeIndex.FindEntry(group.TitleItemId);
-                if (entry != null && !string.IsNullOrEmpty(entry.DisplayName)) return entry.DisplayName;
+                if (entry != null && !string.IsNullOrEmpty(entry.DisplayName)) return entry.DisplayName + cropSuffix;
 
                 string name = ItemName(group.TitleItemId);
-                if (!string.IsNullOrEmpty(name)) return name;
+                if (!string.IsNullOrEmpty(name)) return name + cropSuffix;
             }
 
             if (!string.IsNullOrEmpty(group.Purity) &&
@@ -4898,7 +4997,7 @@ namespace ItemCatalog.UI
                 }
             }
 
-            return Loc(group.TitleKey, group.TitleFallback);
+            return Loc(group.TitleKey, group.TitleFallback) + cropSuffix;
         }
 
         /// <summary>
@@ -5053,7 +5152,7 @@ namespace ItemCatalog.UI
         {
             builder.AddLabel(ModEntry.T("rec_mats"), "rec_mats");
             builder.BeginRow(8f);
-            RenderIngredients(builder, recipe.Materials, "m");
+            RenderIngredients(builder, recipe.Materials, "m", recipe);
             builder.AddFlexibleSpace();
             builder.End();
 
@@ -5061,19 +5160,34 @@ namespace ItemCatalog.UI
             {
                 builder.AddLabel(ModEntry.T("rec_tools"), "rec_tools");
                 builder.BeginRow(8f);
-                RenderIngredients(builder, recipe.Tools, "t");
+                RenderIngredients(builder, recipe.Tools, "t", recipe);
                 builder.AddFlexibleSpace();
                 builder.End();
             }
 
             builder.AddLabel(ModEntry.T("rec_result"), "rec_result");
             builder.BeginRow(8f);
-            RenderOutputs(builder, recipe.Outputs);
+            RenderOutputs(builder, recipe.Outputs, recipe);
             builder.AddFlexibleSpace();
             builder.End();
         }
 
-        private static void RenderIngredients(CustomUIBuilder builder, List<RecipeIngredient> ingredients, string prefix)
+        /// <summary>
+        /// 这一格是不是「按品质档展示的作物」：是就返回对应档的实例条目，否则 null。
+        /// 副本只指定一种作物，其余格子仍走普通解析。
+        /// </summary>
+        private static ItemEntry CropCellEntry(RecipeInfo recipe, string id)
+        {
+            if (recipe == null || recipe.DisplayCropVariant < 0) return null;
+            if (string.IsNullOrEmpty(id)) return null;
+
+            if (!string.Equals(id, recipe.DisplayCropId, StringComparison.Ordinal)) return null;
+
+            return CatalogWindow.CropVariantEntry(id, recipe.DisplayCropVariant);
+        }
+
+        private static void RenderIngredients(CustomUIBuilder builder, List<RecipeIngredient> ingredients,
+                                              string prefix, RecipeInfo recipe = null)
         {
             if (ingredients == null || ingredients.Count == 0)
             {
@@ -5096,11 +5210,16 @@ namespace ItemCatalog.UI
                     ? null
                     : LiquidCatalog.Find(LiquidCatalog.EntryPrefix + liquidId);
 
-                var sprite = liquidEntry != null
-                    ? CatalogWindow.IconFor(liquidEntry)
-                    : (id == null ? null : CatalogWindow.IconFor(id));
+                // 品质档作物：这一份副本专门展示该档，格子用对应档的实例（图标 + 悬停名）
+                var cropEntry = liquidEntry == null ? CropCellEntry(recipe, id) : null;
 
-                var entry = liquidEntry ?? RecipeIndex.FindEntry(id);
+                var sprite = cropEntry != null
+                    ? CatalogWindow.IconFor(cropEntry)
+                    : (liquidEntry != null
+                        ? CatalogWindow.IconFor(liquidEntry)
+                        : (id == null ? null : CatalogWindow.IconFor(id)));
+
+                var entry = cropEntry ?? (liquidEntry ?? RecipeIndex.FindEntry(id));
                 if (entry == null && id != null && PreBuiltItems.IsPreBuilt(id))
                     entry = CatalogWindow.PreBuiltEntry(id);
 
@@ -5120,7 +5239,7 @@ namespace ItemCatalog.UI
             }
         }
 
-        private static void RenderOutputs(CustomUIBuilder builder, List<RecipeOutput> outputs)
+        private static void RenderOutputs(CustomUIBuilder builder, List<RecipeOutput> outputs, RecipeInfo recipe = null)
         {
             if (outputs == null || outputs.Count == 0)
             {
@@ -5133,8 +5252,13 @@ namespace ItemCatalog.UI
                 var output = outputs[i];
                 if (output == null) continue;
 
-                var entry = RecipeIndex.FindEntry(output.Id);
-                var sprite = CatalogWindow.IconFor(output.Id);
+                // 品质档作物的副本：产物格也按该档展示
+                var cropEntry = CropCellEntry(recipe, output.Id);
+
+                var entry = cropEntry ?? RecipeIndex.FindEntry(output.Id);
+                var sprite = cropEntry != null
+                    ? CatalogWindow.IconFor(cropEntry)
+                    : CatalogWindow.IconFor(output.Id);
 
                 if (sprite != null)
                 {
@@ -5148,7 +5272,9 @@ namespace ItemCatalog.UI
                         CellSelect(entry), "o" + i);
                 }
 
-                BindGoods(builder, output.Id, sprite == null);
+                if (cropEntry != null) CatalogWindow.BindCell(builder.Last, cropEntry, sprite == null);
+                else BindGoods(builder, output.Id, sprite == null);
+
                 if (output.Amount > 1) builder.AddLabel("×" + output.Amount, "o" + i + "_n");
             }
         }
