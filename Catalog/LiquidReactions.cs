@@ -44,7 +44,6 @@ namespace ItemCatalog.Catalog
             {
                 switch (ConditionKey)
                 {
-                    case "react_cond_excess":
                     case "react_cond_acid_or_base":
                         return new[] { "acid", "base" };
                     case "react_cond_nomore_alcohol":
@@ -152,11 +151,16 @@ namespace ItemCatalog.Catalog
         {
             var list = new List<LiquidReaction>
             {
-                // 蛋白质 + 过量酸/碱 → 残渣（蛋白质 1:1 变性，多余的酸被消耗）
-                R("protein", new[] { "protein", "acid" }, new[] { 10f, 10f },
+                // 蛋白质变性：酸、碱各自成条（游戏里是各自独立变性，不合并）
+                R("protein_acid", new[] { "protein", "acid" }, new[] { 10f, 10f },
                   new[] { "debris" }, new[] { 10f },
                   null, false, 0f, 0f, 0f,
-                  "react_cond_excess", "{0}/{1} 过量"),
+                  null, null),
+
+                R("protein_base", new[] { "protein", "base" }, new[] { 10f, 10f },
+                  new[] { "debris" }, new[] { 10f },
+                  null, false, 0f, 0f, 0f,
+                  null, null),
 
                 // 稳定剂 + 酸/碱 → 残渣（酸/碱都行）
                 R("stabilizer", new[] { "stabilizing_agent", "acid" }, new[] { 10f, 10f },

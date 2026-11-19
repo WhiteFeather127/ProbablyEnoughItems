@@ -187,6 +187,50 @@ namespace ItemCatalog.Catalog
             }
         }
 
+        /// <summary>一瓶预构建化学瓶的内容物（液体 id + 量，单位 1/1000 ml）。</summary>
+        private sealed class BottleContent
+        {
+            internal string Liquid;
+            internal int Amount;
+        }
+
+        private static BottleContent C(string liquid, int amount)
+        {
+            return new BottleContent { Liquid = liquid, Amount = amount };
+        }
+
+        /// <summary>
+        /// 工厂只造空瓶、内容物在 <c>PreBuildChemHelper.Create*Bottle</c> 里灌的化学瓶
+        /// （化学用品箱 / 限制级化学用品拆出来的就是这些；量照 IL 的
+        /// <c>WaterHelper.AddLiquid</c> 抄，单位 1/1000 ml）。
+        /// 实例上没有 CURRENT_PART 标签，这里按 id 补齐，液体管理器才能照常
+        /// 识别成分、把瓶子挂到液体条目的来源上、参与绿底判定。
+        /// 不含 <c>SetImpurity</c> 随机掺入的污染物（2%~8% 的随机量，不能当固定值写）。
+        /// </summary>
+        private static readonly Dictionary<string, BottleContent[]> PrebuiltContents =
+            new Dictionary<string, BottleContent[]>(StringComparer.Ordinal)
+            {
+                { "med_bottle_red",        new[] { C("acid", 250000) } },
+                { "med_bottle_blue",       new[] { C("base", 250000) } },
+                { "med_bottle_orange",     new[] { C("reducing_agent", 250000) } },
+                { "med_bottle_small_pink", new[] { C("lipobond_agent", 150000) } },
+                { "med_bottle_violet",     new[] { C("methylol", 125000),
+                                                   C("stabilizing_agent", 125000) } }
+            };
+
+        /// <summary>预构建灌装瓶的内容物；不在表里返回 null。</summary>
+        private static BottleContent[] PrebuiltPart(GameItem item)
+        {
+            if (item == null) return null;
+
+            string id = null;
+            try { id = item.identifier; } catch { }
+            if (string.IsNullOrEmpty(id)) return null;
+
+            BottleContent[] content;
+            return PrebuiltContents.TryGetValue(id, out content) ? content : null;
+        }
+
         /// <summary>物品的主要液体成分 id。</summary>
         internal static string MainComponent(GameItem item)
         {
@@ -198,6 +242,21 @@ namespace ItemCatalog.Catalog
                 if (!string.IsNullOrEmpty(active)) return active;
             }
             catch { }
+
+            var prebuilt = PrebuiltPart(item);
+            if (prebuilt != null)
+            {
+                string majorPrebuilt = null;
+                int bestPrebuilt = 0;
+                for (int i = 0; i < prebuilt.Length; i++)
+                {
+                    var c = prebuilt[i];
+                    if (c == null || string.IsNullOrEmpty(c.Liquid)) continue;
+                    if (c.Amount > bestPrebuilt) { bestPrebuilt = c.Amount; majorPrebuilt = c.Liquid; }
+                }
+
+                return majorPrebuilt;
+            }
 
             var liquids = Liquid.Liquids;
             if (liquids == null) return null;
@@ -287,6 +346,20 @@ namespace ItemCatalog.Catalog
         {
             var parts = new Dictionary<string, int>(StringComparer.Ordinal);
             if (item == null) return parts;
+
+            // 化学用品箱拆出来的预构建瓶：内容物是工厂外灌的，实例上没有标签
+            var prebuilt = PrebuiltPart(item);
+            if (prebuilt != null)
+            {
+                for (int i = 0; i < prebuilt.Length; i++)
+                {
+                    var c = prebuilt[i];
+                    if (c == null || string.IsNullOrEmpty(c.Liquid) || c.Amount <= 0) continue;
+                    parts[c.Liquid] = c.Amount;
+                }
+
+                return parts;
+            }
 
             try
             {
