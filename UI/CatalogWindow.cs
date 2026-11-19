@@ -3129,6 +3129,12 @@ namespace ItemCatalog.UI
             return entry == null ? null : GetSprite(entry);
         }
 
+        /// <summary>按条目取图标（液体条目这类单例条目没有目录 id 时用）。</summary>
+        internal static Sprite IconFor(ItemEntry entry)
+        {
+            return entry == null ? null : GetSprite(entry);
+        }
+
         /// <summary>
         /// 详情窗口的货单格子用：容器类物品把液体覆盖层叠到图标上（和图鉴主窗口同一套管线）。
         /// 非容器 / 空瓶 / 合成失败时退回物品自己的图标，不会更差。

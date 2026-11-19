@@ -82,6 +82,78 @@ namespace ItemCatalog.Catalog
             return IsLiquidRequirement(ing) ? ContainerId : null;
         }
 
+        /// <summary>
+        /// 液体需求指向的具体液体 id（water / alcohol / acid…）。
+        /// 认得出就返回，展示层可以画成「灌了这种液体的普通容器」；
+        /// 只知道是液体、认不出种类时返回 null（仍用容器代表）。
+        /// </summary>
+        internal static string LiquidFor(RecipeIngredient ing)
+        {
+            if (ing == null || !IsLiquidRequirement(ing)) return null;
+
+            string known = FirstKnownLiquid(ing.Tags) ?? FirstKnownLiquid(ing.Ids);
+            if (known != null) return known;
+
+            // 标签里没有具体液体 id 时按标签语义归类
+            if (HasTag(ing, "WATER") || HasTag(ing, "WATER_RATION")) return WaterId;
+            if (HasTag(ing, "ALCOHOL")) return "alcohol";
+
+            // 最后按显示名（acid / base / solvent…）匹配液体表
+            string name = ing.DisplayName;
+            if (!string.IsNullOrEmpty(name))
+            {
+                string lower = name.Trim().ToLowerInvariant();
+                if (IsKnownLiquid(lower)) return lower;
+            }
+
+            return null;
+        }
+
+        private static bool HasTag(RecipeIngredient ing, string tag)
+        {
+            if (ing == null || string.IsNullOrEmpty(tag)) return false;
+
+            if (ing.Tags != null)
+            {
+                for (int i = 0; i < ing.Tags.Count; i++)
+                    if (string.Equals(ing.Tags[i], tag, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+
+            if (ing.Ids != null)
+            {
+                for (int i = 0; i < ing.Ids.Count; i++)
+                    if (string.Equals(ing.Ids[i], tag, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+
+            return false;
+        }
+
+        private static string FirstKnownLiquid(IList<string> ids)
+        {
+            if (ids == null) return null;
+
+            for (int i = 0; i < ids.Count; i++)
+            {
+                string id = ids[i];
+                if (!string.IsNullOrEmpty(id) && IsKnownLiquid(id))
+                    return id.Trim().ToLowerInvariant();
+            }
+
+            return null;
+        }
+
+        private static bool IsKnownLiquid(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+
+            try
+            {
+                var dict = Liquid.LiquidDict;
+                return dict != null && dict.ContainsKey(id);
+            }
+            catch { return false; }
+        }
+
         private static bool IsLiquidTag(string tag)
         {
             if (string.IsNullOrEmpty(tag)) return false;
@@ -145,6 +217,44 @@ namespace ItemCatalog.Catalog
             }
 
             return major;
+        }
+
+        /// <summary>是不是液体容器（有容量标签 / 是液体容器类型 / 已经有内容物）。</summary>
+        internal static bool IsContainer(GameItem item)
+        {
+            if (item == null) return false;
+
+            try
+            {
+                if (item.GetTagReadonly("LIQUID_CONTAINER_CAPACITY").GetInt() > 0) return true;
+            }
+            catch { }
+
+            try
+            {
+                if (item.IsGameItemType("LIQUID_CONTAINER")) return true;
+            }
+            catch { }
+
+            var liquids = Liquid.Liquids;
+            if (liquids == null) return false;
+
+            for (int i = 0; i < liquids.Count; i++)
+            {
+                var liquid = liquids[i];
+                if (liquid == null) continue;
+
+                try { if (item.GetTagReadonly(liquid.currentPart).GetInt() > 0) return true; }
+                catch { }
+            }
+
+            return false;
+        }
+
+        /// <summary>容器里灌着的主要液体 id；不是容器 / 空容器返回 null。</summary>
+        internal static string ContentLiquid(GameItem item)
+        {
+            return IsContainer(item) ? MainComponent(item) : null;
         }
 
         // ------------------------------------------------------- 容器成分

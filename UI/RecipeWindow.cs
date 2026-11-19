@@ -2566,6 +2566,15 @@ namespace ItemCatalog.UI
             if (entry == null && PreBuiltItems.IsPreBuilt(id))
                 entry = CatalogWindow.PreBuiltEntry(id);
 
+            // 容器格：可查对象换成它灌装的液体（图鉴的液体条目代表该容器），
+            // 判定统一交给液体管理器。
+            string contentLiquid = ContainerContentLiquid(entry, id, emptyOnly);
+            if (contentLiquid != null)
+            {
+                var liquidEntry = LiquidCatalog.Find(LiquidCatalog.EntryPrefix + contentLiquid);
+                if (liquidEntry != null) entry = liquidEntry;
+            }
+
             string elementId = "g" + index;
 
             bool hasButton = sprite == null;
@@ -2605,6 +2614,24 @@ namespace ItemCatalog.UI
             CatalogWindow.BindCell(element, entry, hasButton, emptyOnly, !emptyOnly);
         }
 
+        /// <summary>
+        /// 这个格子的容器里灌着什么液体；空瓶 / 非容器返回 null。
+        /// 来源页的货单按客人水种推断，其它地方读实例自己的内容物。
+        /// </summary>
+        private static string ContainerContentLiquid(ItemEntry entry, string id, bool emptyOnly)
+        {
+            if (emptyOnly || entry == null) return null;
+            if (!LiquidManager.IsContainer(entry.Item)) return null;
+
+            if (CatalogWindow.ClientComposition && !string.IsNullOrEmpty(SourceSeed))
+            {
+                string water = LiquidManager.WaterFor(SourceWater, id);
+                return LiquidManager.IsEmptyWater(water) ? null : LiquidManager.WaterId;
+            }
+
+            return LiquidManager.ContentLiquid(entry.Item);
+        }
+
         /// <summary>无图标格子的左键动作；找不到目录条目时给个空动作，别把 null 传给按钮。</summary>
         private static Action CellSelect(ItemEntry entry)
         {
@@ -2622,6 +2649,14 @@ namespace ItemCatalog.UI
 
             var entry = RecipeIndex.FindEntry(id);
             if (entry == null && PreBuiltItems.IsPreBuilt(id)) entry = CatalogWindow.PreBuiltEntry(id);
+
+            // 容器格：可查对象换成它灌装的液体（与 RenderGoods 同一规则）
+            string contentLiquid = ContainerContentLiquid(entry, id, false);
+            if (contentLiquid != null)
+            {
+                var liquidEntry = LiquidCatalog.Find(LiquidCatalog.EntryPrefix + contentLiquid);
+                if (liquidEntry != null) entry = liquidEntry;
+            }
 
             CatalogWindow.BindCell(builder.Last, entry, hasButton);
         }
@@ -4623,10 +4658,22 @@ namespace ItemCatalog.UI
                 if (ing == null) continue;
 
                 // 液体需求（水 / 酒精 / 酸碱…）：游戏里是容器的内容物不是物品，
-                // 由液体管理器统一换成一只具体容器（bottled_water）展示，
+                // 由液体管理器统一换成一只装了该液体的普通容器展示（图鉴的液体条目代表它），
                 // 格子可点、可查、不再是没有图标的文字。
+                string liquidId = LiquidManager.LiquidFor(ing);
                 string id = LiquidManager.Represent(ing) ?? FirstId(ing);
-                var sprite = id == null ? null : CatalogWindow.IconFor(id);
+
+                var liquidEntry = liquidId == null
+                    ? null
+                    : LiquidCatalog.Find(LiquidCatalog.EntryPrefix + liquidId);
+
+                var sprite = liquidEntry != null
+                    ? CatalogWindow.IconFor(liquidEntry)
+                    : (id == null ? null : CatalogWindow.IconFor(id));
+
+                var entry = liquidEntry ?? RecipeIndex.FindEntry(id);
+                if (entry == null && id != null && PreBuiltItems.IsPreBuilt(id))
+                    entry = CatalogWindow.PreBuiltEntry(id);
 
                 if (sprite != null)
                 {
@@ -4636,10 +4683,10 @@ namespace ItemCatalog.UI
                 }
                 else
                 {
-                    builder.AddButton(Shorten(ing.DisplayName), CellSelect(RecipeIndex.FindEntry(id)), prefix + i);
+                    builder.AddButton(Shorten(ing.DisplayName), CellSelect(entry), prefix + i);
                 }
 
-                BindGoods(builder, id, sprite == null);
+                CatalogWindow.BindCell(builder.Last, entry, sprite == null);
                 builder.AddLabel("×" + ing.Amount, prefix + i + "_n");
             }
         }

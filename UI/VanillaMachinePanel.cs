@@ -1009,6 +1009,15 @@ namespace ItemCatalog.UI
             try
             {
                 var entry = RecipeIndex.FindEntry(element.identifier);
+
+                // 容器格：可查对象换成它灌装的液体（液体管理器统一判定）
+                string liquid = LiquidManager.ContentLiquid(element);
+                if (liquid != null)
+                {
+                    var liquidEntry = LiquidCatalog.Find(LiquidCatalog.EntryPrefix + liquid);
+                    if (liquidEntry != null) entry = liquidEntry;
+                }
+
                 if (entry == null) return;
 
                 RecipeWindow.OpenFor(entry, asUse);
