@@ -3019,19 +3019,38 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 配方的投入物品里有没有主成分是这种液体的。
-        /// 搅拌机把物品里的成分搅进容器，产物是液体而不是物品，
-        /// 所以液体条目反查来源时只能按投入物品的 LiquidTag 匹配。
+        /// 配方的投入物品里有没有这种液体。
+        /// 搅拌机把物品里的成分搅进容器（<c>ChemicalHelper.BlendInto</c> 逐个
+        /// <c>CURRENT_PART_*</c> 倒进容器），产物是液体而不是物品，
+        /// 所以液体条目反查来源时按**投入物品的成分表**匹配（不只看主成分）。
         /// </summary>
         private static bool InputProducesLiquid(MachinePanels.Recipe recipe, string liquidId)
         {
             if (recipe == null || string.IsNullOrEmpty(liquidId) || recipe.Inputs == null) return false;
 
+            // 成分标签可能还没算过（本页是液体条目时先确保一次）
+            LiquidManager.TagItems();
+
             for (int i = 0; i < recipe.Inputs.Length; i++)
             {
-                var entry = RecipeIndex.FindEntry(recipe.Inputs[i]);
-                if (entry != null && string.Equals(entry.LiquidTag, liquidId, StringComparison.Ordinal))
+                string id = recipe.Inputs[i];
+                if (string.IsNullOrEmpty(id)) continue;
+
+                // 投入本身就是这种液体（蒸发器 / 化学成型机把液体条目写在 Inputs 里）
+                if (string.Equals(id, LiquidCatalog.EntryPrefix + liquidId, StringComparison.Ordinal))
                     return true;
+
+                var entry = RecipeIndex.FindEntry(id);
+                var item = entry == null ? null : entry.Item;
+                if (item == null) continue;
+
+                bool hit = false;
+                try { hit = LiquidManager.Parts(item).ContainsKey(liquidId); }
+                catch { }
+                if (hit) return true;
+
+                // 没有 CURRENT_PART 的物品退回主成分标签（化学产品的有效成分）
+                if (string.Equals(entry.LiquidTag, liquidId, StringComparison.Ordinal)) return true;
             }
 
             return false;
