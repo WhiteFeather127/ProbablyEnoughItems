@@ -21,6 +21,31 @@ namespace ItemCatalog.Catalog
         /// <summary>展示液体需求用的容器物品 id（可整只买 / 整只拿的实体）。</summary>
         internal const string ContainerId = "bottled_water";
 
+        private static int _waterCapacityUl;
+
+        /// <summary>默认水容器的容量（UL，1/1000 ml）。首次用到时造一只预览瓶读取并缓存。</summary>
+        internal static int WaterCapacityUl()
+        {
+            if (_waterCapacityUl > 0) return _waterCapacityUl;
+
+            int capacity = 500000;
+            GameItem bottle = null;
+
+            try
+            {
+                bottle = UI.CatalogWindow.CreatePreviewItem(ContainerId);
+                if (bottle != null)
+                {
+                    int ul = bottle.GetTagReadonly("LIQUID_CONTAINER_CAPACITY").GetInt();
+                    if (ul > 0) capacity = ul;
+                }
+            }
+            catch { }
+            finally { try { if (bottle != null) bottle.Destroy(); } catch { } }
+
+            return _waterCapacityUl = capacity;
+        }
+
         /// <summary>液体需求的标签 / 物品类型（配方过滤器里的写法）。</summary>
         private static readonly string[] LiquidTags =
         {

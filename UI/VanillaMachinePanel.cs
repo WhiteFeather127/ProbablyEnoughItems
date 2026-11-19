@@ -781,6 +781,37 @@ namespace ItemCatalog.UI
             catch (Exception e) { Warn("fill container preview '" + liquidId + "': " + e.Message); }
         }
 
+        /// <summary>
+        /// 水培水槽：按最佳养分浓度重灌容器（水 + 矿物），总量 = 容器容量。
+        /// 矿物浓度是千分比换算后的百分比（nutrimentLevel/10）。
+        /// </summary>
+        internal void FillHydroponicWater(int mineralPercent)
+        {
+            var container = ContainerSample;
+            if (container == null) return;
+
+            int total = 0;
+            try { total = container.GetTagReadonly("LIQUID_CONTAINER_CAPACITY").GetInt(); } catch { }
+            if (total <= 0) total = LiquidManager.WaterCapacityUl();
+
+            int percent = mineralPercent;
+            if (percent < 0) percent = 0;
+            if (percent > 100) percent = 100;
+
+            int mineral = total * percent / 100;
+            int water = total - mineral;
+
+            try
+            {
+                WaterHelper.EmptyContainer(container);
+                if (water > 0) ChemicalHelper.SetChemContentUL(container, LiquidManager.WaterId, water);
+                if (mineral > 0) ChemicalHelper.SetChemContentUL(container, "mineral", mineral);
+                try { WaterFeatureHelper.UpdateWaterFeature(container, false); } catch { }
+                try { SpriteHelper.UpdateWaterContainerSprite(container); } catch { }
+            }
+            catch (Exception e) { Warn("fill hydroponic water: " + e.Message); }
+        }
+
         /// <summary>当前配方预览里容器槽中的样本（没有则 null）。</summary>
         internal GameItem ContainerSample
         {

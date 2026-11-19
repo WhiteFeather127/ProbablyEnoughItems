@@ -3642,19 +3642,35 @@ namespace ItemCatalog.UI
             }
         }
 
-        /// <summary>水培机「一个周期的成分变化」用的单项水成分（总体积 = 水量）。</summary>
-        private static List<LiquidManager.Component> HydroWaterComponents(int volume)
+        /// <summary>水培机「一个周期的成分变化」：水 + 矿物（总量 = 两者之和）。</summary>
+        private static List<LiquidManager.Component> HydroComponents(int waterMl, int mineralMl)
         {
-            return new List<LiquidManager.Component>
+            int total = waterMl + mineralMl;
+            var list = new List<LiquidManager.Component>();
+
+            if (waterMl > 0)
             {
-                new LiquidManager.Component
+                list.Add(new LiquidManager.Component
                 {
                     Id = LiquidManager.WaterId,
                     Name = LiquidManager.NameOf(LiquidManager.WaterId),
-                    Amount = volume,
-                    Total = volume
-                }
-            };
+                    Amount = waterMl,
+                    Total = total
+                });
+            }
+
+            if (mineralMl > 0)
+            {
+                list.Add(new LiquidManager.Component
+                {
+                    Id = "mineral",
+                    Name = LiquidManager.NameOf("mineral"),
+                    Amount = mineralMl,
+                    Total = total
+                });
+            }
+
+            return list;
         }
 
         private static void SetCompositionFont(CustomUIElement element)
@@ -4083,9 +4099,15 @@ namespace ItemCatalog.UI
             {
                 _vanillaMachine.MarkUncertain(recipe.Uncertain, recipe.UncertainNote);
 
-                // 左 = 变化前（水槽灌满），右 = 一个周期后（扣掉每周期耗水）
-                const int beforeVolume = 1000;
-                int afterVolume = Mathf.Max(0, beforeVolume - recipe.WaterUse);
+                // 水槽按最佳养分浓度重灌：水 + 矿物，总量 = 容器容量
+                _vanillaMachine.FillHydroponicWater(recipe.NutrientPercent);
+
+                // 左 = 变化前，右 = 一个周期后（水 -耗水，矿物 -矿物消耗）
+                int totalMl = LiquidManager.WaterCapacityUl() / 1000;
+                int mineralMl = totalMl * recipe.NutrientPercent / 100;
+                int beforeWater = totalMl - mineralMl;
+                int afterWater = Mathf.Max(0, beforeWater - recipe.WaterUse);
+                int afterMineral = Mathf.Max(0, mineralMl - recipe.MineralUse);
 
                 builder.BeginRow(12f, UnityEngine.TextAnchor.UpperLeft);
 
@@ -4093,7 +4115,7 @@ namespace ItemCatalog.UI
                 builder.AddLabel(Loc("mach_hydro_before", "变化前"), "hydro_before");
                 SetCompositionFont(builder.Last);
                 RenderLiquidComposition(builder,
-                    HydroWaterComponents(beforeVolume), "hydro_before_");
+                    HydroComponents(beforeWater, mineralMl), "hydro_before_");
                 builder.End();
 
                 builder.AddFlexibleSpace();
@@ -4102,7 +4124,7 @@ namespace ItemCatalog.UI
                 builder.AddLabel(Loc("mach_hydro_after", "一个周期后"), "hydro_after");
                 SetCompositionFont(builder.Last);
                 RenderLiquidComposition(builder,
-                    HydroWaterComponents(afterVolume), "hydro_after_");
+                    HydroComponents(afterWater, afterMineral), "hydro_after_");
                 builder.End();
 
                 builder.End();

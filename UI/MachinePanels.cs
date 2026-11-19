@@ -244,6 +244,12 @@ namespace ItemCatalog.UI
             /// <summary>水培机每周期耗水（ml），用于面板下面的成分变化。</summary>
             internal int WaterUse;
 
+            /// <summary>水槽里矿物的最佳浓度（百分比，nutrimentLevel/10）。</summary>
+            internal int NutrientPercent;
+
+            /// <summary>每周期消耗的矿物（同百分比单位）。</summary>
+            internal int MineralUse;
+
             /// <summary>
             /// 达成这一条配方还需要的模块品质加成（百分比）。
             /// 熔炉页顶部显示「需品质加成 +X%」，和下面的材料 / 助熔剂一起轮播。
@@ -1071,7 +1077,26 @@ namespace ItemCatalog.UI
                     if (!seed) continue;
 
                     var built = BuildHydroponicGroups(entry.Id, item);
-                    if (built != null) groups.AddRange(built);
+                    if (built == null) continue;
+
+                    // 水槽最佳矿物浓度 = 养分等级 / 10（等级是千分比：150 → 15%）
+                    int percent = 0;
+                    int mineralUse = 0;
+                    try { percent = HydroponicHelper.GetNutrimentLevel(item) / 10; } catch { }
+                    try { mineralUse = HydroponicHelper.GetMineralUseRate(item) / 10; } catch { }
+                    if (percent < 0) percent = 0;
+                    if (percent > 100) percent = 100;
+
+                    for (int g = 0; g < built.Length; g++)
+                    {
+                        var recipe = built[g] != null && built[g].Variants != null && built[g].Variants.Length > 0
+                            ? built[g].Variants[0] : null;
+                        if (recipe == null) continue;
+                        recipe.NutrientPercent = percent;
+                        recipe.MineralUse = mineralUse;
+                    }
+
+                    groups.AddRange(built);
                 }
             }
 
@@ -1085,11 +1110,13 @@ namespace ItemCatalog.UI
             internal string[] Outputs;
             internal string Note;
             internal int[] Uncertain;
+            internal string UncertainNote;
             internal int WaterUse;
         }
 
         private static HydroVariant HV(string module, string[] outputs, string note,
-                                       int[] uncertain = null, int waterUse = 0)
+                                       int[] uncertain = null, string uncertainNote = null,
+                                       int waterUse = 0)
         {
             return new HydroVariant
             {
@@ -1097,6 +1124,7 @@ namespace ItemCatalog.UI
                 Outputs = outputs,
                 Note = note,
                 Uncertain = uncertain,
+                UncertainNote = uncertainNote,
                 WaterUse = waterUse
             };
         }
@@ -1117,61 +1145,62 @@ namespace ItemCatalog.UI
                 case "nutrifruit_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("nutrifruit", 5, "nutrifruit_seed", 3),
-                           "满健康：5 个大果 + 3 颗种子", null, 100),
+                           "满健康：5 个大果 + 3 颗种子", null, null, 100),
                         HV("farm_module_nutrifruit",
                            HydroOut("nutrifruit", 6, "nutrifruit_seed", 3),
-                           "每装 1 个营养果模块 +1 个果实", null, 100));
+                           "每装 1 个营养果模块 +1 个果实", null, null, 100));
 
                 // 棉花：最多返 2 颗种子（第二颗 50%）
                 case "kotton_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("kotton_fiber", 9, "kotton_seed", 2),
-                           "满健康：9 个大果 + 返种", new[] { 10 }, 176),
+                           "满健康：9 个大果 + 返种", new[] { 10 }, null, 176),
                         HV("farm_module_kotton_loom",
                            HydroOut("kotton_fabric", 9, "kotton_seed", 2),
-                           "织机模块直接出布料", new[] { 10 }, 176));
+                           "织机模块直接出布料", new[] { 10 }, null, 176));
 
                 // 梦帽菇：返 1 颗种子
                 case "dream_cap_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("dream_cap", 8, "dream_cap_seed", 1),
-                           "满健康：8 个大果 + 1 颗种子", null, 100),
+                           "满健康：8 个大果 + 1 颗种子", null, null, 100),
                         HV("farm_module_dream_cap",
                            HydroOut("dream_cap", 10, "dream_cap_seed", 1),
-                           "每装 1 个梦帽模块 +2 个", null, 100),
+                           "每装 1 个梦帽模块 +2 个", null, null, 100),
                         HV("farm_module_nightmare_cap",
                            HydroOut("nightmare_cap", 8, "dream_cap_seed", 1),
-                           "改装梦魇模块后整株改出梦魇菇", null, 100));
+                           "改装梦魇模块后整株改出梦魇菇", null, null, 100));
 
                 // 咖啡豆：不返种
                 case "coffee_bean":
                     return H(seedId, env,
                         HV(null, HydroOut("coffee_bean", 8, null, 0),
-                           "满健康：8 颗", null, 100));
+                           "满健康：8 颗", null, null, 100));
 
                 // 杂草：最多返 2 颗种子（第二颗 50%）
                 case "fillerweed_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("fillerweed", 4, "fillerweed_seed", 2),
-                           "满健康：4 个 + 返种", new[] { 5 }, 287),
+                           "满健康：4 个 + 返种", new[] { 5 }, null, 287),
                         HV("farm_module_fillerweed_production",
                            HydroOut("fillerweed", 8, null, 0),
-                           "生产模块 +4 个，不返种", null, 287));
+                           "生产模块 +4 个，不返种", null, null, 287));
 
                 // 水芦：无主产物；返种最多 2 颗（第二颗 50%）
                 case "hydroreed_seed":
                     return H(seedId, env,
                         HV(null, HydroOut(null, 0, "hydroreed_seed", 2),
-                           "只返种；滤芯要靠过滤模块", new[] { 1 }, 20),
+                           "只返种；滤芯要靠过滤模块", new[] { 1 }, null, 20),
                         HV("farm_module_hydroreed_filter",
                            HydroOut("hydroreed_filter", 1, "hydroreed_seed", 2),
-                           "每个过滤模块 +1 个滤芯", new[] { 2 }, 20));
+                           "每个过滤模块 +1 个滤芯", new[] { 2 }, null, 20));
 
                 // 花莓：收成是酿酒浆果
                 case "bloomberry_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("wine_berry", 8, null, 0),
-                           "满健康：8 颗（品质随机）", null, 100));
+                           "满健康：8 颗", new[] { 0 },
+                           "品质概率：1 级 60% / 2 级 40%（满健康）", 100));
             }
 
             return GenericHydroponicGroups(seedId, seed, env);
@@ -1189,13 +1218,15 @@ namespace ItemCatalog.UI
             {
                 var v = variants[i];
                 string note = string.IsNullOrEmpty(env) ? v.Note : v.Note + " · " + env;
-                string uncertainNote = v.Uncertain != null && v.Uncertain.Length > 0 ? "50%" : null;
+                string uncertainNote = v.Uncertain != null && v.Uncertain.Length > 0
+                    ? (string.IsNullOrEmpty(v.UncertainNote) ? "50%" : v.UncertainNote)
+                    : null;
 
                 var recipe = new Recipe(new[] { seedId },
                                         string.IsNullOrEmpty(v.Module) ? null : new[] { v.Module },
                                         v.Outputs,
                                         "mach_hydroponic_note", note,
-                                        0, LiquidManager.ContainerId, LiquidManager.WaterId, 1000,
+                                        0, LiquidManager.ContainerId, LiquidManager.WaterId, 0,
                                         v.Uncertain, uncertainNote, v.WaterUse);
 
                 groups.Add(new RecipeGroup
@@ -1233,8 +1264,9 @@ namespace ItemCatalog.UI
             try { mineral = HydroponicHelper.GetMineralUseRate(seed); } catch { }
             try { contaminant = HydroponicHelper.GetContaminantEffect(seed); } catch { contaminant = 1.0; }
 
-            return "每周期耗水 " + waterUse + "ml · 养分 " + level + "±" + range
-                   + " · 矿物消耗 " + mineral + " · 污染物影响 ×" + contaminant.ToString("0.##");
+            // 耗水 / 矿物消耗由面板下面的成分变化体现，这里只写养分浓度与污染物影响
+            return "养分 " + level + "±" + range
+                   + " · 污染物影响 ×" + contaminant.ToString("0.##");
         }
 
         /// <summary>未知种子（模组作物）：按标签里的收成产物 × 数量兜底。</summary>
