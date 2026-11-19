@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 
@@ -4178,7 +4178,7 @@ namespace ItemCatalog.UI
 
                 var image = go.GetComponent<UnityEngine.UI.Image>();
                 image.sprite = null;   // 无 sprite 的 Image 直接画纯色块，最稳
-                image.color = GameHighlightGreen();
+                image.color = GameColors.HighlightGreen;
                 image.raycastTarget = false;
 
                 var rect = go.GetComponent<RectTransform>();
@@ -4192,12 +4192,6 @@ namespace ItemCatalog.UI
                 follow.Target = cell;
             }
             catch { }
-        }
-
-        /// <summary>原版绿底颜色（物品高亮用的绿，RGB 93/107/63）。</summary>
-        internal static Color GameHighlightGreen()
-        {
-            return new Color(93f / 255f, 107f / 255f, 63f / 255f, 1f);
         }
 
         private static string ReactionTempText(LiquidReaction reaction)

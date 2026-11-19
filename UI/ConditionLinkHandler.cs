@@ -144,7 +144,7 @@ namespace ItemCatalog.UI
             _markRect = go.GetComponent<RectTransform>();
             _mark = go.GetComponent<Image>();
             _mark.sprite = null;   // 无 sprite 的 Image 直接画纯色块
-            _mark.color = RecipeWindow.GameHighlightGreen();
+            _mark.color = GameColors.HighlightGreen;
             _mark.raycastTarget = false;
 
             var ignore = go.AddComponent<LayoutElement>();

@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using ProbablyEnoughItems.Api;
@@ -1805,7 +1805,7 @@ namespace ItemCatalog.UI
                     typeof(RectTransform), typeof(UnityEngine.UI.Image));
 
                 var image = go.GetComponent<UnityEngine.UI.Image>();
-                image.color = new Color(0.85f, 0.1f, 0.1f, 0.6f);
+                image.color = GameColors.WithAlpha(GameColors.HighlightRed, 0.6f);
                 image.raycastTarget = false;
 
                 _groupMarks[element] = go;
@@ -1875,7 +1875,7 @@ namespace ItemCatalog.UI
                     rect.pivot = new Vector2(0.5f, 0.5f);
 
                     var image = go.GetComponent<UnityEngine.UI.Image>();
-                    image.color = new Color(0.85f, 0.1f, 0.1f, 0.6f);
+                    image.color = GameColors.WithAlpha(GameColors.HighlightRed, 0.6f);
                     image.raycastTarget = false;
 
                     go.layer = canvasRoot.gameObject.layer;
