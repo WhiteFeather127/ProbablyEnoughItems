@@ -305,7 +305,14 @@ namespace ItemCatalog.Catalog
         /// <summary>容器里灌着的主要液体 id；不是容器 / 空容器返回 null。</summary>
         internal static string ContentLiquid(GameItem item)
         {
-            return IsContainer(item) ? MainComponent(item) : null;
+            if (!IsContainer(item)) return null;
+
+            // 预构建化学瓶（med_bottle_red 这类）保留**物品身份**：成分照常展示，
+            // 但格子不能被换成液体条目——否则点进去是液体页，反查不到瓶子自己的来源
+            // （化学用品箱）。液体页的来源里仍然登记它们（那一侧读 Parts）。
+            if (PrebuiltPart(item) != null) return null;
+
+            return MainComponent(item);
         }
 
         // ------------------------------------------------------- 容器成分

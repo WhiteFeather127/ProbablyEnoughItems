@@ -4155,11 +4155,12 @@ namespace ItemCatalog.UI
             builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
             if (reaction.Products == null || reaction.Products.Length == 0)
             {
-                // 无实物产物：容器保持空，底下写残留的溶剂；没有溶剂就写「无」
+                // 无实物产物：容器保持空，底下写残留的溶剂；没有溶剂 / 只是催化剂就写「无」
+                // （催化剂不参与产物，量也不进产物容器）
                 string label;
                 string liquidId = null;
 
-                if (!string.IsNullOrEmpty(reaction.Solvent))
+                if (!string.IsNullOrEmpty(reaction.Solvent) && !reaction.SolventIsCatalyst)
                 {
                     label = ConditionLiquidName(reaction.Solvent);
                     liquidId = reaction.Solvent;
