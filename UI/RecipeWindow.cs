@@ -586,11 +586,10 @@ namespace ItemCatalog.UI
                     string tag = strip.Tags[k];
                     if (IsInternalTag(tag)) continue;   // 已经展开成静态物品，不轮播
 
-                    // 收购 WATER：格子数按客人承认的水质档位算（一格一档，绿底在格子之间轮播）
+                    // 收购 WATER：格子按水质档位分好，轮播的是格子里装的容器
                     if (string.Equals(tag, "WATER", StringComparison.OrdinalIgnoreCase))
                     {
-                        int count = strip.WaterQualities != null && strip.WaterQualities.Length > 0
-                            ? strip.WaterQualities.Length : 1;
+                        int count = WaterContainerIds().Count;
                         if (count <= 1) continue;
 
                         int waterIndex;
@@ -659,8 +658,8 @@ namespace ItemCatalog.UI
 
         /// <summary>
         /// 收购 WATER 的格子：按客人承认的水质**分格**（纯水 / 优质水 / 基础水…），
-        /// 一格一只标准水容器 + 该档位说明。查水时绿底在这些格子之间轮播——
-        /// 一个客人常收好几个档位，不能同时全绿。
+        /// 一格一个水质档位；格子里轮播的是**能装水的容器**（瓶子 / 罐子 / 水壶…），
+        /// 下面写该档位。查水时整格标绿，轮播的是容器不是绿底。
         /// </summary>
         private static void RenderWaterQualityCells(CustomUIBuilder builder, TagStrip strip,
                                                     string tag, int tagIndex)
@@ -668,9 +667,10 @@ namespace ItemCatalog.UI
             var qualities = strip.WaterQualities;
             int count = qualities == null || qualities.Length == 0 ? 1 : qualities.Length;
 
+            var containers = WaterContainerIds();
+
             int roll;
             if (!_tagRollIndex.TryGetValue(tag, out roll)) roll = 0;
-            roll = ((roll % count) + count) % count;
 
             bool queryingWater = TagMatchesQueriedLiquid(tag);
 
@@ -682,12 +682,50 @@ namespace ItemCatalog.UI
                     ? ModEntry.T("use_tag_water")
                     : LiquidManager.WaterQualityName(quality);
 
-                bool match = queryingWater && k == roll;
+                string showId;
+                if (containers.Count == 0)
+                {
+                    showId = LiquidManager.ContainerId;
+                }
+                else
+                {
+                    int index = ((roll + k) % containers.Count + containers.Count) % containers.Count;
+                    showId = containers[index];
+                }
+
                 int cellId = strip.Base + 100 + tagIndex * 8 + k;
 
-                RenderGoods(builder, LiquidManager.ContainerId, match, cellId, false);
+                RenderGoods(builder, showId, queryingWater, cellId, false);
                 AddOverlayCaption(builder, builder.Last, caption, "tagcapw" + cellId);
             }
+        }
+
+        private static List<string> _waterContainerIds;
+        private static int _waterContainerGeneration = -1;
+
+        /// <summary>
+        /// 能装水的容器 id（液体容器）。不能按 WATER 标签找：普通水瓶是**灌水后**才打标签，
+        /// 目录里的空样本没有，最后只剩静态带 WATER 类型的瓶装泉水。
+        /// </summary>
+        private static List<string> WaterContainerIds()
+        {
+            if (_waterContainerIds != null && _waterContainerGeneration == CatalogDataBuilder.Generation)
+                return _waterContainerIds;
+
+            _waterContainerGeneration = CatalogDataBuilder.Generation;
+
+            var list = new List<string>();
+            var all = CatalogDataBuilder.All;
+            for (int i = 0; i < all.Count; i++)
+            {
+                var entry = all[i];
+                if (entry == null || string.IsNullOrEmpty(entry.Id) || entry.Item == null) continue;
+                if (!LiquidManager.IsContainer(entry.Item)) continue;
+
+                list.Add(entry.Id);
+            }
+
+            return _waterContainerIds = list;
         }
 
         /// <summary>把一条标签格重画到它自己的容器里（清空 → 新建 builder → 画格子）。</summary>
