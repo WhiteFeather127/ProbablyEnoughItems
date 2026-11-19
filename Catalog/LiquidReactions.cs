@@ -93,7 +93,17 @@ namespace ItemCatalog.Catalog
     /// </summary>
     internal static class LiquidReactions
     {
-        internal static readonly LiquidReaction[] All = Build();
+        private static LiquidReaction[] _all;
+
+        /// <summary>全部反应（惰性构建：沸腾页要读游戏的 Liquid.Liquids，必须等系统就绪）。</summary>
+        internal static LiquidReaction[] All
+        {
+            get
+            {
+                if (_all == null) _all = Build();
+                return _all;
+            }
+        }
 
         /// <summary>
         /// 和某种液体相关的反应。
@@ -137,7 +147,7 @@ namespace ItemCatalog.Catalog
 
         private static LiquidReaction[] Build()
         {
-            return new[]
+            var list = new List<LiquidReaction>
             {
                 // 蛋白质 + 过量酸/碱 → 残渣（蛋白质 1:1 变性，多余的酸被消耗）
                 R("protein", new[] { "protein", "acid" }, new[] { 10f, 10f },
@@ -256,19 +266,33 @@ namespace ItemCatalog.Catalog
                 // 芬达受热：≥130 °C 每秒损失 2%
                 RN("fanta_heat", new[] { "fanta" }, new[] { 10f },
                    null, false, 0f, 130f,
-                   null, null),
-
-                // 沸腾：温度超过沸点后该液体每秒减少 2%
-                RN("boil_water", new[] { "water" }, new[] { 10f },
-                   null, false, 0f, 100f,
-                   null, null),
-                RN("boil_alcohol", new[] { "alcohol" }, new[] { 10f },
-                   null, false, 0f, 78.37f,
-                   null, null),
-                RN("boil_lipobond", new[] { "lipobond_agent" }, new[] { 10f },
-                   null, false, 0f, 55f,
                    null, null)
             };
+
+            // 沸腾：温度超过沸点后该液体每秒减少 2%。
+            // IL 里是遍历 Liquid.Liquids 的**所有** isEvaporative 液体按各自 boilingPoint 判定，
+            // 所以这里同样动态生成，不维护名单。
+            AppendBoiling(list);
+
+            return list.ToArray();
+        }
+
+        private static void AppendBoiling(List<LiquidReaction> list)
+        {
+            var liquids = Liquid.Liquids;
+            if (liquids == null) return;
+
+            for (int i = 0; i < liquids.Count; i++)
+            {
+                var liquid = liquids[i];
+                if (liquid == null || !liquid.isEvaporative) continue;
+                if (string.IsNullOrEmpty(liquid.identifier)) continue;
+
+                list.Add(RN("boil_" + liquid.identifier,
+                    new[] { liquid.identifier }, new[] { 10f },
+                    null, false, 0f, (float)liquid.boilingPoint,
+                    null, null));
+            }
         }
 
         private static LiquidReaction R(string id,
