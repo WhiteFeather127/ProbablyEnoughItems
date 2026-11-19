@@ -192,11 +192,6 @@ namespace ItemCatalog.Catalog
         {
             if (item == null) return null;
 
-            // 只有真正的液体容器 / 化学产品才谈「主要液体成分」。
-            // 家居用品也带 CURRENT_PART 成分标签（净水药片 = 15ml 氯），
-            // 但它是固体用品，不能因此被当成某种液体的来源。
-            if (!IsContainer(item) && !IsChemicalProduct(item)) return null;
-
             try
             {
                 string active = item.GetTagReadonly("ACTIVATE_INGREDIENT_TAG").GetString();
@@ -252,20 +247,6 @@ namespace ItemCatalog.Catalog
         internal static string ContentLiquid(GameItem item)
         {
             return IsContainer(item) ? MainComponent(item) : null;
-        }
-
-        /// <summary>化学产品（药片这类）：游戏用 CHEMICAL_PRODUCT_TAG / CHEMICAL 类型标记。</summary>
-        internal static bool IsChemicalProduct(GameItem item)
-        {
-            if (item == null) return false;
-
-            try { if (item.IsTag("CHEMICAL_PRODUCT_TAG")) return true; }
-            catch { }
-
-            try { if (item.IsGameItemType("CHEMICAL")) return true; }
-            catch { }
-
-            return false;
         }
 
         // ------------------------------------------------------- 容器成分

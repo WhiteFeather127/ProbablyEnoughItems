@@ -199,8 +199,10 @@ namespace ItemCatalog.Catalog
         /// <summary>
         /// 物品 → 液体条目的关系，液体管理器统一判定：
         /// - 可溶化学品（SOLUBLE_TAG）：dissolve，产物是该液体主成分的条目；
-        /// - 其它装有液体的容器：contain，产物同样是主成分条目，成分在详情页逐行列出。
-        /// 记录同时登记在物品与液体两侧，两个方向查到的是同一条。
+        /// - 其它带液体成分的物品（容器、能装液体的日用品）：contain，产物同样是主成分条目。
+        /// 记录**只登记在液体条目一侧**（液体页的「来源」）：图鉴里的示例液体可以按成分
+        /// 反查谁装着 / 谁能分解出它；物品自己发起的反查一律只按 id 匹配，
+        /// 不能因为内容物标签就把固体（净水药片 → 液体氯）当成它的用途。
         /// </summary>
         private static void AppendDissolveUses()
         {
@@ -219,24 +221,19 @@ namespace ItemCatalog.Catalog
                 try { soluble = item.IsTag("SOLUBLE_TAG"); }
                 catch { soluble = false; }
 
-                // 容器：必须是真正的液体容器（有容量 / 液体容器类型）且有内容物。
-                // 药片这类固体也用 CURRENT_PART_* 记录有效成分，不能凭内容物标签当容器
-                // （否则净水药片会被登记成「装了氯的容器」）。
-                bool filled = !soluble
-                              && LiquidManager.IsContainer(item)
-                              && LiquidManager.Parts(item).Count > 0;
+                // 有液体成分标签的物品都算（容器、能装液体的日用品）。
+                // 不按物品类型筛——家居用品里也有能装液体的。
+                bool filled = !soluble && LiquidManager.Parts(item).Count > 0;
 
                 if (!soluble && !filled) continue;
 
-                // 产物 = 代表该液体主成分的液体条目，两个方向查到的都是同一条记录。
-                // 认不出成分（液体管理器不认为它是容器 / 化学产品）就不登记：
-                // 净水药片这类家居用品也带成分标签，但不该被当成液体氯的来源。
+                // 产物 = 代表该液体主成分的液体条目。
                 string product = string.IsNullOrEmpty(entry.LiquidTag)
                     ? null
                     : LiquidCatalog.EntryPrefix + entry.LiquidTag;
                 if (product == null) continue;
 
-                if (HasDissolveUse(entry.Id)) continue;
+                if (HasProduceSource(product, entry.Id)) continue;
 
                 var info = new UseInfo
                 {
@@ -248,27 +245,27 @@ namespace ItemCatalog.Catalog
                 };
 
                 _all.Add(info);
-                Append(_using, entry.Id, info);
-                AppendAlias(_using, entry.Id, info);
 
-                if (!string.IsNullOrEmpty(product))
-                {
-                    Append(_producing, product, info);
-                    AppendAlias(_producing, product, info);
-                }
+                // 只进液体条目的「来源」索引：物品侧的正反查保持 id 精确匹配
+                // （配方 / uses.csv / 货单），不掺成分推导出来的关系。
+                Append(_producing, product, info);
+                AppendAlias(_producing, product, info);
             }
         }
 
-        private static bool HasDissolveUse(string id)
+        /// <summary>液体条目的来源里是否已经登记过这件物品（避免和 uses.csv 重复）。</summary>
+        private static bool HasProduceSource(string product, string id)
         {
             List<UseInfo> list;
-            if (_using == null || !_using.TryGetValue(id, out list) || list == null) return false;
+            if (_producing == null || !_producing.TryGetValue(product, out list) || list == null) return false;
 
             for (int i = 0; i < list.Count; i++)
             {
                 var u = list[i];
-                if (u != null && string.Equals(u.Kind, "dissolve", StringComparison.Ordinal))
-                    return true;
+                if (u == null || u.Sources == null) continue;
+
+                for (int k = 0; k < u.Sources.Length; k++)
+                    if (string.Equals(u.Sources[k], id, StringComparison.Ordinal)) return true;
             }
 
             return false;
