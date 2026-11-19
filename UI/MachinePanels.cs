@@ -1016,8 +1016,99 @@ namespace ItemCatalog.UI
         {
             if (string.IsNullOrEmpty(machineId)) return null;
 
+            // 水培机没有固定配方表：一个能种的种子一页，数据全部读种子标签，按目录代号缓存
+            if (string.Equals(machineId, "hydroponic", StringComparison.Ordinal))
+                return HydroponicRecipes();
+
             RecipeGroup[] groups;
             return Recipes.TryGetValue(machineId, out groups) ? groups : null;
+        }
+
+        private static RecipeGroup[] _hydroponicGroups;
+        private static int _hydroponicGeneration = -1;
+
+        /// <summary>
+        /// 水培机配方：一个种子一页。
+        /// 数据不手写——<c>HydroponicHelper.InitSeedItem</c> 把 PlantDefinition 的
+        /// 进度 / 产量 / 耗水 / 养分 / 矿物速率 / 污染物影响全写进种子标签，
+        /// 这里直接用 HydroponicHelper 的读取接口反推，模组物品也能自动跟上。
+        /// </summary>
+        private static RecipeGroup[] HydroponicRecipes()
+        {
+            if (_hydroponicGroups != null && _hydroponicGeneration == CatalogDataBuilder.Generation)
+                return _hydroponicGroups;
+
+            _hydroponicGeneration = CatalogDataBuilder.Generation;
+
+            var groups = new List<RecipeGroup>();
+            var items = CatalogDataBuilder.Visible;
+
+            if (items != null)
+            {
+                for (int i = 0; i < items.Count; i++)
+                {
+                    var entry = items[i];
+                    var item = entry == null ? null : entry.Item;
+                    if (item == null || string.IsNullOrEmpty(entry.Id)) continue;
+
+                    bool seed;
+                    try { seed = item.IsTag("SEED_ITEM_TAG"); }
+                    catch { seed = false; }
+                    if (!seed) continue;
+
+                    var group = BuildHydroponicGroup(entry.Id, item);
+                    if (group != null) groups.Add(group);
+                }
+            }
+
+            return _hydroponicGroups = groups.ToArray();
+        }
+
+        /// <summary>一个种子一页：种子 → 收成（按产量铺满产物格）+ 生长条件备注。</summary>
+        private static RecipeGroup BuildHydroponicGroup(string seedId, GameItem seed)
+        {
+            string harvest = null;
+            int quantity = 1;
+            int waterUse = 0;
+            int nutrimentLevel = 0;
+            int nutrimentRange = 0;
+            int mineralRate = 0;
+            double contaminant = 1.0;
+
+            try { harvest = HydroponicHelper.GetHarvestItemId(seed); } catch { }
+            if (string.IsNullOrEmpty(harvest)) return null;
+
+            try { quantity = HydroponicHelper.GetBaseHarvestQuantity(seed); } catch { }
+            if (quantity <= 0) quantity = 1;
+
+            try { waterUse = HydroponicHelper.GetWaterUsePerCycle(seed); } catch { }
+            try { nutrimentLevel = HydroponicHelper.GetNutrimentLevel(seed); } catch { }
+            try { nutrimentRange = HydroponicHelper.GetNutrimentRange(seed); } catch { }
+            try { mineralRate = HydroponicHelper.GetMineralUseRate(seed); } catch { }
+            try { contaminant = HydroponicHelper.GetContaminantEffect(seed); } catch { contaminant = 1.0; }
+
+            var outputs = new string[quantity];
+            for (int k = 0; k < quantity; k++) outputs[k] = harvest;
+
+            string note = "每周期耗水 " + waterUse + "ml"
+                          + " · 养分 " + nutrimentLevel + "±" + nutrimentRange
+                          + " · 矿物消耗 " + mineralRate
+                          + " · 污染物影响 ×" + contaminant.ToString("0.##");
+
+            return new RecipeGroup
+            {
+                TitleItemId = seedId,
+                TitleKey = "mach_hydroponic_recipe",
+                TitleFallback = "可种植作物",
+                Variants = new[]
+                {
+                    // 水槽放一只装了水的容器（容器槽不支持"灌水"时也至少能看清是水）
+                    new Recipe(new[] { seedId }, null, outputs,
+                               "mach_hydroponic_note", note,
+                               0, LiquidManager.ContainerId,
+                               LiquidManager.WaterId, 1000)
+                }
+            };
         }
     }
 }

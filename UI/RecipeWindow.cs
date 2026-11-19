@@ -3074,7 +3074,7 @@ namespace ItemCatalog.UI
         /// 把对应的机器配方组加进来。只收录有原版面板外壳的机器
         /// （熔炉、搅拌机）；新增机器时把 id 加进 <see cref="KnownMachines"/>。
         /// </summary>
-        private static readonly string[] KnownMachines = { "furnace", "blender", "chem_finisher", "evaporator" };
+        private static readonly string[] KnownMachines = { "furnace", "blender", "chem_finisher", "evaporator", "hydroponic" };
 
         private static void AddMachineRecipeCategories()
         {
@@ -3982,6 +3982,8 @@ namespace ItemCatalog.UI
                 built = _vanillaMachine.BuildChemFinisherShell();
             else if (string.Equals(machineId, "evaporator", StringComparison.Ordinal))
                 built = _vanillaMachine.BuildEvaporatorShell();
+            else if (string.Equals(machineId, "hydroponic", StringComparison.Ordinal))
+                built = _vanillaMachine.BuildHydroponicShell();
 
             if (!built)
             {
@@ -4002,6 +4004,8 @@ namespace ItemCatalog.UI
             // 搅拌机 / 化学制剂成型机 / 蒸发器在面板下面还要写成分，先把这部分高度留出来
             if (HasMachineComposition(machineId))
                 panelMaxH -= MachineCompositionHeight(recipe);
+            else if (string.Equals(machineId, "hydroponic", StringComparison.Ordinal))
+                panelMaxH -= 18f;   // 面板下面一行生长条件
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
@@ -4055,6 +4059,23 @@ namespace ItemCatalog.UI
                 {
                     builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
                     RenderLiquidComposition(builder, components);
+                    builder.End();
+                }
+            }
+
+            // 水培机：面板下面写这一页的生长条件（每周期耗水 / 养分 / 矿物 / 污染物影响）
+            if (string.Equals(machineId, "hydroponic", StringComparison.Ordinal))
+            {
+                string growNote = Loc(recipe.NoteKey, recipe.NoteFallback);
+                if (!string.IsNullOrEmpty(growNote))
+                {
+                    builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
+                    builder.AddLabel(growNote, "mach_note");
+                    if (builder.Last != null && builder.Last.text != null)
+                    {
+                        builder.Last.text.fontSize = 13f;
+                        builder.Last.text.alignment = TextAlignmentOptions.Left;
+                    }
                     builder.End();
                 }
             }

@@ -252,6 +252,52 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
+        /// 造水培机的原版窗口外壳（不含物品）。照 MachineHydroponic.CreateMachineInventoryWindow：
+        /// 种子（单格）+ 水（单槽，原版带 water_container4 xl 底图）+ 产出（6×4 网格）。
+        /// 模块 / 电池 / 纸条不参与配方展示。
+        /// </summary>
+        internal bool BuildHydroponicShell()
+        {
+            try
+            {
+                _inputGrid = new GameGridInventory(1, 1);
+                _containerSlot = new GameSlotInventory();
+                _outputGrid = new GameGridInventory(6, 4);
+
+                _inputGrid.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _containerSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _outputGrid.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+
+                // 和原版 SetupWaterSlot 一致：水槽垫一张大号液体容器底图
+                try { _containerSlot.SetBackgroundFadeSprite("Items/water_container4", "xl", 0.5f, 0.5f); }
+                catch { }
+
+                var panels = new[]
+                {
+                    MachineHelper.Panel(MechLabel("mech_hydroponic_label_seed", "种子"), _inputGrid, "seed", true),
+                    MachineHelper.Panel(MechLabel("mech_hydroponic_label_water", "水"), _containerSlot, "water", true),
+                    MachineHelper.Panel(MechLabel("mech_hydroponic_label_output", "产出"), _outputGrid, "output", true)
+                };
+
+                var row = new MachineryPanelRow(panels);
+                row.SetColumns(3);
+
+                _window = new PixelWindow(false, null, WindowStyle.Machinery);
+                _window.Attach(row);
+                _window.Validate();
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] hydroponic shell size="
+                                     + _window.widthPixels + "x" + _window.heightPixels);
+                return _window != null;
+            }
+            catch (Exception e)
+            {
+                Warn("build hydroponic shell: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// 造蒸发器的原版窗口外壳（不含物品）。照 MachineEvaporator.CreateMachineInventoryWindow：
         /// 容器（单槽，原版带 water_container4 xl 底图）+ 馏出（同一种水槽）。
         /// 电池 / 模块 / 纸条不参与展示。
