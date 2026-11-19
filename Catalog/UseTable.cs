@@ -227,29 +227,44 @@ namespace ItemCatalog.Catalog
 
                 if (!soluble && !filled) continue;
 
-                // 产物 = 代表该液体主成分的液体条目。
-                string product = string.IsNullOrEmpty(entry.LiquidTag)
-                    ? null
-                    : LiquidCatalog.EntryPrefix + entry.LiquidTag;
-                if (product == null) continue;
-
-                if (HasProduceSource(product, entry.Id)) continue;
-
-                var info = new UseInfo
+                // 产物 = 容器里实际有的每种液体（主成分之外的杂质 / 掺入的污染物也算，
+                // 与灌水来源的登记规则一致）。一项都没有时退回主成分标签。
+                var products = new List<string>();
+                var parts = LiquidManager.Parts(item);
+                foreach (var pair in parts)
                 {
-                    Sources = new[] { entry.Id },
-                    SourceTags = new string[0],
-                    Kind = soluble ? "dissolve" : "contain",
-                    Produces = string.IsNullOrEmpty(product) ? new string[0] : new[] { product },
-                    Note = null
-                };
+                    if (string.IsNullOrEmpty(pair.Key)) continue;
 
-                _all.Add(info);
+                    string pid = LiquidCatalog.EntryPrefix + pair.Key;
+                    if (!products.Contains(pid)) products.Add(pid);
+                }
 
-                // 只进液体条目的「来源」索引：物品侧的正反查保持 id 精确匹配
-                // （配方 / uses.csv / 货单），不掺成分推导出来的关系。
-                Append(_producing, product, info);
-                AppendAlias(_producing, product, info);
+                if (products.Count == 0 && !string.IsNullOrEmpty(entry.LiquidTag))
+                    products.Add(LiquidCatalog.EntryPrefix + entry.LiquidTag);
+
+                if (products.Count == 0) continue;
+
+                for (int p = 0; p < products.Count; p++)
+                {
+                    string product = products[p];
+                    if (HasProduceSource(product, entry.Id)) continue;
+
+                    var info = new UseInfo
+                    {
+                        Sources = new[] { entry.Id },
+                        SourceTags = new string[0],
+                        Kind = soluble ? "dissolve" : "contain",
+                        Produces = new[] { product },
+                        Note = null
+                    };
+
+                    _all.Add(info);
+
+                    // 只进液体条目的「来源」索引：物品侧的正反查保持 id 精确匹配
+                    // （配方 / uses.csv / 货单），不掺成分推导出来的关系。
+                    Append(_producing, product, info);
+                    AppendAlias(_producing, product, info);
+                }
             }
         }
 

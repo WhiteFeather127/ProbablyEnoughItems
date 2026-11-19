@@ -310,12 +310,18 @@ namespace ItemCatalog.Catalog
 
         // ------------------------------------------------------- 容器成分
 
-        /// <summary>一行成分：总体积、液体 id / 本地化名、含量。Summary = 只写名字。</summary>
+        /// <summary>
+        /// 一行成分：总体积、液体 id / 本地化名、含量。Summary = 只写名字。
+        /// Ranged = 量是区间（预构建化学瓶掺污染物的随机量），显示 Min~Max。
+        /// </summary>
         internal struct Component
         {
             internal string Id;
             internal string Name;
             internal int Amount;
+            internal int Min;
+            internal int Max;
+            internal bool Ranged;
             internal int Total;
             internal bool Summary;
         }
@@ -347,15 +353,29 @@ namespace ItemCatalog.Catalog
             var parts = new Dictionary<string, int>(StringComparer.Ordinal);
             if (item == null) return parts;
 
-            // 化学用品箱拆出来的预构建瓶：内容物是工厂外灌的，实例上没有标签
+            // 化学用品箱拆出来的预构建瓶：内容物是工厂外灌的，实例上没有标签。
+            // 主液体按表登记；污染物按 SetImpurity 的最大可能量登记（只用于匹配，不展示）。
             var prebuilt = PrebuiltPart(item);
             if (prebuilt != null)
             {
+                int total = 0;
                 for (int i = 0; i < prebuilt.Length; i++)
                 {
                     var c = prebuilt[i];
                     if (c == null || string.IsNullOrEmpty(c.Liquid) || c.Amount <= 0) continue;
                     parts[c.Liquid] = c.Amount;
+                    total += c.Amount;
+                }
+
+                if (total > 0 && parts.Count > 0)
+                {
+                    int removedMax = ImpurityRemovedMax(total);
+                    var impurities = ImpurityTypes();
+                    for (int i = 0; i < impurities.Length; i++)
+                    {
+                        if (!string.IsNullOrEmpty(impurities[i]) && !parts.ContainsKey(impurities[i]))
+                            parts[impurities[i]] = removedMax;
+                    }
                 }
 
                 return parts;
@@ -393,6 +413,10 @@ namespace ItemCatalog.Catalog
         internal static List<Component> Components(GameItem container,
                                                    bool mainOnly = false, string mainName = null)
         {
+            // 预构建化学瓶：掺污染物是随机的，成分要按「可能量」区间显示
+            var prebuilt = PrebuiltPart(container);
+            if (prebuilt != null) return PrebuiltComponents(prebuilt, mainOnly, mainName);
+
             var result = new List<Component>();
             var parts = Parts(container);
             if (parts.Count == 0) return result;
@@ -442,6 +466,130 @@ namespace ItemCatalog.Catalog
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// 预构建化学瓶的成分（含 <c>SetImpurity</c> 掺入污染物的**可能量**）。
+        /// IL：v = 200~800，抽走液体总量的 v/10000（2%~8%，按比例从各成分里扣），
+        /// 抽走的部分随机分给 impurityTypes 那几种污染物（每种 0 ~ 全部）。
+        /// </summary>
+        private static List<Component> PrebuiltComponents(BottleContent[] content,
+                                                          bool mainOnly, string mainName)
+        {
+            var result = new List<Component>();
+            if (content == null || content.Length == 0) return result;
+
+            int total = 0;
+            string majorId = null;
+            int major = 0;
+            for (int i = 0; i < content.Length; i++)
+            {
+                var c = content[i];
+                if (c == null || string.IsNullOrEmpty(c.Liquid) || c.Amount <= 0) continue;
+
+                total += c.Amount;
+                if (c.Amount > major) { major = c.Amount; majorId = c.Liquid; }
+            }
+            if (total <= 0) return result;
+
+            if (mainOnly)
+            {
+                result.Add(new Component
+                {
+                    Id = majorId,
+                    Name = string.IsNullOrEmpty(mainName) ? NameOf(majorId) : mainName,
+                    Amount = total,
+                    Total = total,
+                    Summary = true
+                });
+                return result;
+            }
+
+            int removedMin = ImpurityRemovedMin(total);
+            int removedMax = ImpurityRemovedMax(total);
+
+            for (int i = 0; i < content.Length; i++)
+            {
+                var c = content[i];
+                if (c == null || string.IsNullOrEmpty(c.Liquid) || c.Amount <= 0) continue;
+
+                // 抽走是各成分按比例分摊的，所以每种液体的剩余量都落在这个区间
+                int lo = c.Amount - removedMax;
+                int hi = c.Amount - removedMin;
+                if (lo < 0) lo = 0;
+                if (hi < lo) hi = lo;
+
+                result.Add(new Component
+                {
+                    Id = c.Liquid,
+                    Name = NameOf(c.Liquid),
+                    Amount = c.Amount,
+                    Min = lo,
+                    Max = hi,
+                    Ranged = true,
+                    Total = total
+                });
+            }
+
+            var impurities = ImpurityTypes();
+            for (int i = 0; i < impurities.Length; i++)
+            {
+                string id = impurities[i];
+                if (string.IsNullOrEmpty(id)) continue;
+
+                result.Add(new Component
+                {
+                    Id = id,
+                    Name = NameOf(id),
+                    Amount = 0,
+                    Min = 0,
+                    Max = removedMax,
+                    Ranged = true,
+                    Total = total
+                });
+            }
+
+            return result;
+        }
+
+        /// <summary>SetImpurity 抽走量的下界（2%）。</summary>
+        private static int ImpurityRemovedMin(int total)
+        {
+            return total * 200 / 10000;
+        }
+
+        /// <summary>SetImpurity 抽走量的上界（8%）。</summary>
+        private static int ImpurityRemovedMax(int total)
+        {
+            return total * 800 / 10000;
+        }
+
+        private static string[] _impurityTypes;
+
+        /// <summary>
+        /// <c>PreBuildChemHelper.impurityTypes</c>（化学瓶掺的污染物 id）。
+        /// 反射读不到时用 IL 里抄的四个做兜底。
+        /// </summary>
+        private static string[] ImpurityTypes()
+        {
+            if (_impurityTypes != null) return _impurityTypes;
+
+            try
+            {
+                var field = typeof(PreBuildChemHelper).GetField("impurityTypes",
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Static |
+                    System.Reflection.BindingFlags.Public);
+
+                var value = field == null ? null : field.GetValue(null) as string[];
+                if (value != null && value.Length > 0) return _impurityTypes = value;
+            }
+            catch { }
+
+            return _impurityTypes = new[]
+            {
+                "chemical_contaminant", "physical_contaminant", "microbe", "heavy_metal"
+            };
         }
 
         /// <summary>液体条目（liquid:*）的成分列表。</summary>

@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 
@@ -3491,12 +3491,21 @@ namespace ItemCatalog.UI
                 // Summary 行只写名字（化学产品的详细成分不适合逐种列出）
                 if (!component.Summary)
                 {
-                    double pct = component.Total > 0
-                        ? component.Amount * 100.0 / component.Total : 0.0;
-                    builder.AddLabel(
-                        ": " + WaterScannerUIManager.FormatAmount(component.Amount)
-                        + " (" + pct.ToString("0.##") + "%)",
-                        idPrefix + "comp_value" + i);
+                    int lo = component.Ranged ? component.Min : component.Amount;
+                    int hi = component.Ranged ? component.Max : component.Amount;
+
+                    double loPct = component.Total > 0 ? lo * 100.0 / component.Total : 0.0;
+                    double hiPct = component.Total > 0 ? hi * 100.0 / component.Total : 0.0;
+
+                    string amount = lo == hi
+                        ? WaterScannerUIManager.FormatAmount(lo)
+                        : WaterScannerUIManager.FormatAmount(lo) + "~" + WaterScannerUIManager.FormatAmount(hi);
+
+                    string percent = lo == hi
+                        ? loPct.ToString("0.##")
+                        : loPct.ToString("0.##") + "~" + hiPct.ToString("0.##");
+
+                    builder.AddLabel(": " + amount + " (" + percent + "%)", idPrefix + "comp_value" + i);
                     SetCompositionFont(builder.Last);
                 }
 
