@@ -2665,12 +2665,12 @@ namespace ItemCatalog.UI
             string liquidId = _entry.Id.Substring(LiquidCatalog.EntryPrefix.Length);
 
             // 客人货单格：容器灌的是这个客人的水种（与 BuildClientVariants 同一条推算）——
-            // 查水时整格变绿。货单格的实例是空瓶（水只是显示用），所以不能只靠 Parts。
+            // 查水或水里混的杂质（重金属 / 微生物…）时整格变绿。
+            // 货单格的实例是空瓶（水只是显示用），所以不能只靠 Parts。
             if (!emptyOnly && !string.IsNullOrEmpty(SourceSeed) && LiquidManager.IsContainer(item))
             {
                 string water = LiquidManager.WaterFor(SourceWater, id);
-                if (!LiquidManager.IsEmptyWater(water) &&
-                    string.Equals(LiquidManager.WaterId, liquidId, StringComparison.Ordinal)) return true;
+                if (LiquidManager.ContainsLiquid(water, liquidId)) return true;
             }
 
             // 显示层判据：容器格被换成灌装液体时的那一种（来源页按客人水种推断）

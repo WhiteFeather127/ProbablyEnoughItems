@@ -238,8 +238,11 @@ namespace ItemCatalog.Catalog
 
                 // 卖水的来源也挂到液体条目名下：`water` 列说明他把水灌进这些容器，
                 // 液体页的「来源」就能反查到这些客人 / 地点（水质档位由 water 列给出）。
-                if (!LiquidManager.IsEmptyWater(def.Water))
-                    Add(LiquidCatalog.EntryPrefix + LiquidManager.WaterId, source);
+                // 水里混的杂质（重金属 / 微生物…）同样登记——它们也是容器里真实装着的东西，
+                // 和成分行 / 提示框列出来的一致。
+                var waterLiquids = LiquidManager.WaterLiquids(def.Water);
+                for (int w = 0; w < waterLiquids.Count; w++)
+                    Add(LiquidCatalog.EntryPrefix + waterLiquids[w], source);
 
                 // 收购清单**不进** _byItem：那是「谁卖给我」的索引，
                 // 收购是「谁从我这儿买」，属于用途侧，走 WantedBy 单独查。

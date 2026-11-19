@@ -504,6 +504,58 @@ namespace ItemCatalog.Catalog
         }
 
         /// <summary>
+        /// `water` 列里的档位部分（`base@large_bottled_water` 这种带容器限定的写法取 `base`）。
+        /// </summary>
+        internal static string WaterGrade(string water)
+        {
+            if (string.IsNullOrEmpty(water)) return water;
+
+            int at = water.IndexOf('@');
+            return at < 0 ? water.Trim() : water.Substring(0, at).Trim();
+        }
+
+        /// <summary>
+        /// 这个水种灌进容器后里面会有的液体：水本身 + 该档位分布表里的杂质
+        /// （与成分行 / 提示框里列出来的东西一致）。
+        /// </summary>
+        internal static List<string> WaterLiquids(string water)
+        {
+            var ids = new List<string>();
+
+            string grade = WaterGrade(water);
+            if (IsEmptyWater(grade)) return ids;
+
+            ids.Add(WaterId);
+
+            var dist = Distribution(grade);
+            if (dist == null) return ids;
+
+            foreach (var pair in dist)
+            {
+                if (pair.Value <= 0f) continue;
+
+                string id = PartToLiquidId(pair.Key);
+                if (!string.IsNullOrEmpty(id) && !ids.Contains(id)) ids.Add(id);
+            }
+
+            return ids;
+        }
+
+        /// <summary>这个水种灌进去的容器里有没有某种液体（水或杂质），绿底判定用。</summary>
+        internal static bool ContainsLiquid(string water, string liquidId)
+        {
+            if (string.IsNullOrEmpty(liquidId)) return false;
+
+            var ids = WaterLiquids(water);
+            for (int i = 0; i < ids.Count; i++)
+            {
+                if (string.Equals(ids[i], liquidId, StringComparison.Ordinal)) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// 卖水的容器成分（区间文本，供来源页与提示框）：水占比按档位表、
         /// 杂质按该水种的分布表分摊剩余容量。**是区间不是实例值**——
         /// 同一件容器在不同来源灌的水不同，不能当成某一瓶的真实含量。
