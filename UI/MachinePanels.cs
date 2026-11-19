@@ -1078,8 +1078,8 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 一个种子一页。收成规则没有运行时接口（写在 `PlantList.Harvest*` 的回调 IL 里），
-        /// 这里按种子 id 静态收录；模块会换产物 / 加产量，所以和熔炉一样做成多个变体。
+        /// 一个种子一页，只写**默认**配方（不装模块）。
+        /// 收成规则没有运行时接口（写在 `PlantList.Harvest*` 的回调 IL 里），按种子 id 静态收录；
         /// 产量按健康度 `SplitByHealth` 切成小 / 中 / 大三档，图鉴只写基础数量。
         /// 未知种子（模组作物）退回通用规则：收成标签里的产物 × 数量。
         /// </summary>
@@ -1089,35 +1089,23 @@ namespace ItemCatalog.UI
 
             switch (seedId)
             {
-                // 营养果：固定返 3 颗种子；模块每个 +1 个果实
+                // 营养果：固定返 3 颗种子
                 case "nutrifruit_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("nutrifruit", 5, "nutrifruit_seed", 3),
-                           "收 5 个 + 返 3 颗种子"),
-                        HV("farm_module_nutrifruit",
-                           HydroOut("nutrifruit", 6, "nutrifruit_seed", 3),
-                           "每装 1 个营养果模块 +1 个果实"));
+                           "收 5 个 + 返 3 颗种子"));
 
-                // 棉花：返种 1~2 颗；装织机模块后直接出布料
+                // 棉花：返种 1~2 颗
                 case "kotton_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("kotton_fiber", 9, "kotton_seed", 1),
-                           "返种 1~2 颗（健康度越高越多）"),
-                        HV("farm_module_kotton_loom",
-                           HydroOut("kotton_fabric", 9, "kotton_seed", 1),
-                           "装织机模块直接出布料，不再出籽棉"));
+                           "返种 1~2 颗（健康度越高越多）"));
 
-                // 梦帽菇：返 1 颗种子；梦帽模块 +2 个/个，梦魇模块把整株换掉
+                // 梦帽菇：返 1 颗种子
                 case "dream_cap_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("dream_cap", 8, "dream_cap_seed", 1),
-                           "收 8 个 + 返 1 颗种子"),
-                        HV("farm_module_dream_cap",
-                           HydroOut("dream_cap", 10, "dream_cap_seed", 1),
-                           "每装 1 个梦帽模块 +2 个"),
-                        HV("farm_module_nightmare_cap",
-                           HydroOut("nightmare_cap", 8, "dream_cap_seed", 1),
-                           "改装梦魇模块后整株改出梦魇菇"));
+                           "收 8 个 + 返 1 颗种子"));
 
                 // 咖啡豆：不返种，产量按健康度打折
                 case "coffee_bean":
@@ -1125,23 +1113,17 @@ namespace ItemCatalog.UI
                         HV(null, HydroOut("coffee_bean", 8, null, 0),
                            "收 8 颗；健康度越低越少（≤15 → 50%）"));
 
-                // 杂草：返 1 颗种子（50% 多 1 颗）；生产模块 +4 个但不再返种
+                // 杂草：返 1 颗种子（50% 多 1 颗）
                 case "fillerweed_seed":
                     return H(seedId, env,
                         HV(null, HydroOut("fillerweed", 4, "fillerweed_seed", 1),
-                           "另 50% 多返 1 颗种子"),
-                        HV("farm_module_fillerweed_production",
-                           HydroOut("fillerweed", 8, null, 0),
-                           "装生产模块 +4 个，但不再返种"));
+                           "另 50% 多返 1 颗种子"));
 
-                // 水芦：本体没有收成，只返种；滤芯靠过滤模块，每个 +1
+                // 水芦：本体没有收成，只返种（滤芯要靠过滤模块）
                 case "hydroreed_seed":
                     return H(seedId, env,
                         HV(null, HydroOut(null, 0, "hydroreed_seed", 1),
-                           "不装模块只返种（另 50% 多 1 颗）"),
-                        HV("farm_module_hydroreed_filter",
-                           HydroOut("hydroreed_filter", 1, "hydroreed_seed", 1),
-                           "每个过滤模块 +1 个滤芯"));
+                           "只返种（另 50% 多 1 颗）；滤芯要靠过滤模块"));
 
                 // 花莓：收成是酿酒浆果，品质随机
                 case "bloomberry_seed":
