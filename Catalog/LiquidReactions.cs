@@ -108,6 +108,8 @@ namespace ItemCatalog.Catalog
         /// <summary>
         /// 和某种液体相关的反应。
         /// asUse=false（来源）：它是产物的反应；asUse=true（用途）：它是反应物或溶剂/催化剂的反应。
+        /// 溶剂前后不变（没被消耗、只是留在产物里）时只按用途算，详见
+        /// <see cref="LiquidManager.IsUnchangedSolvent"/>。
         /// </summary>
         internal static List<LiquidReaction> For(string liquidId, bool asUse)
         {
@@ -123,7 +125,8 @@ namespace ItemCatalog.Catalog
                     ? reaction.HasReactant(liquidId) ||
                       string.Equals(reaction.Solvent, liquidId, StringComparison.Ordinal) ||
                       LiquidReaction.Contains(reaction.ConditionLiquidIds, liquidId)
-                    : reaction.HasProduct(liquidId);
+                    : reaction.HasProduct(liquidId) &&
+                      !LiquidManager.IsUnchangedSolvent(reaction, liquidId);
 
                 if (hit) result.Add(reaction);
             }

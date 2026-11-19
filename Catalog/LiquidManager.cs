@@ -600,5 +600,20 @@ namespace ItemCatalog.Catalog
 
             return sb.ToString();
         }
+
+        // ------------------------------------------------------- 成分反应
+
+        /// <summary>
+        /// 反应里的溶剂前后不变：溶剂既没被消耗、也没新生成，只是原样留在产物容器里
+        /// （萃取类的酒精 / 水就是这样记进 <see cref="LiquidReaction.Products"/> 的）。
+        /// 这种液体只按**用途**参与反查——它没有被反应制造出来，不能算作它的来源。
+        /// </summary>
+        internal static bool IsUnchangedSolvent(LiquidReaction reaction, string liquidId)
+        {
+            if (reaction == null || string.IsNullOrEmpty(liquidId)) return false;
+
+            return string.Equals(reaction.Solvent, liquidId, StringComparison.Ordinal)
+                   && LiquidReaction.Contains(reaction.Products, liquidId);
+        }
     }
 }
