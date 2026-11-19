@@ -704,8 +704,15 @@ namespace ItemCatalog.UI
         private static int _waterContainerGeneration = -1;
 
         /// <summary>
-        /// 能装水的容器 id（液体容器）。不能按 WATER 标签找：普通水瓶是**灌水后**才打标签，
-        /// 目录里的空样本没有，最后只剩静态带 WATER 类型的瓶装泉水。
+        /// 客人会按「水」收的容器 id。不能按 WATER 标签找：普通水瓶是**灌水后**
+        /// 才被 <c>WaterHelper.UpdateContainerGoodType</c> 标成 WATER，目录里的空样本没有。
+        /// 过滤规则照游戏：
+        ///   · 必须是液体容器；
+        ///   · 排除 <c>WINE_CONTAINER_TAG</c> —— 酒瓶走酒自己的那套，
+        ///     <c>WaterFeatureHelper</c> 对它们直接 return，水质从不 exposed，
+        ///     客人不会把它当水收；
+        ///   · 认水靠 <c>LIQUID_CONTAINER_BASE_PRICE_TAG</c>（UpdateContainerGoodType
+        ///     只给带这个标签的容器切换 WATER 类型）。
         /// </summary>
         private static List<string> WaterContainerIds()
         {
@@ -715,6 +722,8 @@ namespace ItemCatalog.UI
             _waterContainerGeneration = CatalogDataBuilder.Generation;
 
             var list = new List<string>();
+            var fallback = new List<string>();
+
             var all = CatalogDataBuilder.All;
             for (int i = 0; i < all.Count; i++)
             {
@@ -722,10 +731,22 @@ namespace ItemCatalog.UI
                 if (entry == null || string.IsNullOrEmpty(entry.Id) || entry.Item == null) continue;
                 if (!LiquidManager.IsContainer(entry.Item)) continue;
 
+                fallback.Add(entry.Id);
+
+                bool wine;
+                try { wine = entry.Item.IsTag("WINE_CONTAINER_TAG"); }
+                catch { wine = false; }
+                if (wine) continue;
+
+                bool basePriced;
+                try { basePriced = entry.Item.IsTag("LIQUID_CONTAINER_BASE_PRICE_TAG"); }
+                catch { basePriced = false; }
+                if (!basePriced) continue;
+
                 list.Add(entry.Id);
             }
 
-            return _waterContainerIds = list;
+            return _waterContainerIds = list.Count > 0 ? list : fallback;
         }
 
         /// <summary>把一条标签格重画到它自己的容器里（清空 → 新建 builder → 画格子）。</summary>
