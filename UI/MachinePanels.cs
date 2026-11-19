@@ -1070,8 +1070,8 @@ namespace ItemCatalog.UI
                     catch { seed = false; }
                     if (!seed) continue;
 
-                    var group = BuildHydroponicGroup(entry.Id, item);
-                    if (group != null) groups.Add(group);
+                    var built = BuildHydroponicGroups(entry.Id, item);
+                    if (built != null) groups.AddRange(built);
                 }
             }
 
@@ -1107,7 +1107,7 @@ namespace ItemCatalog.UI
         /// 收成规则没有运行时接口（写在 `PlantList.Harvest*` 的回调 IL 里），按种子 id 静态收录；
         /// 改变产物的模块各出一条变体。未知种子（模组作物）退回通用规则。
         /// </summary>
-        private static RecipeGroup BuildHydroponicGroup(string seedId, GameItem seed)
+        private static RecipeGroup[] BuildHydroponicGroups(string seedId, GameItem seed)
         {
             string env = HydroEnvNote(seed);
 
@@ -1174,34 +1174,40 @@ namespace ItemCatalog.UI
                            "满健康：8 颗（品质随机）", null, 100));
             }
 
-            return GenericHydroponicGroup(seedId, seed, env);
+            return GenericHydroponicGroups(seedId, seed, env);
         }
 
-        /// <summary>一组水培配方变体；水槽统一放一只装了水的容器。</summary>
-        private static RecipeGroup H(string seedId, string env, params HydroVariant[] variants)
+        /// <summary>
+        /// 每个变体**各占一页**（不在同一页轮播）：无模块一页、每个改产物的模块一页。
+        /// 水槽统一放一只装了水的容器。
+        /// </summary>
+        private static RecipeGroup[] H(string seedId, string env, params HydroVariant[] variants)
         {
-            var recipes = new Recipe[variants.Length];
+            var groups = new List<RecipeGroup>(variants.Length);
+
             for (int i = 0; i < variants.Length; i++)
             {
                 var v = variants[i];
                 string note = string.IsNullOrEmpty(env) ? v.Note : v.Note + " · " + env;
                 string uncertainNote = v.Uncertain != null && v.Uncertain.Length > 0 ? "50%" : null;
 
-                recipes[i] = new Recipe(new[] { seedId },
+                var recipe = new Recipe(new[] { seedId },
                                         string.IsNullOrEmpty(v.Module) ? null : new[] { v.Module },
                                         v.Outputs,
                                         "mach_hydroponic_note", note,
                                         0, LiquidManager.ContainerId, LiquidManager.WaterId, 1000,
                                         v.Uncertain, uncertainNote, v.WaterUse);
+
+                groups.Add(new RecipeGroup
+                {
+                    TitleItemId = seedId,
+                    TitleKey = "mach_hydroponic_recipe",
+                    TitleFallback = "可种植作物",
+                    Variants = new[] { recipe }
+                });
             }
 
-            return new RecipeGroup
-            {
-                TitleItemId = seedId,
-                TitleKey = "mach_hydroponic_recipe",
-                TitleFallback = "可种植作物",
-                Variants = recipes
-            };
+            return groups.ToArray();
         }
 
         /// <summary>产物列表：主产物 × count + 返种 × seeds。</summary>
@@ -1232,7 +1238,7 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>未知种子（模组作物）：按标签里的收成产物 × 数量兜底。</summary>
-        private static RecipeGroup GenericHydroponicGroup(string seedId, GameItem seed, string env)
+        private static RecipeGroup[] GenericHydroponicGroups(string seedId, GameItem seed, string env)
         {
             string harvest = null;
             int quantity = 1;

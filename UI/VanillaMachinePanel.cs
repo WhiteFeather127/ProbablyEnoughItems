@@ -894,6 +894,9 @@ namespace ItemCatalog.UI
         private readonly Dictionary<string, string> _tooltipNotes =
             new Dictionary<string, string>(StringComparer.Ordinal);
 
+        /// <summary>产物格里放入的样本元素（按放置顺序，概率产物按这个下标定位）。</summary>
+        private readonly List<GameItemElement> _outputElements = new List<GameItemElement>();
+
         /// <summary>
         /// 标出概率产物：产物格按放置顺序取下标，格子上黄底，提示框末尾追加概率。
         /// </summary>
@@ -901,20 +904,12 @@ namespace ItemCatalog.UI
         {
             if (indexes == null || indexes.Length == 0 || string.IsNullOrEmpty(note)) return;
 
-            var outputs = new List<GameItemElement>();
-            for (int i = 0; i < _samples.Count; i++)
-            {
-                var el = _samples[i] as GameItemElement;
-                if (el == null || el.parentInventory != _outputGrid) continue;
-                outputs.Add(el);
-            }
-
             for (int i = 0; i < indexes.Length; i++)
             {
                 int index = indexes[i];
-                if (index < 0 || index >= outputs.Count) continue;
+                if (index < 0 || index >= _outputElements.Count) continue;
 
-                var el = outputs[index];
+                var el = _outputElements[index];
                 if (string.IsNullOrEmpty(el.identifier)) continue;
 
                 _tooltipNotes[el.identifier] = note;
@@ -966,6 +961,7 @@ namespace ItemCatalog.UI
                 try { it.Destroy(); } catch { }
             }
             _samples.Clear();
+            _outputElements.Clear();
             _tooltipNotes.Clear();
         }
 
@@ -1295,6 +1291,10 @@ namespace ItemCatalog.UI
                 if (moved > 0)
                 {
                     _samples.Add(item);
+
+                    var element = item as GameItemElement;
+                    if (element != null && inv == _outputGrid) _outputElements.Add(element);
+
                     DisableVanillaDrag(item);
                 }
                 else
