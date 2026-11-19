@@ -385,6 +385,21 @@ namespace ItemCatalog.Catalog
             return entry == null ? new List<Component>() : Components(entry.Item);
         }
 
+        /// <summary>
+        /// 从机器面板读容器成分：product=false 读投入容器，true 读产物容器。
+        /// 页面渲染统一走这里，容器样本与成分文字不再各写一套。
+        /// </summary>
+        internal static List<Component> Components(UI.VanillaMachinePanel panel,
+                                                   bool product = false,
+                                                   bool mainOnly = false,
+                                                   string mainName = null)
+        {
+            if (panel == null) return new List<Component>();
+
+            return Components(product ? panel.ProductSample : panel.ContainerSample,
+                              mainOnly, mainName);
+        }
+
         /// <summary>成分检测器风格的总体积行。</summary>
         internal static string TotalText(int total)
         {

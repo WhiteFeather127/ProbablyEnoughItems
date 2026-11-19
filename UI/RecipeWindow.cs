@@ -3842,7 +3842,7 @@ namespace ItemCatalog.UI
             {
                 // 成分随品质变化的化学产品（药）只写总量 + 主要成分名
                 bool summaryOnly = IsVariableCompositionDrug(recipe);
-                var components = LiquidManager.Components(_vanillaMachine.ContainerSample,
+                var components = LiquidManager.Components(_vanillaMachine, false,
                     summaryOnly, summaryOnly ? MainIngredientName(recipe) : null);
                 if (components.Count > 0)
                 {
@@ -4068,7 +4068,7 @@ namespace ItemCatalog.UI
             builder.BeginRow(12f, UnityEngine.TextAnchor.UpperLeft);
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.UpperLeft);
-            RenderLiquidComposition(builder, LiquidManager.Components(_vanillaMachine.ContainerSample),
+            RenderLiquidComposition(builder, LiquidManager.Components(_vanillaMachine),
                                     "react_in_");
             builder.End();
 
@@ -4097,7 +4097,7 @@ namespace ItemCatalog.UI
             }
             else
             {
-                RenderLiquidComposition(builder, LiquidManager.Components(_vanillaMachine.ProductSample),
+                RenderLiquidComposition(builder, LiquidManager.Components(_vanillaMachine, true),
                                         "react_out_");
             }
             builder.End();

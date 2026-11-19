@@ -158,26 +158,27 @@ namespace ItemCatalog.Catalog
                   null, null),
 
                 // 咖啡菇 + 酒精 → 咖啡因（每 tick 处理 1.5ml，溶剂最佳量 = 5 × 1.5ml）
+                // 酒精只作溶剂、不被消耗（IL 里没有 ModifyTag alcohol），所以留在产物容器里
                 R("coffee_alcohol", new[] { "coffee_mush" }, new[] { 10f },
-                  new[] { "caffeine", "plant_matter" }, new[] { 7.5f, 2.5f },
+                  new[] { "caffeine", "plant_matter", "alcohol" }, new[] { 7.5f, 2.5f, 7.5f },
                   "alcohol", false, 7.5f, 50f, 0f,
                   "react_cond_solvent_ratio", "{0}:{1} ≥ 5:1"),
 
                 // 咖啡菇 + 水 → 咖啡因（每 tick 处理 0.5ml，水最佳量 = 5 × 0.5ml）
                 R("coffee_water", new[] { "coffee_mush" }, new[] { 10f },
-                  new[] { "caffeine", "plant_matter" }, new[] { 1.25f, 8.75f },
+                  new[] { "caffeine", "plant_matter", "water" }, new[] { 1.25f, 8.75f, 2.5f },
                   "water", false, 2.5f, 80f, 0f,
                   "react_cond_solvent_ratio", "水足量（≥5:1）"),
 
                 // 梦帽菇 + 酒精 → 梦帽提取物（比例按整份菇算，最佳量 = 5 × 10ml）
                 R("dream_alcohol", new[] { "dream_cap_mush" }, new[] { 10f },
-                  new[] { "dream_cap_extract", "plant_matter" }, new[] { 5f, 5f },
+                  new[] { "dream_cap_extract", "plant_matter", "alcohol" }, new[] { 5f, 5f, 50f },
                   "alcohol", false, 50f, 40f, 0f,
                   "react_cond_solvent_ratio", "酒精足量（≥5:1）"),
 
                 // 梦魇菇 + 酒精 → 梦魇提取物
                 R("nightmare_alcohol", new[] { "nightmare_cap_mush" }, new[] { 10f },
-                  new[] { "nightmare_extract", "plant_matter" }, new[] { 5f, 5f },
+                  new[] { "nightmare_extract", "plant_matter", "alcohol" }, new[] { 5f, 5f, 50f },
                   "alcohol", false, 50f, 40f, 0f,
                   "react_cond_solvent_ratio", "酒精足量（≥5:1）"),
 
@@ -231,10 +232,16 @@ namespace ItemCatalog.Catalog
                    null, false, 0f, 70f,
                    "react_cond_microbe_heat", "≥100 °C 完全反应"),
 
-                // 氯消毒：杀微生物 + 去除化学污染物
+                // 氯消毒：氯 + 水（水必须存在、不被消耗）→ 杀微生物 + 去除化学污染物
                 RN("chlorine", new[] { "chlorine", "microbe" }, new[] { 10f, 10f },
-                   null, false, 0f, 0f,
+                   "water", true, 0f, 0f,
                    null, null),
+
+                // 脂粘合剂沉降：油脂 + 脂粘合剂 → 残渣（8 油 : 1 脂粘合剂，常温）
+                R("lipobond_fat", new[] { "fat", "lipobond_agent" }, new[] { 10f, 1.25f },
+                  new[] { "debris" }, new[] { 11.25f },
+                  null, false, 0f, 0f, 0f,
+                  null, null),
 
                 // 梦帽提取物受热分解
                 RN("dream_extract_heat", new[] { "dream_cap_extract" }, new[] { 10f },
