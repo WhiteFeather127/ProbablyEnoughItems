@@ -58,6 +58,13 @@ namespace ItemCatalog.UI
         private static readonly Dictionary<string, ItemEntry> _cropVariantEntries =
             new Dictionary<string, ItemEntry>(StringComparer.Ordinal);
 
+        /// <summary>
+        /// 枪械品相格（详情窗口「枪械升级」）：同一个枪 id 的多个品相各要一份实例，
+        /// 按 `id@品相` 缓存，换场景时和作物档位一起销毁。
+        /// </summary>
+        private static readonly Dictionary<string, ItemEntry> _gunConditionEntries =
+            new Dictionary<string, ItemEntry>(StringComparer.Ordinal);
+
         private static bool _dragging;
         private static ItemEntry _dragEntry;
         private static GameItem _dragItem;       // 拖拽中的实体物品（先放进 dummy 容器）
@@ -1386,7 +1393,11 @@ namespace ItemCatalog.UI
                 {
                     try
                     {
+                        // 旧 API 仍可用；DirectoryMaster.CreateItem 是「新建」而不是「复制链接状态」，
+                        // 语义不同，这里保持原样。
+#pragma warning disable CS0618
                         berry = baseItem.CloneLinked();
+#pragma warning restore CS0618
                         if (berry != null) source = "clone";
 
                         if (berry != null)
@@ -2098,6 +2109,35 @@ namespace ItemCatalog.UI
             return entry;
         }
 
+        /// <summary>
+        /// 指定品相的枪械预览条目（详情窗口「枪械升级」格子用）。
+        /// 品相由 <see cref="GunUpgrades"/> 在隔离随机流里造好实例后写进标签，
+        /// 这里只负责缓存；键带品相，同 id 的多格不会互相覆盖。
+        /// </summary>
+        internal static ItemEntry GunConditionEntry(string id, int condition)
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+
+            string key = id + "@" + condition;
+
+            ItemEntry cached;
+            if (_gunConditionEntries.TryGetValue(key, out cached) && cached != null) return cached;
+
+            var item = GunUpgrades.Create(id, condition);
+            if (item == null) return null;
+
+            var entry = new ItemEntry
+            {
+                Id = id,
+                Name = BaseEntryName(id),
+                Item = item,
+                KeyOverride = key
+            };
+
+            _gunConditionEntries[key] = entry;
+            return entry;
+        }
+
         /// <summary>取格子里真正接收射线的那个子物体（Image 通常挂在子节点上）。</summary>
         private static GameObject HitGraphic(CustomUIElement element)
         {
@@ -2129,6 +2169,14 @@ namespace ItemCatalog.UI
                 if (item != null) { try { item.Destroy(); } catch { } }
             }
             _cropVariantEntries.Clear();
+
+            // 枪械品相格同理。
+            foreach (var entry in _gunConditionEntries.Values)
+            {
+                var item = entry == null ? null : entry.Item;
+                if (item != null) { try { item.Destroy(); } catch { } }
+            }
+            _gunConditionEntries.Clear();
         }
 
         /// <summary>

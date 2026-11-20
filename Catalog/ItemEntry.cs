@@ -36,10 +36,20 @@ namespace ItemCatalog.Catalog
         /// </summary>
         public int VariantIndex = -1;
 
+        /// <summary>
+        /// 外部窗口自造条目（枪械品相格这类「同一个 id、多个实例」）用的显式键。
+        /// 为空时退回 Id / Id#变体序号；不为空时优先用它，避免同 id 的多格互相覆盖。
+        /// </summary>
+        public string KeyOverride;
+
         /// <summary>界面/缓存的唯一键：展开条目带上变体序号，避免 N 个格子互相覆盖。</summary>
         public string Key
         {
-            get { return VariantIndex < 0 ? Id : Id + "#" + VariantIndex; }
+            get
+            {
+                if (!string.IsNullOrEmpty(KeyOverride)) return KeyOverride;
+                return VariantIndex < 0 ? Id : Id + "#" + VariantIndex;
+            }
         }
 
         /// <summary>

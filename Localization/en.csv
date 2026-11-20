@@ -154,3 +154,12 @@ mach_note_trap,Bait with cheese → processed cheese
 mach_note_trap_food,Any food works as bait
 mach_hydro_chance,Chance: {0}
 mach_hydro_purify,Purification
+note_state,No new item: only changes the target's state (upgrade / repair / recharge / buff)
+cat_gun_upgrade,Firearm refurbishing
+gun_up_chance,Initial refurbish success chance: {0}%
+cat_gun_mods,Gun mod
+note_neuter,Sterilises a living animal (item is not consumed)
+note_module_unstuck,Frees a stuck module (a basic extractor spends one use)
+note_module_expand,Adds module slots to a machine (limited by its cap; consumes the kit)
+note_lockpick,Tries to pick a mechanical lock (difficulty 1; tool is not consumed)
+note_keycard,Keycard for its own lock type; destroyed after a successful unlock

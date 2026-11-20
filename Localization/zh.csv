@@ -156,3 +156,12 @@ mach_note_trap,放上奶酪作诱饵，周期结束后得到加工奶酪
 mach_note_trap_food,任何食物都能当诱饵
 mach_hydro_chance,生成概率：{0}
 mach_hydro_purify,净水
+note_state,不产出新物品：只改变目标的状态（升级 / 修复 / 充能 / 增益等）
+cat_gun_upgrade,枪械翻修
+gun_up_chance,初始翻修成功率：{0}%
+cat_gun_mods,枪械模组
+note_neuter,给活体动物绝育（不消耗物品）
+note_module_unstuck,给卡住的模块解卡（普通提取器会消耗 1 次使用次数）
+note_module_expand,给机器加装模块槽（受机器上限限制，消耗套件）
+note_lockpick,尝试撬开机械锁（难度 1，工具不消耗）
+note_keycard,对应锁型的钥匙卡：开锁成功后会销毁卡片

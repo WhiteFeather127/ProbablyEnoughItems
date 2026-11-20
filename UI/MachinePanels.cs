@@ -41,6 +41,8 @@ namespace ItemCatalog.UI
         internal const char RoleInput = 'I';
         internal const char RoleModule = 'M';
         internal const char RoleOutput = 'O';
+        /// <summary>单独的芯片槽（解序列器）：放芯片，不是普通模块。</summary>
+        internal const char RoleChip = 'H';
         internal const char RolePassive = 'P';
 
         internal sealed class Panel
@@ -91,13 +93,12 @@ namespace ItemCatalog.UI
                     P(Module, "mech_projector_label_module", "模块"),
                     P(Note, null, "纸条") } },
                 { "printer", new[] {
-                    P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
-                    P(Module, "mech_printer_label_module", "模块"),
-                    P(Slot, "mech_printer_label_input", "输入"),
-                    P(Slot, "mech_printer_label_chip", "芯片"),
-                    P(Slot, "mech_printer_label_output", "产出"),
-                    P(Note, null, "纸条") } },
+                    // MachinePrinter::CreateMachineInventoryWindow：
+                    // 电池 / 模块(7×5) / 输入(9×6) / 芯片 / 产出(9×5) / 纸条
+                    PR(Module, "mech_printer_label_module", "模块", RoleModule),
+                    PR(Grid, "mech_printer_label_input", "输入", RoleInput),
+                    PR(Slot, "mech_printer_label_chip", "芯片", RoleChip),
+                    PR(Grid, "mech_printer_label_output", "产出", RoleOutput) } },
                 { "hydroponic", new[] {
                     P(Grid, null, "容器网格"),
                     P(Battery, null, "电池"),
@@ -128,12 +129,10 @@ namespace ItemCatalog.UI
                     P(Slot, null, "空白磁盘"),
                     PR(Slot, null, "产出", RoleOutput) } },
                 { "desequencer", new[] {
-                    P(Grid, null, "容器网格"),
-                    P(Battery, null, "电池"),
-                    P(Module, "mech_desequencer_label_module", "模块"),
-                    P(Slot, "mech_desequencer_label_chip", "芯片"),
-                    P(Slot, "mech_desequencer_label_input", "输入"),
-                    P(Slot, "mech_desequencer_label_output", "产出") } },
+                    // 面板只展示解序列需要的东西：芯片 / 输入(权限卡) / 产出
+                    PR(Slot, "mech_desequencer_label_chip", "芯片", RoleChip),
+                    PR(Slot, "mech_desequencer_label_input", "输入", RoleInput),
+                    PR(Slot, "mech_desequencer_label_output", "产出", RoleOutput) } },
                 { "deal_maker", new[] {
                     P(Grid, null, "容器网格"),
                     P(Battery, null, "电池"),
@@ -259,6 +258,9 @@ namespace ItemCatalog.UI
             /// </summary>
             internal Func<int, GameItem> InputItem;
 
+            /// <summary>单独的芯片槽里的物品 id（解序列器：加密模块）；null = 没有该槽。</summary>
+            internal string Chip;
+
             /// <summary>
             /// 达成这一条配方还需要的模块品质加成（百分比）。
             /// 熔炉页顶部显示「需品质加成 +X%」，和下面的材料 / 助熔剂一起轮播。
@@ -270,7 +272,7 @@ namespace ItemCatalog.UI
                             int requiredQualityPercent = 0, string container = null,
                             string containerLiquid = null, int containerVolume = 0,
                             int[] uncertain = null, string uncertainNote = null,
-                            int waterUse = 0)
+                            int waterUse = 0, string chip = null)
             {
                 Inputs = inputs ?? empty;
                 Modules = modules ?? empty;
@@ -284,6 +286,7 @@ namespace ItemCatalog.UI
                 Uncertain = uncertain;
                 UncertainNote = uncertainNote;
                 WaterUse = waterUse;
+                Chip = chip;
             }
         }
 
@@ -1086,6 +1089,14 @@ namespace ItemCatalog.UI
             if (string.Equals(machineId, "plant_dna_manipulator", StringComparison.Ordinal))
                 return DnaRecipes();
 
+            // 解序列器：一种加密模块一页（芯片编码哪张卡，就解出哪张卡）
+            if (string.Equals(machineId, "desequencer", StringComparison.Ordinal))
+                return DesequencerRecipes();
+
+            // 3D 打印机：一种打印芯片一页，数据全部从芯片标签读取
+            if (string.Equals(machineId, "printer", StringComparison.Ordinal))
+                return PrinterRecipes();
+
             RecipeGroup[] groups;
             return Recipes.TryGetValue(machineId, out groups) ? groups : null;
         }
@@ -1199,6 +1210,167 @@ namespace ItemCatalog.UI
             }
 
             return _dnaGroups = groups.ToArray();
+        }
+
+        // ------------------------------------------------------------------ 解序列器
+        //
+        // MachineDesequencer 的规则（反编译 <Desequencer>b__5 / FinishDesequencer）：
+        //   · 输入槽只收 ACCESS_CARD 类型的卡片，芯片槽只收带 DESEQUENCER_TARGET_ID_TAG 的加密模块；
+        //   · 有电、输出槽为空时开始，进度时间由**芯片**决定（InitProgressSourceItem）；
+        //   · 完成时把芯片里编码的目标 id 造出来放进输出槽，输入卡被销毁。
+        // 六种加密模块固定编码六张钥匙卡（ModuleDirectory.CrypoModule* → <>c::<CrypoModule*>b__*）。
+
+        private sealed class DesequencerUnit
+        {
+            internal string Chip;
+            internal string Keycard;
+            internal int Seconds;
+        }
+
+        private static readonly DesequencerUnit[] DesequencerUnits =
+        {
+            new DesequencerUnit { Chip = "crypto_module_cmd", Keycard = "cmd_keycard", Seconds = 150 },
+            new DesequencerUnit { Chip = "crypto_module_sec", Keycard = "sec_keycard", Seconds = 125 },
+            new DesequencerUnit { Chip = "crypto_module_med", Keycard = "med_keycard", Seconds = 100 },
+            new DesequencerUnit { Chip = "crypto_module_eng", Keycard = "eng_keycard", Seconds = 100 },
+            new DesequencerUnit { Chip = "crypto_module_sup", Keycard = "sup_keycard", Seconds = 75 },
+            new DesequencerUnit { Chip = "crypto_module_ser", Keycard = "ser_keycard", Seconds = 75 }
+        };
+
+        private static RecipeGroup[] _desequencerGroups;
+
+        /// <summary>解序列器：一种加密模块一页，输入一张空白权限卡，产出芯片编码的那张卡。</summary>
+        private static RecipeGroup[] DesequencerRecipes()
+        {
+            if (_desequencerGroups != null) return _desequencerGroups;
+
+            var groups = new List<RecipeGroup>(DesequencerUnits.Length);
+
+            for (int i = 0; i < DesequencerUnits.Length; i++)
+            {
+                var unit = DesequencerUnits[i];
+                if (string.IsNullOrEmpty(unit.Chip) || string.IsNullOrEmpty(unit.Keycard)) continue;
+
+                var recipe = new Recipe(
+                    new[] { "blank_keycard" },
+                    null,
+                    new[] { unit.Keycard },
+                    "mach_desequencer_note", "周期 " + unit.Seconds + " 秒；需要供电，输入卡会被消耗",
+                    0, null, null, 0, null, null, 0, unit.Chip);
+
+                groups.Add(new RecipeGroup
+                {
+                    TitleItemId = unit.Chip,
+                    TitleKey = "mach_desequencer_recipe",
+                    TitleFallback = "解序列",
+                    Variants = new[] { recipe }
+                });
+            }
+
+            return _desequencerGroups = groups.ToArray();
+        }
+
+        // ------------------------------------------------------------------ 3D 打印机
+        //
+        // MachinePrinter 的规则（反编译 Printer<b__4 / FinishPrinting / MachineProgressHelper）：
+        //   · 芯片槽只收带 PRINTER_CHIP_TAG 的芯片，芯片上写明「产物 + 数量 + 附加材料 + 周期」；
+        //   · 输入网格按芯片的附加材料需求扣料（REQUIRED_ITEM_ID_i / REQUIRED_ITEM_COUNT_i）；
+        //   · 产出网格放芯片编码的产物（PROGRESS_ITEM_TARGET_ITEM_ID_TAG / _COUNT_TAG）。
+        // 所以配方完全从芯片上的标签读取，不手写清单，新芯片自动跟上。
+
+        private static RecipeGroup[] _printerGroups;
+        private static int _printerGeneration = -1;
+
+        private static RecipeGroup[] PrinterRecipes()
+        {
+            if (_printerGroups != null && _printerGeneration == CatalogDataBuilder.Generation)
+                return _printerGroups;
+
+            _printerGeneration = CatalogDataBuilder.Generation;
+
+            var groups = new List<RecipeGroup>();
+            var items = CatalogDataBuilder.Visible;
+
+            if (items != null)
+            {
+                for (int i = 0; i < items.Count; i++)
+                {
+                    var entry = items[i];
+                    var chip = entry == null ? null : entry.Item;
+                    if (chip == null || string.IsNullOrEmpty(entry.Id)) continue;
+
+                    bool isChip = false;
+                    try { isChip = chip.IsTag("PRINTER_CHIP_TAG"); }
+                    catch { }
+                    if (!isChip) continue;
+
+                    string targetId = ReadStringTag(chip, "PROGRESS_ITEM_TARGET_ITEM_ID_TAG");
+                    if (string.IsNullOrEmpty(targetId)) continue;
+
+                    int targetCount = Math.Max(1, ReadIntTag(chip, "PROGRESS_ITEM_TARGET_ITEM_COUNT_TAG"));
+                    int seconds = ReadIntTag(chip, "PROGRESS_ITEM_TARGET_TAG");
+
+                    var inputs = new List<string>();
+                    int types = ReadIntTag(chip, "REQUIRED_ITEM_TYPE_COUNT_TAG");
+                    for (int r = 0; r < types && r < 8; r++)
+                    {
+                        string reqId = ReadStringTag(chip, "REQUIRED_ITEM_ID_" + r);
+                        if (string.IsNullOrEmpty(reqId)) continue;
+
+                        int count = Math.Max(1, ReadIntTag(chip, "REQUIRED_ITEM_COUNT_" + r));
+                        for (int c = 0; c < count; c++) inputs.Add(reqId);
+                    }
+
+                    var outputs = new List<string>();
+                    for (int c = 0; c < targetCount; c++) outputs.Add(targetId);
+
+                    string note = seconds > 0
+                        ? "周期 " + seconds + " 秒；需要供电"
+                        : "需要供电";
+
+                    var recipe = new Recipe(
+                        inputs.ToArray(), null, outputs.ToArray(),
+                        "mach_printer_note", note,
+                        0, null, null, 0, null, null, 0, entry.Id);
+
+                    groups.Add(new RecipeGroup
+                    {
+                        TitleItemId = entry.Id,
+                        TitleKey = "mach_printer_recipe",
+                        TitleFallback = "3D 打印",
+                        Variants = new[] { recipe }
+                    });
+                }
+            }
+
+            return _printerGroups = groups.ToArray();
+        }
+
+        /// <summary>读 int 标签；标签不存在或读失败返回 0。</summary>
+        private static int ReadIntTag(GameItem item, string tag)
+        {
+            if (item == null || string.IsNullOrEmpty(tag)) return 0;
+
+            try
+            {
+                var state = item.GetTagReadonly(tag);
+                return state == null ? 0 : state.GetInt();
+            }
+            catch { return 0; }
+        }
+
+        /// <summary>读 string 标签；读不到返回 null。</summary>
+        private static string ReadStringTag(GameItem item, string tag)
+        {
+            if (item == null || string.IsNullOrEmpty(tag)) return null;
+
+            try
+            {
+                var state = item.GetTagReadonly(tag);
+                string value = state == null ? null : state.GetString();
+                return string.IsNullOrEmpty(value) ? null : value;
+            }
+            catch { return null; }
         }
 
         /// <summary>水培的一个配方变体：模块（可空）+ 产物 + 说明 + 概率产物下标 + 每周期耗水。</summary>

@@ -59,6 +59,16 @@ namespace ItemCatalog.UI
         /// <summary>DNA 编辑器的种子单槽（Fill 的 inputs 放这里；网格机器仍用 _inputGrid）。</summary>
         private GameSlotInventory _seedSlot;
 
+        /// <summary>解序列器的芯片槽（加密模块）。</summary>
+        private GameSlotInventory _chipSlot;
+
+        /// <summary>解序列器的输入槽（权限卡）与输出槽（解出的卡）。</summary>
+        private GameSlotInventory _desqInputSlot;
+        private GameSlotInventory _desqOutputSlot;
+
+        /// <summary>枪械配件页的 8 个改装槽（枪托 / 导轨 / 弹匣 / 下挂 / 枪管 / 特殊 1~3）。</summary>
+        private GameSlotInventory[] _gunSlots;
+
         /// <summary>只有 Fill 自己往预览格塞物品时允许入格；外部拖拽一律拒绝。</summary>
         private bool _filling;
 
@@ -366,6 +376,166 @@ namespace ItemCatalog.UI
             _filling = true;
             try { Accept(_outputDiskSlot, blank); }
             finally { _filling = false; }
+        }
+
+        /// <summary>
+        /// 造 3D 打印机的原版窗口外壳（不含物品）。照 MachinePrinter.CreateMachineInventoryWindow：
+        /// 模块(7×5) / 输入(9×6) / 芯片 / 产出(9×5)。电池与纸条不参与配方展示。
+        /// </summary>
+        internal bool BuildPrinterShell()
+        {
+            try
+            {
+                _moduleGrid = new GameGridInventory("10000010001000001110000010001000001", 7);
+                _moduleGrid.SetMachineryStyle();
+                _inputGrid = new GameGridInventory(9, 6);
+                _outputGrid = new GameGridInventory(9, 5);
+                _chipSlot = new GameSlotInventory();
+
+                _moduleGrid.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _inputGrid.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _outputGrid.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _chipSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+
+                // 芯片槽底图照原版：Items/items_tool → printer_chip_pistol
+                try { _chipSlot.SetBackgroundFadeSprite("Items/items_tool", "printer_chip_pistol", 0.5f, 0.5f); }
+                catch { }
+
+                var panels = new[]
+                {
+                    MachineHelper.Panel(MechLabel("mech_printer_label_module", "模块"), _moduleGrid, "module", true),
+                    MachineHelper.Panel(MechLabel("mech_printer_label_input", "输入"), _inputGrid, "input", true),
+                    MachineHelper.Panel(MechLabel("mech_printer_label_chip", "芯片"), _chipSlot, "chip", true),
+                    MachineHelper.Panel(MechLabel("mech_printer_label_output", "产出"), _outputGrid, "output", true)
+                };
+
+                var row = new MachineryPanelRow(panels);
+                row.SetColumns(2);
+
+                _window = new PixelWindow(false, null, WindowStyle.Machinery);
+                _window.Attach(row);
+                _window.Validate();
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] printer shell size="
+                                     + _window.widthPixels + "x" + _window.heightPixels);
+                return _window != null;
+            }
+            catch (Exception e)
+            {
+                Warn("build printer shell: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 造枪械改装窗口的原版外壳（不含物品）：8 个单格槽，5 列排布，
+        /// 顺序与 <c>GunModHelper.CreateGunModWindow</c> 一致：
+        /// 枪托 / 导轨 / 弹匣 / 下挂 / 枪管 / 特殊槽位 1~3。
+        /// 槽位标题直接读原版本地化键（`mech_gun_tag_*`）。
+        /// </summary>
+        internal bool BuildGunModShell()
+        {
+            try
+            {
+                int count = GunMods.SlotCount;
+                _gunSlots = new GameSlotInventory[count];
+
+                var panels = new MachineryPanel[count];
+
+                for (int i = 0; i < count; i++)
+                {
+                    _gunSlots[i] = new GameSlotInventory();
+                    _gunSlots[i].mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+
+                    panels[i] = MachineHelper.Panel(GunMods.SlotTitle(i), _gunSlots[i],
+                                                    "gunmod" + i, true);
+                }
+
+                var row = new MachineryPanelRow(panels);
+                row.SetColumns(5);
+
+                _window = new PixelWindow(false, null, WindowStyle.Machinery);
+                _window.Attach(row);
+                _window.Validate();
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] gun mod shell size="
+                                     + _window.widthPixels + "x" + _window.heightPixels);
+                return _window != null;
+            }
+            catch (Exception e)
+            {
+                Warn("build gun mod shell: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>按槽位顺序把配件 id 填进枪械改装面板（空字符串 = 该槽留空）。</summary>
+        internal void FillGunMods(string[] slotIds)
+        {
+            ClearSamples();
+
+            _filling = true;
+            try
+            {
+                if (slotIds == null || _gunSlots == null) return;
+
+                int count = Mathf.Min(slotIds.Length, _gunSlots.Length);
+                for (int i = 0; i < count; i++)
+                {
+                    if (string.IsNullOrEmpty(slotIds[i])) continue;
+                    Accept(_gunSlots[i], slotIds[i]);
+                }
+            }
+            finally { _filling = false; }
+        }
+
+        /// <summary>
+        /// 造解序列器的原版窗口外壳（不含物品）：芯片 / 输入(权限卡) / 产出，三块横向排开。
+        /// 模块与电池不参与配方展示。
+        /// </summary>
+        internal bool BuildDesequencerShell()
+        {
+            try
+            {
+                _chipSlot = new GameSlotInventory();
+                _desqInputSlot = new GameSlotInventory();
+                _desqOutputSlot = new GameSlotInventory();
+
+                _chipSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _desqInputSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _desqOutputSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+
+                // 槽底图照原版：芯片=sec_module，输入=blank_card，产出=sec_keycard
+                try { _chipSlot.SetBackgroundFadeSprite("Items/items_tool", "sec_module", 0.5f, 0.5f); }
+                catch { }
+                try { _desqInputSlot.SetBackgroundFadeSprite("Items/items_misc", "blank_card", 0.5f, 0.5f); }
+                catch { }
+                try { _desqOutputSlot.SetBackgroundFadeSprite("Items/items_misc", "sec_keycard", 0.5f, 0.5f); }
+                catch { }
+
+                var panels = new[]
+                {
+                    MachineHelper.Panel(MechLabel("mech_desequencer_label_chip", "芯片"), _chipSlot, "chip", true),
+                    MachineHelper.Panel(MechLabel("mech_desequencer_label_input", "输入"), _desqInputSlot, "input", true),
+                    MachineHelper.Panel(MechLabel("mech_desequencer_label_output", "产出"), _desqOutputSlot, "output", true)
+                };
+
+                var row = new MachineryPanelRow(panels);
+                row.SetColumns(3);
+
+                _window = new PixelWindow(false, null, WindowStyle.Machinery);
+                _window.Attach(row);
+                _window.Validate();
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] desequencer shell size="
+                                     + _window.widthPixels + "x" + _window.heightPixels);
+                return _window != null;
+            }
+            catch (Exception e)
+            {
+                Warn("build desequencer shell: " + e.Message);
+                return false;
+            }
         }
 
         /// <summary>
@@ -745,7 +915,8 @@ namespace ItemCatalog.UI
                            string purity = null, string container = null,
                            string containerLiquid = null, int containerVolume = 0,
                            Func<int, GameItem> outputItems = null,
-                           Func<int, GameItem> inputItems = null)
+                           Func<int, GameItem> inputItems = null,
+                           string chip = null)
         {
             ClearSamples();
 
@@ -754,10 +925,16 @@ namespace ItemCatalog.UI
             {
                 if (modules != null)
                     for (int i = 0; i < modules.Length; i++) Accept(_moduleGrid, modules[i]);
+
+                // 解序列器的芯片槽（加密模块）：单独一格，不进模块网格
+                if (!string.IsNullOrEmpty(chip) && _chipSlot != null)
+                    Accept(_chipSlot, chip);
                 if (inputs != null)
                 {
-                    // DNA 编辑器是单格种子槽；其他机器仍是投入网格
-                    GameInventory inputTarget = _seedSlot != null ? (GameInventory)_seedSlot : _inputGrid;
+                    // DNA 编辑器是单格种子槽；解序列器是单格权限卡槽；其他机器仍是投入网格
+                    GameInventory inputTarget = _seedSlot != null
+                        ? (GameInventory)_seedSlot
+                        : (_desqInputSlot != null ? (GameInventory)_desqInputSlot : _inputGrid);
 
                     for (int i = 0; i < inputs.Length; i++)
                     {
@@ -774,6 +951,11 @@ namespace ItemCatalog.UI
                 }
                 if (outputs != null)
                 {
+                    // 解序列器的产出是单槽；其他机器仍是产出网格
+                    GameInventory outputTarget = _desqOutputSlot != null
+                        ? (GameInventory)_desqOutputSlot
+                        : _outputGrid;
+
                     for (int i = 0; i < outputs.Length; i++)
                     {
                         GameItem sample = null;
@@ -783,8 +965,8 @@ namespace ItemCatalog.UI
                             catch (Exception e) { Warn("output item '" + outputs[i] + "': " + e.Message); }
                         }
 
-                        if (sample != null) Accept(_outputGrid, sample, purity);
-                        else Accept(_outputGrid, outputs[i], purity);
+                        if (sample != null) Accept(outputTarget, sample, purity);
+                        else Accept(outputTarget, outputs[i], purity);
                     }
                 }
 
@@ -1593,6 +1775,10 @@ namespace ItemCatalog.UI
                 _productSlot = null;
                 _outputDiskSlot = null;
                 _seedSlot = null;
+                _chipSlot = null;
+                _desqInputSlot = null;
+                _desqOutputSlot = null;
+                _gunSlots = null;
                 if (_window != null && _window.rectTransform != null)
                     UnityEngine.Object.Destroy(_window.rectTransform.gameObject);
             }

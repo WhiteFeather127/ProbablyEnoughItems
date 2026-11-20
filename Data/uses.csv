@@ -43,11 +43,18 @@ uses,scratcher_stack,open,scratcher,
 # 第 2 列可以用 `tag:TAG_NAME` 表示「任意带这个标签的物品」，
 # 去处查询时 UseIndex 会用物品自己的 IsTag 匹配（见 UseTable.Using(id, item)）。
 
-# 螺丝刀拆解枪械 → 零件（ToolDirectory::<CreateScrewdriver>b__5_4，检查 ADV_GUN_TAG）
-uses,screwdriver+tag:ADV_GUN_TAG,apply,system_module_ruined|common_electronic|printer_plastic|junk,
+# 螺丝刀拆解枪械 → 零件（ToolDirectory::<CreateScrewdriver>b__5_4 → GunHelper.DisassembleWeapon）
+# 产出按枪的 id 分档（printed_gun → printer_plastic；handmade_pistol → gun_part×2 + printer_plastic
+#   + scrap_metal×2；revolver/smg/shotgun → gun_part×4~7…），这里取所有枪的并集。
+uses,screwdriver+tag:ADV_GUN_TAG,apply,gun_part|printer_plastic|scrap_metal,
 
-# 螺丝刀拆坏机器 → 零件（同一回调的另一分支，检查 BROKEN_MACHINE_TAG）
-uses,screwdriver+tag:BROKEN_MACHINE_TAG,apply,system_module_ruined|common_electronic|printer_plastic|junk,
+# 螺丝刀拆报废机器 → 螺母（MachineBrokenHelper::OnScrewdriverUsed，
+#   数量 = BROKEN_MACHINE_SCREW_COUNT，同时按比例降低机器价值）
+uses,screwdriver+tag:BROKEN_MACHINE_TAG,apply,nuts_metal,
+
+# 螺丝刀拆坏掉的系统模块 → 电子件 + 塑料 + 垃圾（同一回调的第三个分支，
+#   检查的是 id 而不是标签）
+uses,screwdriver+system_module_ruined,apply,common_electronic|printer_plastic|junk,
 
 # 刀切死老鼠 → 三种肉（HusbandryHelper::InitBladeItem + CreateButcherCuts，只认 ANIMAL_RAT）
 # 按重量拆份：400g 一份 raw_meat、200g 一份 small_raw_meat、剩下的进 morsel
@@ -137,3 +144,92 @@ uses,metal_scanner,apply,,note_scav_scanner
 
 # 手电筒夜巡时随身带着降低受伤几率（不消耗）
 uses,flashlight,apply,,note_scav_flashlight
+
+# ===== 2026-11-20 枪械框架组装（GunFrameHelper::CanFinish / MaterialDirectory::GunPart）=====
+
+# 框架 + 通用枪械零件 → 成品枪。
+# 游戏里把零件拖到框架上：框架必须已在容器/背包中，零件 id 恰好是 gun_part，
+# 框架的 GUN_FRAME_GUN_ID_STRING 决定产出的枪，耐久按框架的打印品质算。
+uses,handmade_pistol_frame+gun_part,combine,handmade_pistol,
+uses,heavy_handmade_pistol_frame+gun_part,combine,heavy_handmade_pistol,
+
+# ===== 2026-11-20 用途补全：把 set_onThisTargetItemFunc / set_onItemTargetItemFunc
+#       的全部赋值点过了一遍，下面只写**能落到物品 id / 标签**、且游戏里真会触发的 ----
+
+# ---- 枪械（GunHelper）----
+# 枪械零件 → 枪的「翻新」不再写在这里：已单独成「枪械升级」大类
+# （一把枪 × 每个可翻新品相一页，概率见详情窗口），避免和使用页重复。
+
+# ---- 报废机器（MachineBrokenHelper）----
+# 焊枪焊废铁（数量 = BROKEN_MACHINE_WELD_COUNT）
+uses,welder+tag:BROKEN_MACHINE_TAG,apply,scrap_metal,
+# 剪线钳拆电线（数量 = BROKEN_MACHINE_WIRE_COUNT）
+uses,wire_cutter+tag:BROKEN_MACHINE_TAG,apply,wire,
+# 剪线钳给活体动物绝育（加 ANIMAL_NEUTERED_TAG，不消耗）
+uses,wire_cutter+tag:ANIMAL_ITEM_TAG,apply,,note_neuter
+
+# ---- 材料：升级 / 修复（MaterialDirectory::OnIngotTarget / OnScrapMetalTargetItem）----
+# 铁锭：笼子尺寸 +1（≤8）／反应堆高度 +1（≤4 次）
+uses,metal_ingot+tag:CAGE_TAG,apply,,note_state
+uses,metal_ingot+tag:RAS_TAG,apply,,note_state
+# 废铁：修笼子／冰箱储物上限 +1（≤7）／反应堆宽度 +1
+uses,scrap_metal+tag:CAGE_TAG,apply,,note_state
+uses,scrap_metal+tag:FRIDGE_TAG,apply,,note_state
+uses,scrap_metal+tag:RAS_TAG,apply,,note_state
+# 废铁 + 小瓶装水 → 自制消音器（OnScrapMetalTargetItem 里唯一产出物品的材料分支）
+uses,scrap_metal+small_bottled_water,combine,silencer_makeshift,
+
+# ---- 电子件（MaterialDirectory::OnElectronicTargetItem）----
+# 修好损坏/卡住的系统模块：销毁模块与电子件，按 33% 掷出性能/效率/品质模块各 1 件
+uses,common_electronic+system_module_corrupt,apply,system_module_performance|system_module_efficiancy|system_module_quality,
+uses,common_electronic+tag:MODULE_STUCK_TAG,apply,system_module_performance|system_module_efficiancy|system_module_quality,
+# 模块提取器补满使用次数
+uses,common_electronic+module_extractor,apply,,note_state
+# 升级：金属探测器 / 扫地机器人 / 冰箱省电 / 反应堆省电
+uses,common_electronic+metal_scanner,apply,,note_state
+uses,common_electronic+vacuum_robot,apply,,note_state
+uses,common_electronic+tag:FRIDGE_TAG,apply,,note_state
+uses,common_electronic+tag:RAS_TAG,apply,,note_state
+
+# ---- 模块（ModuleDirectory / ModuleHelper）----
+# 提取器给卡住的模块解卡（普通提取器消耗 1 次使用次数，高级不消耗）
+uses,module_extractor+tag:MODULE_STUCK_TAG,apply,,note_module_unstuck
+uses,module_extractor_adv+tag:MODULE_STUCK_TAG,apply,,note_module_unstuck
+# 模块扩展套件给标准机器加模块槽（上限内）
+uses,hydro_upgrade_kit+tag:STANDARD_MACHINE_TAG,apply,,note_module_expand
+
+# ---- 医疗（UnusedDirectory::AloeVeraGel / HemostaticAgent）----
+# 芦荟胶 + 绷带 → 局部药绷带；止血粉 + 绷带 → 止血绷带
+uses,aloe_vera_gel+bandage_item,combine,topical_bandage_item,
+uses,hemostatic_agent+bandage_item,combine,hemostatic_bandage_item,
+
+# ---- 畜牧 / 农业 ----
+# 激素针（红=类固醇 20、绿=免疫 20）打在活体动物身上，各 10 次
+uses,serum_red+tag:ANIMAL_ITEM_TAG,apply,,note_state
+uses,serum_green+tag:ANIMAL_ITEM_TAG,apply,,note_state
+# 记号笔给动物/鱼上色或清除标记（看 MARKING_PEN_MODE_INT）
+uses,marking_pen+tag:ANIMAL_ITEM_TAG,apply,,note_state
+# 斧头拔掉水培机里的植物
+uses,hatchet+tag:HYDROPONIC_MACHINE_TAG,apply,,note_state
+
+# ---- 水处理 / 倒水 ----
+# 紫外滤片杀菌（microbe 归零，滤片不消耗）
+uses,uv_filter+tag:LIQUID_CONTAINER_TAG,apply,,note_state
+# 便携净水器把容器里的水纯化成基础水，按体积扣耐久
+uses,portable_water_purifier+tag:LIQUID_CONTAINER_TAG,apply,,note_state
+# 水口粮倒进容器（750ml / 375ml，倒空后销毁自身）
+uses,water_ration+tag:LIQUID_CONTAINER_TAG,apply,,note_state
+uses,water_ration_small+tag:LIQUID_CONTAINER_TAG,apply,,note_state
+
+# ---- 开锁（SecuredContainerHelper / LockHelper）----
+# 撬锁器：机械锁，难度 1，不消耗
+uses,lockpicks+tag:LOCKED_CONTAINER_TAG,apply,,note_lockpick
+# 钥匙卡：对应锁型的锁容器，开成功后销毁卡片
+uses,sec_keycard+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
+uses,sci_card+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
+uses,command_keycard+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
+uses,med_card+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
+uses,eng_card+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
+uses,ser_card+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
+uses,sup_card+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
+
