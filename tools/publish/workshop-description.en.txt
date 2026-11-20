@@ -78,7 +78,7 @@ It gathers all 27 item directories in the game, along with entries injected by o
 [td]Gun mods[/td]
 [td]Uses[/td]
 [td]The vanilla gun modding window's eight slots (stock, rail, magazine, underbarrel, barrel, special 1–3), each cycling through every mod that slot accepts; looking up a mod lists every gun that accepts it, with the mod pinned in its own slot[/td]
-</tr>
+[/tr]
 [tr]
 [td]Loot pools[/td]
 [td]Both[/td]
