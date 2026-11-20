@@ -103,8 +103,9 @@ It gathers all 27 item directories in the game, along with entries injected by o
 
 [h2]Taking items[/h2]
 [list]
-[*][b]Dragging[/b]: enable the Take item checkbox at the top, then drag a cell out of the catalog
-[*]Without the checkbox a drag is ignored, and a plain click only opens the details
+[*][b]Cheat mode[/b]: enable it in the top-right corner; clicking a cell then puts one item into your inventory
+[*]While it is on, dropping an item onto the panel deletes it — a red highlight appears under the item while dragging
+[*]With it off a click only opens the details, and nothing can be taken
 [/list]
 
 [h2]Extension API[/h2]
