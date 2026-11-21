@@ -79,20 +79,29 @@ namespace ItemCatalog.UI
 
                 // 构造函数也钩：窗口节点就是在这一刻被 new 出来的。
                 // 有了这个回调，就不用在场景里 FindObjectsOfType 猜「哪块 UI 是刚建的」。
+                //
+                // 必须逐个钩 PixelWindow **自己声明**的构造函数。
+                // 绝不能用 AccessTools.Constructor(typeof(PixelWindow))：它内部走
+                // FindIncludingBaseTypes，而 PixelWindow 的三个构造函数全都带（可选）参数，
+                // 找不到无参构造时它会一路往上找到 System.Object..ctor ——
+                // 于是补丁被挂到「全游戏所有对象的基类构造」上，任何线程 new 任何对象
+                // 都会进我们的后置回调（2026-11-21 与 Smart Inventory Arrange 启动崩溃的根因）。
                 var created = new HarmonyMethod(typeof(PanelWatchPatch)
                     .GetMethod(nameof(OnWindowCreated), BindingFlags.NonPublic | BindingFlags.Static));
 
-                var ctor = AccessTools.Constructor(typeof(PixelWindow));
-                if (ctor != null)
+                var ctors = typeof(PixelWindow).GetConstructors(
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+                foreach (var ctor in ctors)
                 {
+                    if (ctor.ContainsGenericParameters) continue;
                     harmony.Patch(ctor, postfix: created);
                     patched++;
                 }
 
                 // 物品栏窗口是游戏自己创好再赋给 EmporiumEntry.invWindow 的：
                 // 钩住赋值那一刻，物品栏那枚按钮也能在「场景构建期」就挂上，
-                // 而不是等窗口 Show 之后。
-                var invSetter = AccessTools.PropertySetter(typeof(EmporiumEntry), "invWindow");
+                // 而不是等窗口 Show 之后。用 Declared 版本，同样避免沿基类误钩。
+                var invSetter = AccessTools.DeclaredPropertySetter(typeof(EmporiumEntry), "invWindow");
                 if (invSetter != null)
                 {
                     var invAssigned = new HarmonyMethod(typeof(PanelWatchPatch)

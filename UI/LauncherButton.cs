@@ -212,8 +212,7 @@ namespace ItemCatalog.UI
             // 换场景后旧画布连同按钮一起没了，清掉失效登记
             Cleanup();
 
-            try { Refresh(); }
-            catch (Exception e) { Warn("inject launch button: " + e.Message); }
+            RequestRefresh();
         }
 
         private static bool _hookedScene;
@@ -235,8 +234,8 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 场景加载完成后**同一帧**挂按钮：先强制结算布局，再量矩形，
-        /// 因此不需要任何补挂协程，按钮和界面一起出现在淡入里。
+        /// 场景加载完成后挂按钮。重排推迟到下一帧（见 <see cref="RequestRefresh"/>）：
+        /// 场景刚加载完时窗口还在构造中，此刻强制重建画布不安全。
         /// </summary>
         private static void OnSceneLoaded(UnityEngine.SceneManagement.Scene scene,
                                           UnityEngine.SceneManagement.LoadSceneMode mode)
@@ -249,7 +248,7 @@ namespace ItemCatalog.UI
 
                 CatalogWindow.ResetForScene();
                 Cleanup();
-                Refresh();
+                RequestRefresh();
             }
             catch (Exception e) { Warn("scene loaded: " + e.Message); }
         }
@@ -257,11 +256,18 @@ namespace ItemCatalog.UI
         /// <summary>
         /// 重新解析一遍目标并挂按钮。只在**事件**里调用：场景加载、窗口显隐/几何变化、
         /// 打开/关闭物品栏。不做每帧轮询——存活性由 <see cref="DockWatcher"/> 负责。
+        /// 窗口事件触发的那一次会先经 <see cref="RequestRefresh"/> 推到下一帧。
         /// </summary>
         internal static void Refresh()
         {
-            // 同步量一次：让布局立即结算，否则拿到的可能是上一帧的 0×0 矩形
-            try { Canvas.ForceUpdateCanvases(); }
+            // 同步量一次：让布局立即结算，否则拿到的可能是上一帧的 0×0 矩形。
+            // 只在主线程、且图形设备可用时做：ForceUpdateCanvases 会触发 TMP 资源加载，
+            // 图形设备为 null 时调用会直接崩（2026-11-21 踩坑）。
+            try
+            {
+                if (SystemInfo.graphicsDeviceType != UnityEngine.Rendering.GraphicsDeviceType.Null)
+                    Canvas.ForceUpdateCanvases();
+            }
             catch { }
 
             // 主场景：物品栏窗口
@@ -275,9 +281,33 @@ namespace ItemCatalog.UI
             Cleanup();
         }
 
+        private static bool _refreshPending;
+
+        /// <summary>
+        /// 事件回调里只登记「需要重排」，真正执行推迟到下一帧由常驻节拍器触发。
+        ///
+        /// 窗口生命周期钩子里同步重排等于在对象构造中途强制结算整个画布：既容易量到
+        /// 半成品布局，也会把 TMP 资源加载拖进构造流程。推迟一帧没有可感知的延迟。
+        /// 这不是轮询：没有事件时标记一直是 false，每帧只读一个 bool。
+        /// </summary>
+        internal static void RequestRefresh()
+        {
+            _refreshPending = true;
+        }
+
+        /// <summary>由 <see cref="CatalogTicker"/> 每帧调用；没有待办时只读一个 bool。</summary>
+        internal static void TickPendingRefresh()
+        {
+            if (!_refreshPending) return;
+            _refreshPending = false;
+
+            try { Refresh(); }
+            catch (Exception e) { Warn("pending refresh: " + e.Message); }
+        }
+
         /// <summary>
         /// 窗口对象刚被 new 出来的瞬间（`PixelWindow..ctor` 后置钩子）。
-        /// 把它记进候选名单并立刻试挂一次——不需要再在场景里扫。
+        /// 把它记进候选名单并登记一次重排——不在构造中途做任何画布操作。
         /// </summary>
         internal static void OnPanelCreated(PixelWindow window)
         {
@@ -290,21 +320,13 @@ namespace ItemCatalog.UI
             }
             catch { }
 
-            // 一次场景加载会构造几十个窗口，同一帧内不必每个都重排
-            if (Time.unscaledTime < _nextCreatedRefreshAt) return;
-            _nextCreatedRefreshAt = Time.unscaledTime + 0.05f;
-
-            try { Refresh(); }
-            catch (Exception e) { Warn("panel created: " + e.Message); }
+            RequestRefresh();
         }
 
-        private static float _nextCreatedRefreshAt;
-
-        /// <summary>窗口几何变了：立刻重排一次。</summary>
+        /// <summary>窗口几何变了：登记一次重排（下一帧执行）。</summary>
         internal static void OnPanelGeometryChanged(PixelWindow window)
         {
-            try { Refresh(); }
-            catch (Exception e) { Warn("dock on panel change: " + e.Message); }
+            RequestRefresh();
         }
 
         // ---------------------------------------------------------------- 目标生灭

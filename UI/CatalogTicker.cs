@@ -33,6 +33,9 @@ namespace ItemCatalog.UI
 
         private void Update()
         {
+            // 窗口事件登记的重排在这里执行（事件回调里不碰画布，见 LauncherButton.RequestRefresh）
+            try { LauncherButton.TickPendingRefresh(); } catch { }
+
             CatalogWindow.AutoRefreshTick();
             CatalogWindow.DragTick();
 

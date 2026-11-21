@@ -34,7 +34,11 @@ namespace ItemCatalog.UI
             {
                 var harmony = new Harmony(modId + ".dragdelete");
 
-                var release = AccessTools.Method(typeof(ItemMouseDragHandler), "OnEventRelease");
+                // 必须用 DeclaredMethod：AccessTools.Method 找不到时会沿基类往上找
+                // （FindIncludingBaseTypes）。这两个处理器都继承 EmptyActionHandler，
+                // 一旦哪天 override 被移除/改签名，就会误钩基类的 OnEventRelease——
+                // 那是全游戏所有输入处理器共用的方法（2026-11-21 object..ctor 的同类踩坑）。
+                var release = AccessTools.DeclaredMethod(typeof(ItemMouseDragHandler), "OnEventRelease");
                 if (release == null)
                 {
                     if (ModEntry.Log != null)
@@ -50,7 +54,7 @@ namespace ItemCatalog.UI
                         .GetMethod(nameof(AfterRelease), BindingFlags.NonPublic | BindingFlags.Static)));
 
                 // 框选拖拽走另一个处理器：一次拖一整个列表，单独钩它的松手
-                var multiRelease = AccessTools.Method(typeof(ItemMultiSelectHandler), "OnEventRelease");
+                var multiRelease = AccessTools.DeclaredMethod(typeof(ItemMultiSelectHandler), "OnEventRelease");
                 if (multiRelease != null)
                 {
                     harmony.Patch(multiRelease, prefix: new HarmonyMethod(typeof(DragToDeletePatch)
