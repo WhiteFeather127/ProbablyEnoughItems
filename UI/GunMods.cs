@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 
 using ItemCatalog.Catalog;
 
@@ -140,6 +139,11 @@ namespace ItemCatalog.UI
         /// 配件自己的「仅限这些枪」限制。`GunModHelper.AllowOnlyWeapon` 把枪 id 数组
         /// 塞进委托闭包字段 `weaponIds`；没有这个字段就表示不限枪。
         /// 读不到时按「允许」处理，宁可多列也不漏列。
+        ///
+        /// 闭包类型是编译器生成的，编译期拿不到字面类型，所以这里走 `ModReflect`
+        /// （游戏提供的替身：由游戏检查成员归属，不需要任何能力）。
+        /// 以前是 `target.GetType().GetField(...)`，会被扫描器判成 reflection-external，
+        /// 重新授权时模组会被拒绝加载。
         /// </summary>
         private static bool Fits(GameItem mod, string gunId)
         {
@@ -154,11 +158,9 @@ namespace ItemCatalog.UI
                     var target = list[i] == null ? null : list[i].Target;
                     if (target == null) continue;
 
-                    var field = target.GetType().GetField("weaponIds",
-                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                    if (field == null) continue;
+                    if (!ModReflect.Has(target, "weaponIds")) continue;
 
-                    var allowed = field.GetValue(target) as string[];
+                    var allowed = ModReflect.Get<string[]>(target, "weaponIds");
                     if (allowed == null) continue;
 
                     for (int k = 0; k < allowed.Length; k++)
