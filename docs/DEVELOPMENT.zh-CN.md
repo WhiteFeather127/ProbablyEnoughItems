@@ -36,8 +36,7 @@ ProbablyEnoughItems/
 │   ├── ClientSprite.cs           # 客人立绘解析
 │   ├── AnchorTarget.cs           # 面板贴靠目标
 │   ├── PanelWatchPatch.cs        # 唯一的 Harmony 补丁
-│   ├── DockedLayout.cs           # 停靠布局辅助
-│   └── UiDump.cs                 # UI 结构导出
+│   └── DockedLayout.cs           # 停靠布局辅助
 ├── Localization/{en,zh,ru}.csv
 ├── docs/
 ├── examples/ProbablyEnoughItemsBridge.cs

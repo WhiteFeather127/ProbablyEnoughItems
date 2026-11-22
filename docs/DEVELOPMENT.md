@@ -37,8 +37,7 @@ ProbablyEnoughItems/
 │   ├── ClientSprite.cs           # customer portrait resolution
 │   ├── AnchorTarget.cs           # panel docking target
 │   ├── PanelWatchPatch.cs        # the single Harmony patch
-│   ├── DockedLayout.cs           # docked layout helpers
-│   └── UiDump.cs                 # UI structure dump
+│   └── DockedLayout.cs           # docked layout helpers
 ├── Localization/{en,zh,ru}.csv
 ├── docs/
 ├── examples/ProbablyEnoughItemsBridge.cs

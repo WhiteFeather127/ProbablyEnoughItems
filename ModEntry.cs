@@ -12,8 +12,6 @@ namespace ItemCatalog
 
         internal static ModLog Log;
 
-        private static bool _dumpedOnce;
-
         /// <summary>取本地化文案；找不到时返回 key 本身，绝不抛异常。</summary>
         internal static string T(string key, params object[] args)
         {
@@ -61,9 +59,6 @@ namespace ItemCatalog
 
             try
             {
-                ModHelper.AddDebugFunction(MOD_ID, ModHelper.DEBUG_CATEGORY_SPECIAL,
-                    "Catalog: Dump UI", () => UI.UiDump.Dump());
-
                 ModHelper.AddDebugFunction(MOD_ID, ModHelper.DEBUG_CATEGORY_SPECIAL,
                     "Catalog: Dump Data", () => Catalog.CatalogDataBuilder.Dump());
 
@@ -215,19 +210,6 @@ namespace ItemCatalog
             catch (Exception e)
             {
                 if (Log != null) Log.Warning("catalog warmup failed: " + e.Message);
-            }
-
-            // 每个会话只自动导出一次 UI 结构，方便定位真正的物品栏节点
-            if (_dumpedOnce) return;
-            _dumpedOnce = true;
-
-            try
-            {
-                UI.UiDump.Dump();
-            }
-            catch (Exception e)
-            {
-                if (Log != null) Log.Warning("auto UI dump failed: " + e.Message);
             }
         }
     }
