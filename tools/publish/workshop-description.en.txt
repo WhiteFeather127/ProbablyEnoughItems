@@ -30,6 +30,7 @@ It gathers all 27 item directories in the game, along with entries injected by o
 [*][b]Sources[/b]: left-click an item
 [*][b]Uses[/b]: right-click an item
 [*]Each side is a list of categories, switched with the [b]< Category >[/b] buttons at the top
+[*][b]Window[/b]: drag anywhere on the details window to move it; Esc closes it
 [/list]
 
 [h2]Category types[/h2]
@@ -57,7 +58,7 @@ It gathers all 27 item directories in the game, along with entries injected by o
 [tr]
 [td]Machine[/td]
 [td]Both[/td]
-[td]The machine's own interface restored, with its recipes below — furnace purity tiers (flux, blast, junk processing), the blender's input + container with the blended composition, the chem finisher, evaporator, hydroponics and the DNA manipulator (one extraction recipe page per disk)[/td]
+[td]The machine's own interface restored, with its recipes below — furnace purity tiers (flux, blast, junk processing), the blender's input + container with the blended composition, the chem finisher, evaporator, hydroponics, the DNA manipulator (one extraction recipe page per disk), the desequencer and the 3D printer[/td]
 [/tr]
 [tr]
 [td]Crafting[/td]
@@ -92,7 +93,7 @@ It gathers all 27 item directories in the game, along with entries injected by o
 [*]DNA disks: the blank disk has its own cell; written disks are listed one cell per plant trait (1 use each), and each links back to the extraction page of the machine
 [*]Liquids: one full bottle per pure liquid is always listed, no search needed
 [*]Recipes that use graded crops are duplicated per grade, with the matching icon in the material cell
-[*]Values that change continuously stay in one cell and are re-rolled every second
+[*]Values that change continuously stay in one cell, fixed at a single sample
 [/list]
 
 [h2]Customer pages[/h2]

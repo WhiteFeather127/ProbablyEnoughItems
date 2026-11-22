@@ -84,6 +84,8 @@ namespace ItemCatalog.UI
             // 每帧重建，和原版一致：Item Details 的徽章靠这一步刷新时间戳
             if (_refresh != null)
             {
+                float started = Time.realtimeSinceStartup;
+
                 try
                 {
                     var next = _refresh();
@@ -94,12 +96,21 @@ namespace ItemCatalog.UI
                     }
                 }
                 catch { /* 重建失败就继续用旧内容 */ }
+
+                // 提示框每帧重建是最可疑的性能开销之一：累计一段时间打一次平均耗时
+                PushRebuildPerf((Time.realtimeSinceStartup - started) * 1000f);
             }
 
             Vector2 position = Input.mousePosition;
             if (!force && (position - _lastPosition).sqrMagnitude < 0.25f) return;
 
             _lastPosition = position;
+
+            // 原版提示框是挂在 overlayRoot 上的 TreeNodeRender，自带 IScrollHandler 且
+            // 图形 raycastTarget=true：提示框正好压在鼠标下，会把滚轮事件截走，
+            // 导致「鼠标停在物品上滚不动页面」。把提示框整棵子树的 raycast 关掉，
+            // 滚轮就能正常冒泡到详情窗口的 ScrollRect。
+            DisableTooltipRaycast(overlay);
 
             var handler = ItemTooltipHandler.current;
             Vector2 translation = handler == null ? Vector2.zero : handler.tooltipTranslation;
@@ -112,6 +123,56 @@ namespace ItemCatalog.UI
             {
                 _active = false;
             }
+        }
+
+        private static CanvasGroup _tooltipGroup;
+
+        private static int _perfSamples;
+        private static float _perfTotalMs;
+        private static float _perfMaxMs;
+
+        /// <summary>提示框重建耗时：每 180 次（约 3 秒悬停）打一行平均 / 峰值。</summary>
+        private static void PushRebuildPerf(float ms)
+        {
+            _perfSamples++;
+            _perfTotalMs += ms;
+            if (ms > _perfMaxMs) _perfMaxMs = ms;
+
+            if (_perfSamples < 180) return;
+
+            if (ModEntry.Log != null)
+            {
+                ModEntry.Log.Log("[perf] tooltip rebuild avg=" + (_perfTotalMs / _perfSamples).ToString("F2")
+                                 + "ms max=" + _perfMaxMs.ToString("F2") + "ms samples=" + _perfSamples);
+            }
+
+            _perfSamples = 0;
+            _perfTotalMs = 0f;
+            _perfMaxMs = 0f;
+        }
+
+        private static void DisableTooltipRaycast(OverlayHandler overlay)
+        {
+            try
+            {
+                var window = overlay == null ? null : overlay.GetTooltipWindow();
+                var root = window == null || window.handler == null
+                    ? null
+                    : window.handler.rectTransform;
+                if (root == null) return;
+
+                // 换场景后 overlay / tooltipWindow 会被重建，按 gameObject 重新取一次
+                if (_tooltipGroup == null || _tooltipGroup.gameObject != root.gameObject)
+                {
+                    _tooltipGroup = root.GetComponent<CanvasGroup>();
+                    if (_tooltipGroup == null)
+                        _tooltipGroup = root.gameObject.AddComponent<CanvasGroup>();
+                }
+
+                if (_tooltipGroup.blocksRaycasts)
+                    _tooltipGroup.blocksRaycasts = false;
+            }
+            catch { }
         }
     }
 }

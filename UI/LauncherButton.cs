@@ -207,7 +207,7 @@ namespace ItemCatalog.UI
         {
             HookSceneLoaded();
 
-            CatalogWindow.ResetForScene();
+            CatalogWindow.ResetForScene(true);
 
             // 换场景后旧画布连同按钮一起没了，清掉失效登记
             Cleanup();
@@ -246,7 +246,7 @@ namespace ItemCatalog.UI
                     ModEntry.Log.Log("[button] scene loaded t=" + Time.unscaledTime.ToString("F2")
                                      + " scene=" + (scene.IsValid() ? scene.name : "?") + " frame=" + Time.frameCount);
 
-                CatalogWindow.ResetForScene();
+                CatalogWindow.ResetForScene(false);
                 Cleanup();
                 RequestRefresh();
             }

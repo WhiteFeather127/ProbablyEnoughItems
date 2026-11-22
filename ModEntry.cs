@@ -56,6 +56,9 @@ namespace ItemCatalog
             // 把物品拖到图鉴上 → 丢进店里的垃圾桶
             UI.DragToDeletePatch.Install(MOD_ID);
 
+            // 拆枪探测要跳过 DisassembleWeapon 末尾的 ratchet 音效（Silent 标志）
+            UI.GunSoundPatch.Install(MOD_ID);
+
             try
             {
                 ModHelper.AddDebugFunction(MOD_ID, ModHelper.DEBUG_CATEGORY_SPECIAL,

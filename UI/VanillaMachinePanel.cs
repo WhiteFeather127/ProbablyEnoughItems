@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -36,13 +36,18 @@ namespace ItemCatalog.UI
         /// </summary>
         private bool _tooltipShown;
 
-        // 诊断日志限流：tooltip 排查时每 0.5 秒最多打一行
+        // 诊断日志限流：tooltip 排查时每 0.5 秒最多打一行，整块面板最多 40 行
         private float _hoverLogAt;
+        private int _hoverLogs;
 
         // 各 inventory 由谁装填（面板角色 → inventory）
         private GameGridInventory _moduleGrid;
         private GameGridInventory _inputGrid;
         private GameGridInventory _outputGrid;
+
+        /// <summary>借用窗口里的单格投入 / 产出（解序列器、水培种子这类不是网格）。</summary>
+        private GameSlotInventory _inputSlot;
+        private GameSlotInventory _outputSlot;
 
         // 搅拌机 / 化学制剂成型机 / 蒸发器的容器槽（GameSlotInventory，原版放液体容器的那一格）
         private GameSlotInventory _containerSlot;
@@ -77,6 +82,47 @@ namespace ItemCatalog.UI
 
         private RectTransform _attachedRect;
 
+        /// <summary>机器面板窗口宽度上限：超过这个宽度就换行，不再加宽详情窗口。</summary>
+        private const float MaxWinWidth = 1000f;
+
+        // 借用窗口（预览实例的 contentWindow）：页面销毁时只还原挂载，不销毁窗口
+        private bool _borrowed;
+        private MachineryPanelRow _borrowedRow;
+        private readonly List<MachineryPanel> _hiddenByAdopt = new List<MachineryPanel>();
+        private readonly List<HookSnapshot> _borrowedHooks = new List<HookSnapshot>();
+
+        /// <summary>
+        /// 借用窗口里格子的回调快照：真实机器会在 onSlotAddItemFunc 里播放入格音效
+        /// （电池是 battery_insert，模块仓是模块音效），预览填样本时必须临时摘掉。
+        /// </summary>
+        private sealed class HookSnapshot
+        {
+            internal GameInventory Inv;
+            internal Func<GameItem, GameInventory, bool> May;
+            internal Action<GameItem, GameInventory, SlotMarker> Add;
+            internal Action<GameItem, GameInventory, SlotMarker> Remove;
+        }
+        private RectTransform _adoptedRect;
+        private bool _loggedAdopt;
+
+        /// <summary>诊断用：格子类型 + 尺寸，定位「某类槽位没显示」时看日志。</summary>
+        private static string Name(GameInventory inv)
+        {
+            if (inv == null) return "-";
+
+            var element = inv as PixelElement;
+            var rt = element == null || element.handler == null ? null : element.handler.rectTransform;
+            string size = rt == null ? "?" : (rt.rect.width.ToString("F0") + "x" + rt.rect.height.ToString("F0"));
+            return inv.GetType().Name + "(" + size + ")";
+        }
+        private RectTransform _adoptedParent;
+        private Vector2 _adoptedAnchorMin;
+        private Vector2 _adoptedAnchorMax;
+        private Vector2 _adoptedPivot;
+        private Vector2 _adoptedSize;
+        private Vector2 _adoptedPosition;
+        private Vector3 _adoptedScale;
+
         internal RectTransform AttachedRect { get { return _attachedRect; } }
 
         /// <summary>
@@ -84,15 +130,20 @@ namespace ItemCatalog.UI
         /// maxHeight &gt; 0 时按可用高度封顶：窗口装不下的比例要往回收，
         /// 否则 802px 的面板会把机器样式窗口撑高、挤扁标题栏和关闭按钮。
         /// </summary>
-        internal Vector2 ScaledSize(RectTransform host, float maxHeight = 0f, float maxWidth = 0f)
+        internal Vector2 ScaledSize(RectTransform host)
         {
-            float ratio = CanvasRatio(host, maxHeight, maxWidth);
+            float ratio = CanvasRatio(host);
             float w = (_window != null && _window.widthPixels > 1f) ? _window.widthPixels : 160f;
             float h = (_window != null && _window.heightPixels > 1f) ? _window.heightPixels : 401f;
             return new Vector2(w * ratio, h * ratio);
         }
 
-        private float CanvasRatio(RectTransform host, float maxHeight = 0f, float maxWidth = 0f)
+        /// <summary>
+        /// 只做画布比例补偿：图鉴窗口和游戏窗口的画布 scaleFactor 不同，
+        /// 乘上 game/ours 后格子像素与游戏里完全一致。
+        /// 不再按页面可用空间封顶——超高由页面滚动条处理，硬缩会让格子比游戏里小。
+        /// </summary>
+        private float CanvasRatio(RectTransform host)
         {
             try
             {
@@ -105,20 +156,6 @@ namespace ItemCatalog.UI
                 if (ours <= 0.001f || game <= 0.001f) return 1f;
                 float ratio = game / ours;
                 if (ratio < 0.2f || ratio > 6f) ratio = 1f;
-
-                // 按可用高度封顶：面板缩放后不能高过窗口能给出的空间
-                if (maxHeight > 0f && _window != null && _window.heightPixels > 1f)
-                {
-                    float limit = maxHeight / _window.heightPixels;
-                    if (limit > 0.2f && limit < ratio) ratio = limit;
-                }
-
-                // 按可用宽度封顶：横向并排（搅拌机两槽）时不能宽过内容列
-                if (maxWidth > 0f && _window != null && _window.widthPixels > 1f)
-                {
-                    float limit = maxWidth / _window.widthPixels;
-                    if (limit > 0.2f && limit < ratio) ratio = limit;
-                }
                 return ratio;
             }
             catch { return 1f; }
@@ -755,20 +792,54 @@ namespace ItemCatalog.UI
         /// </summary>
         internal float MeasureContentHeight()
         {
-            float minY, maxY;
-            if (!MeasureContentBounds(out minY, out maxY)) return 0f;
-            float scaleY = Mathf.Abs(_attachedRect.lossyScale.y) > 0.001f
-                ? _attachedRect.lossyScale.y : 1f;
-            float measured = (maxY - minY) / scaleY;
-            return (measured < 10f || measured > 4000f) ? 0f : measured;
+            return NativeSize(false);
         }
 
-        /// <summary>内容包围盒的世界 Y 范围（用来把内容对齐到容器中心）。</summary>
-        internal bool MeasureContentBounds(out float minY, out float maxY)
+        internal float MeasureContentWidth()
         {
-            minY = float.MaxValue;
-            maxY = float.MinValue;
+            return NativeSize(true);
+        }
+
+        /// <summary>内容包围盒的世界范围；有面板行时只量可见面板及其子节点。</summary>
+        internal bool MeasuredBounds(out float minX, out float maxX, out float minY, out float maxY)
+        {
+            minX = minY = float.MaxValue;
+            maxX = maxY = float.MinValue;
+
+            var row = _borrowedRow;
+            if (row == null && _window != null) row = _window.childElement as MachineryPanelRow;
+            if (row != null)
+            {
+                var panels = row.Panels;
+                for (int i = 0; i < panels.Count; i++)
+                {
+                    var panel = panels[i];
+                    if (panel == null || panel.isHidden) continue;
+
+                    var rt = panel.handler == null ? null : panel.handler.rectTransform;
+                    if (rt == null || !rt.gameObject.activeInHierarchy) continue;
+
+                    // 面板的 handler 是壳，标签和内容在它的子节点里，必须一起量；
+                    // 但只量「有 Image 的可见节点」：物品元素自带宽度 1000 的堆叠数字文本，
+                    // 把文本节点算进来会让内容宽高离谱（枪械模组页曾因此被判成 1200+ 宽）。
+                    ExtendBounds(rt, ref minX, ref maxX, ref minY, ref maxY);
+
+                    var all = rt.GetComponentsInChildren<RectTransform>(true);
+                    for (int k = 0; k < all.Length; k++)
+                    {
+                        var child = all[k];
+                        if (child == null || child == rt || !child.gameObject.activeInHierarchy) continue;
+                        if (child.GetComponent<UnityEngine.UI.Image>() == null) continue;
+
+                        ExtendBounds(child, ref minX, ref maxX, ref minY, ref maxY);
+                    }
+                }
+
+                return maxX > minX && maxY > minY;
+            }
+
             if (_attachedRect == null) return false;
+
             try
             {
                 var all = _attachedRect.GetComponentsInChildren<RectTransform>(true);
@@ -778,14 +849,49 @@ namespace ItemCatalog.UI
                     if (rt == null || rt == _attachedRect) continue;
                     if (!rt.gameObject.activeInHierarchy) continue;
 
-                    var c = new Vector3[4];
-                    rt.GetWorldCorners(c);
-                    if (c[0].y < minY) minY = c[0].y;
-                    if (c[1].y > maxY) maxY = c[1].y;
+                    ExtendBounds(rt, ref minX, ref maxX, ref minY, ref maxY);
                 }
-                return maxY > minY;
+                return maxX > minX && maxY > minY;
             }
             catch { return false; }
+        }
+
+        private RectTransform Row()
+        {
+            var row = _borrowedRow;
+            if (row == null && _window != null) row = _window.childElement as MachineryPanelRow;
+            return row == null || row.handler == null ? null : row.handler.rectTransform;
+        }
+
+        /// <summary>把世界尺寸换算回面板自身坐标系（除以当前缩放）。</summary>
+        private float NativeSize(bool width)
+        {
+            float minX, maxX, minY, maxY;
+            if (!MeasuredBounds(out minX, out maxX, out minY, out maxY)) return 0f;
+
+            var rt = Row() ?? _attachedRect;
+            if (rt == null) return 0f;
+
+            float s = Mathf.Abs(width ? rt.lossyScale.x : rt.lossyScale.y);
+            if (s < 0.001f) s = 1f;
+
+            float measured = (width ? maxX - minX : maxY - minY) / s;
+            return (measured < 10f || measured > 4000f) ? 0f : measured;
+        }
+
+        private static void ExtendBounds(RectTransform rt,
+                                         ref float minX, ref float maxX,
+                                         ref float minY, ref float maxY)
+        {
+            var c = new Vector3[4];
+            rt.GetWorldCorners(c);
+            for (int i = 0; i < 4; i++)
+            {
+                if (c[i].x < minX) minX = c[i].x;
+                if (c[i].x > maxX) maxX = c[i].x;
+                if (c[i].y < minY) minY = c[i].y;
+                if (c[i].y > maxY) maxY = c[i].y;
+            }
         }
 
         /// <summary>把原版窗口内容挂到指定容器（窗口框/标题栏不要，只嵌面板行）。</summary>
@@ -843,60 +949,65 @@ namespace ItemCatalog.UI
         /// 取两个 Canvas 的 scaleFactor 比例，等比补偿到内容节点上（只改 localScale，
         /// 物品是 grid 子节点会一起缩放，格子内相对位置不变）。
         /// </summary>
-        internal float MatchGameCanvasScale(RectTransform host, float maxHeight = 0f, float maxWidth = 0f)
+        internal float MatchGameCanvasScale(RectTransform host)
         {
             if (_attachedRect == null || host == null) return 0f;
             try
             {
-                // 比例走 CanvasRatio：Canvas 差异补偿 + 可用高度封顶（maxHeight>0 时），
-                // 保证面板缩放后不会高过窗口能给出的空间、把标题栏挤扁。
-                float ratio = CanvasRatio(host, maxHeight, maxWidth);
+                float ratio = CanvasRatio(host);
 
                 // 只改缩放，anchor/pivot 已在 AttachContentTo 设成正中心，这里不碰
                 _attachedRect.localScale = new Vector3(ratio, ratio, 1f);
 
-                // 真实高度优先用**实测内容包围盒**：heightPixels 含底部留白，
-                // 按它布局会让内容只占上半部分、多出来的空白落在面板与翻页条之间。
-                float nativeW = _window != null && _window.widthPixels > 1f
+                // 真实尺寸优先用**实测内容包围盒**：widthPixels/heightPixels 含面板行与
+                // 窗口的左右/底部留白，按它布局会让内容周围多出一圈空白。
+                float boxW = _window != null && _window.widthPixels > 1f
                     ? _window.widthPixels : _attachedRect.rect.width;
                 float boxH = _window != null && _window.heightPixels > 1f
                     ? _window.heightPixels : _attachedRect.rect.height;
+                float measuredW = MeasureContentWidth();
                 float measuredH = MeasureContentHeight();
-                bool useMeasured = measuredH > 10f && measuredH < boxH;
-                float nativeH = useMeasured ? measuredH : boxH;
+                bool useMeasuredW = measuredW > 10f && measuredW < boxW;
+                bool useMeasuredH = measuredH > 10f && measuredH < boxH;
 
-                // ① 先把 rect 高度压到实测内容高度：rect 比内容高时，
-                //    rect × ratio 会大于容器高度、向下溢出被 RectMask2D 裁（面板被遮）。
+                // ① 把 rect 收到「实测内容 + 一圈边框」：完全按内容收会切掉面板自己的
+                //    左右/上下边框；完全按窗口尺寸又会留一大圈空白。取窗口留白的一半，
+                //    封顶 16px，既保住边框也不会多出明显空档。
+                float padW = useMeasuredW ? Mathf.Clamp((boxW - measuredW) * 0.5f, 0f, 16f) : 0f;
+                float padH = useMeasuredH ? Mathf.Clamp((boxH - measuredH) * 0.5f, 0f, 16f) : 0f;
+                float usedW = (useMeasuredW ? measuredW : boxW) + padW * 2f;
+                float usedH = (useMeasuredH ? measuredH : boxH) + padH * 2f;
+
                 // ② 再把面板整体平移，让内容包围盒中心与容器中心重合
                 //    （面板行有 padding，内容在 rect 里并不居中）。
-                if (useMeasured)
+                if (useMeasuredW || useMeasuredH)
                 {
-                    var sd = _attachedRect.sizeDelta;
-                    _attachedRect.sizeDelta = new Vector2(sd.x, measuredH);
+                    _attachedRect.sizeDelta = new Vector2(usedW, usedH);
 
-                    float minY, maxY;
-                    if (MeasureContentBounds(out minY, out maxY) && maxY > minY)
+                    float minX, maxX, minY, maxY;
+                    if (MeasuredBounds(out minX, out maxX, out minY, out maxY))
                     {
                         var c = new Vector3[4];
                         _attachedRect.GetWorldCorners(c);
+                        float rectCenterX = (c[0].x + c[3].x) * 0.5f;
                         float rectCenterY = (c[0].y + c[1].y) * 0.5f;
-                        float contentCenterY = (minY + maxY) * 0.5f;
-                        float dy = rectCenterY - contentCenterY;
-                        if (Mathf.Abs(dy) > 0.5f)
+                        float dx = rectCenterX - (minX + maxX) * 0.5f;
+                        float dy = rectCenterY - (minY + maxY) * 0.5f;
+
+                        if (Mathf.Abs(dx) > 0.5f || Mathf.Abs(dy) > 0.5f)
                         {
                             var pos = _attachedRect.position;
-                            _attachedRect.position = new Vector3(pos.x, pos.y + dy, pos.z);
+                            _attachedRect.position = new Vector3(pos.x + dx, pos.y + dy, pos.z);
                         }
                     }
                 }
 
-                float scaledHeight = nativeH * ratio;
+                float scaledHeight = usedH * ratio;
 
                 if (ModEntry.Log != null)
                     ModEntry.Log.Log("[vanilla-machine] ratio=" + ratio
-                                     + " box=" + nativeW + "x" + boxH
-                                     + " content=" + measuredH
-                                     + " used=" + nativeH
+                                     + " box=" + boxW + "x" + boxH
+                                     + " content=" + measuredW + "x" + measuredH
                                      + " scaledH=" + scaledHeight);
                 return scaledHeight;
             }
@@ -931,10 +1042,12 @@ namespace ItemCatalog.UI
                     Accept(_chipSlot, chip);
                 if (inputs != null)
                 {
-                    // DNA 编辑器是单格种子槽；解序列器是单格权限卡槽；其他机器仍是投入网格
+                    // 单格投入优先：DNA 种子槽 / 解序列器权限卡 / 借用窗口里的单格 input
                     GameInventory inputTarget = _seedSlot != null
                         ? (GameInventory)_seedSlot
-                        : (_desqInputSlot != null ? (GameInventory)_desqInputSlot : _inputGrid);
+                        : (_desqInputSlot != null
+                            ? (GameInventory)_desqInputSlot
+                            : (_inputSlot != null ? (GameInventory)_inputSlot : _inputGrid));
 
                     for (int i = 0; i < inputs.Length; i++)
                     {
@@ -951,10 +1064,10 @@ namespace ItemCatalog.UI
                 }
                 if (outputs != null)
                 {
-                    // 解序列器的产出是单槽；其他机器仍是产出网格
+                    // 单格产出优先：解序列器单槽 / 借用窗口里的单格 output
                     GameInventory outputTarget = _desqOutputSlot != null
                         ? (GameInventory)_desqOutputSlot
-                        : _outputGrid;
+                        : (_outputSlot != null ? (GameInventory)_outputSlot : _outputGrid);
 
                     for (int i = 0; i < outputs.Length; i++)
                     {
@@ -1418,6 +1531,21 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
+        /// 指针是否落在可视裁剪区（ScrollView 的 viewport / 面板宿主）内。
+        /// 没有裁剪层时不做限制，保持原行为。
+        /// </summary>
+        internal bool PointerInsideViewport(Vector2 mouse, Camera cam)
+        {
+            if (_attachedRect == null) return false;
+
+            var mask = _attachedRect.GetComponentInParent<UnityEngine.UI.RectMask2D>();
+            var clip = mask != null ? mask.transform as RectTransform : null;
+            if (clip == null) return true;
+
+            return RectTransformUtility.RectangleContainsScreenPoint(clip, mouse, cam);
+        }
+
+        /// <summary>
         /// 每帧检查鼠标下的样本物品。
         /// 不能只靠 EventTrigger：配方每秒轮播，鼠标不动时旧物品被销毁、
         /// 新物品不会补发 PointerEnter，提示框就会消失或停在旧物品上。
@@ -1438,28 +1566,34 @@ namespace ItemCatalog.UI
                     if (canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay)
                         cam = canvas.worldCamera;
 
-                    for (int i = 0; i < _samples.Count; i++)
+                    // 先确认指针在可视裁剪区内：滚出视口的物品仍然存在，
+                    // 不拦一层会让画面外的格子照样能选中 / 弹提示框。
+                    if (PointerInsideViewport(mouse, cam))
                     {
-                        var element = _samples[i] as GameItemElement;
-                        if (element == null) continue;
-
-                        // 真正带图标的是 background；handler 是整格根节点，尺寸可能不是物品大小
-                        var rect = element.background != null
-                            ? element.background.rectTransform
-                            : element.rectTransform;
-                        if (rect == null) continue;
-
-                        if (RectTransformUtility.RectangleContainsScreenPoint(rect, mouse, cam))
+                        for (int i = 0; i < _samples.Count; i++)
                         {
-                            hit = element;
-                            break;
+                            var element = _samples[i] as GameItemElement;
+                            if (element == null) continue;
+
+                            // 真正带图标的是 background；handler 是整格根节点，尺寸可能不是物品大小
+                            var rect = element.background != null
+                                ? element.background.rectTransform
+                                : element.rectTransform;
+                            if (rect == null) continue;
+
+                            if (RectTransformUtility.RectangleContainsScreenPoint(rect, mouse, cam))
+                            {
+                                hit = element;
+                                break;
+                            }
                         }
                     }
                 }
 
-                if (ModEntry.Log != null && Time.unscaledTime >= _hoverLogAt)
+                if (ModEntry.Log != null && Time.unscaledTime >= _hoverLogAt && _hoverLogs < 40)
                 {
                     _hoverLogAt = Time.unscaledTime + 0.5f;
+                    _hoverLogs++;
                     LogHoverState(mouse, hit);
                 }
 
@@ -1738,6 +1872,9 @@ namespace ItemCatalog.UI
                     catch (Exception e) { Warn("set purity '" + purity + "': " + e.Message); }
                 }
 
+                // 预览样本不执行「放入后」的副作用（模组/原版可能在这里放音效、改状态）
+                try { item.onSlotAddItemFunc = null; } catch { }
+
                 // 原版入格：算格子坐标 + 形状变换 + SetRenderingParent + tooltip 链
                 int moved = GraphUtils.TryAccept(inv, item);
                 if (moved > 0)
@@ -1760,6 +1897,317 @@ namespace ItemCatalog.UI
             catch (Exception e) { Warn("accept '" + id + "': " + e.Message); }
         }
 
+        /// <summary>
+        /// 图鉴自己现建的演示机器实例（<see cref="AdoptOwned"/> 传入）；
+        /// 面板销毁时一起销毁，不碰图鉴条目里的那份 Item。
+        /// </summary>
+        private GameItem _ownedItem;
+
+        /// <summary>
+        /// 借用**独立实例**的机器窗口：`item` 必须是调用方现建的演示样本，
+        /// 面板销毁时会连实例一起 Destroy。Adopt 失败时立刻把实例销毁。
+        /// </summary>
+        internal bool AdoptOwned(GameItem item, string[] roles)
+        {
+            if (item == null) return false;
+
+            _ownedItem = item;
+
+            var window = item.contentWindow;
+            if (Adopt(window, roles)) return true;
+
+            DestroyOwnedItem();
+            return false;
+        }
+
+        private void DestroyOwnedItem()
+        {
+            if (_ownedItem == null) return;
+
+            try { _ownedItem.Destroy(); } catch { }
+            _ownedItem = null;
+        }
+
+        /// <summary>
+        /// 借用工厂造好的机器窗口（含模组对原版面板的修改，如枪匠改打印机输出网格）。
+        ///
+        /// <paramref name="roles"/> 是「只保留哪些面板」的白名单（沿用各机器手写壳的取法）；
+        /// 传 null 表示保留所有有角色的面板，仅隐藏电池 / 纸条 / 控制按钮。
+        /// 隐藏用原版 <c>SetHidden</c>，不动 panels 列表，<c>GetStorage</c> 索引不变。
+        /// </summary>
+        internal bool Adopt(PixelWindow window, string[] roles)
+        {
+            if (window == null) return false;
+
+            var row = window.childElement as MachineryPanelRow;
+            if (row == null) return false;
+
+            try
+            {
+                _window = window;
+                _borrowed = true;
+                _borrowedRow = row;
+
+                // 角色 → 面板里的容器（顺序与各机器 CreateMachineInventoryWindow 一致）
+                _moduleGrid = ContentOf<GameGridInventory>(row, "module");
+                _inputGrid = ContentOf<GameGridInventory>(row, "input");
+                _outputGrid = ContentOf<GameGridInventory>(row, "output")
+                              ?? ContentOf<GameGridInventory>(row, "eject");
+                _inputSlot = ContentOf<GameSlotInventory>(row, "input");
+                _outputSlot = ContentOf<GameSlotInventory>(row, "output")
+                              ?? ContentOf<GameSlotInventory>(row, "eject");
+                _chipSlot = ContentOf<GameSlotInventory>(row, "chip");
+                _containerSlot = ContentOf<GameSlotInventory>(row, "container")
+                                 ?? ContentOf<GameSlotInventory>(row, "water");
+                _distillateSlot = ContentOf<GameSlotInventory>(row, "distillate");
+                _seedSlot = ContentOf<GameSlotInventory>(row, "seed");
+            }
+            catch (Exception e)
+            {
+                // 连角色都读不到就真的不能借用，退回手写壳
+                Warn("adopt machine window: " + e.GetType().Name + ": " + e.Message);
+                _window = null;
+                _borrowed = false;
+                _borrowedRow = null;
+                return false;
+            }
+
+            // 下面几步只影响外观 / 入格校验：失败也继续借用，不要退回手写壳
+            try
+            {
+                var keep = new List<MachineryPanel>();
+                if (roles != null && roles.Length > 0)
+                {
+                    for (int i = 0; i < roles.Length; i++)
+                    {
+                        var panel = row.GetPanel(roles[i]);
+                        if (panel != null && !keep.Contains(panel)) keep.Add(panel);
+                    }
+                }
+
+                var panels = row.Panels;
+                for (int i = 0; i < panels.Count; i++)
+                {
+                    var panel = panels[i];
+                    if (panel == null || panel.isHidden) continue;
+
+                    // 白名单模式：不在名单里的一律隐藏；
+                    // 默认模式：只隐藏没有角色或控制按钮的面板。
+                    bool show = roles != null && roles.Length > 0
+                        ? keep.Contains(panel)
+                        : (!string.IsNullOrEmpty(panel.role) && panel.role != "control");
+                    if (show) continue;
+
+                    panel.SetHidden(true);
+                    _hiddenByAdopt.Add(panel);
+                }
+            }
+            catch (Exception e) { Warn("adopt hide panels: " + e.GetType().Name + ": " + e.Message); }
+
+            try
+            {
+                // 真实机器格子会按功能过滤物品（打印机的输入仓只收特定标签），
+                // 预览时统一放开，让配方样本能摆进去；Destroy 时还原。
+                RelaxFilters(_moduleGrid);
+                RelaxFilters(_inputGrid);
+                RelaxFilters(_outputGrid);
+                RelaxFilters(_inputSlot);
+                RelaxFilters(_outputSlot);
+                RelaxFilters(_chipSlot);
+                RelaxFilters(_containerSlot);
+                RelaxFilters(_distillateSlot);
+                RelaxFilters(_seedSlot);
+
+                // 工厂窗口可能被模组改过形状（枪匠 PrinterOutputPatch 就是改完再 Validate）
+                window.Validate();
+
+                if (ModEntry.Log != null && !_loggedAdopt)
+                {
+                    _loggedAdopt = true;
+                    ModEntry.Log.Log("[adopt] module=" + Name(_moduleGrid)
+                                     + " input=" + Name(_inputGrid) + "/" + Name(_inputSlot)
+                                     + " output=" + Name(_outputGrid) + "/" + Name(_outputSlot)
+                                     + " chip=" + Name(_chipSlot)
+                                     + " container=" + Name(_containerSlot)
+                                     + " distillate=" + Name(_distillateSlot)
+                                     + " seed=" + Name(_seedSlot));
+                }
+
+                // AttachContentTo 会把内容搬进图鉴页面，先把原挂载点与布局记下来
+                var node = window.childElement == null ? null : window.childElement.handler;
+                _adoptedRect = node == null ? null : node.rectTransform;
+                if (_adoptedRect != null)
+                {
+                    _adoptedParent = _adoptedRect.parent as RectTransform;
+                    _adoptedAnchorMin = _adoptedRect.anchorMin;
+                    _adoptedAnchorMax = _adoptedRect.anchorMax;
+                    _adoptedPivot = _adoptedRect.pivot;
+                    _adoptedSize = _adoptedRect.sizeDelta;
+                    _adoptedPosition = _adoptedRect.anchoredPosition;
+                    _adoptedScale = _adoptedRect.localScale;
+                }
+            }
+            catch (Exception e) { Warn("adopt layout: " + e.GetType().Name + ": " + e.Message); }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 按 role 取面板里的容器。
+        /// 注意 <c>MachineHelper.Panel</c> 会把格子包一层 <see cref="MachineryIntake"/>，
+        /// 所以 panel.content 通常不是 inventory 本身，必须再往里取一层。
+        /// </summary>
+        private static T ContentOf<T>(MachineryPanelRow row, string role) where T : class
+        {
+            var panel = row.GetPanel(role);
+            var content = panel == null ? null : panel.content;
+
+            var intake = content as MachineryIntake;
+            if (intake != null) content = intake.content;
+
+            return content as T;
+        }
+
+        /// <summary>
+        /// 临时放开真实机器格子的入格过滤，并摘掉入格/出格回调：
+        /// 那些回调会播放入格音效（battery_insert / 模块音效），预览时不该出声。
+        /// Destroy 时全部还原。
+        /// </summary>
+        private void RelaxFilters(GameInventory inv)
+        {
+            if (inv == null) return;
+
+            _borrowedHooks.Add(new HookSnapshot
+            {
+                Inv = inv,
+                May = inv.mayInventoryAddItemFunc,
+                Add = inv.onSlotAddItemFunc,
+                Remove = inv.onSlotRemoveItemFunc
+            });
+
+            inv.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+            inv.onSlotAddItemFunc = null;
+            inv.onSlotRemoveItemFunc = null;
+        }
+
+        /// <summary>
+        /// 机器面板统一排布（手写壳与借用窗口同一套）：
+        ///   · 面板宽度基准 W = max(默认内容宽, 最宽的那一块面板)——
+        ///     有比窗口更宽的面板时，窗口跟着加宽；
+        ///   · 面板一个一个往里放，放不下就换行（用列数逼近：取总宽 ≤ W 的最大列数）。
+        /// 返回面板在宿主坐标系里的宽度（≥ 默认宽）。
+        /// </summary>
+        internal float FitWidth(RectTransform host, float available)
+        {
+            var row = _borrowedRow;
+            if (row == null && _window != null) row = _window.childElement as MachineryPanelRow;
+            if (row == null || _window == null) return available;
+
+            int visible = 0;
+            var panels = row.Panels;
+            for (int i = 0; i < panels.Count; i++)
+                if (panels[i] != null && !panels[i].isHidden) visible++;
+
+            if (visible < 1) return available;
+
+            float ratio = CanvasRatio(host);
+            if (ratio <= 0.001f) ratio = 1f;
+
+            // 单列时的宽度 = 最宽的那一块面板（实测内容宽，不含窗口留白）
+            row.SetColumns(1);
+            _window.Validate();
+            float widest = ContentWidthOrBox(ratio);
+
+            float cap = MaxWinWidth - 40f;
+
+            // 目标 = 页面可用宽（单块面板更宽时取它），再留 8% 的余量给列等宽造成的临界差。
+            float target = Mathf.Min(Mathf.Max(available, widest), cap) * 1.08f;
+
+            // 从「全部排一行」往下试，取总宽不超过目标的最大列数；
+            // 实在放不下（单块就比上限还宽）才退到单列。
+            int chosen = 1;
+            float contentW = Mathf.Min(widest, cap);
+            for (int cols = visible; cols >= 1; cols--)
+            {
+                row.SetColumns(cols);
+                _window.Validate();
+                float w = ContentWidthOrBox(ratio);
+                if (w <= target + 0.5f || cols == 1)
+                {
+                    chosen = cols;
+                    contentW = Mathf.Min(w, cap);
+                    break;
+                }
+            }
+
+            if (ModEntry.Log != null)
+                ModEntry.Log.Log("[machine-fit] panels=" + visible + " widest=" + widest.ToString("F1")
+                                 + " cols=" + chosen + " content=" + contentW.ToString("F1")
+                                 + " host=" + available.ToString("F1")
+                                 + " target=" + target.ToString("F1"));
+
+            return Mathf.Max(contentW, available);
+        }
+
+        /// <summary>内容实测宽度（乘上画布比例）；量不到时退回 widthPixels。</summary>
+        private float ContentWidthOrBox(float ratio)
+        {
+            float measured = MeasureContentWidth();
+            if (measured > 10f) return measured * ratio;
+
+            return _window == null ? 0f : _window.widthPixels * ratio;
+        }
+
+        /// <summary>
+        /// 把借用的内容根还回原窗口并恢复布局，但不销毁窗口。
+        /// 图鉴每轮渲染都会 ClearContainer 销毁旧节点——借来的面板行必须在
+        /// 那之前还回去，否则工厂窗口的 UI 会跟着一起被销毁，下次就借不到了。
+        /// </summary>
+        internal void RestoreContent()
+        {
+            if (!_borrowed) return;
+            RestoreAdopted();
+        }
+
+        /// <summary>借用窗口的内容根被挂进了图鉴页面：还原挂载点与布局，绝不销毁窗口。</summary>
+        private void RestoreAdopted()
+        {
+            // 还原入格过滤与入格/出格回调
+            for (int i = 0; i < _borrowedHooks.Count; i++)
+            {
+                var h = _borrowedHooks[i];
+                if (h.Inv == null) continue;
+
+                h.Inv.mayInventoryAddItemFunc = h.May;
+                h.Inv.onSlotAddItemFunc = h.Add;
+                h.Inv.onSlotRemoveItemFunc = h.Remove;
+            }
+            _borrowedHooks.Clear();
+
+            // 先把借用时隐藏的面板恢复（SetHidden 会自行触发行重排）
+            for (int i = 0; i < _hiddenByAdopt.Count; i++)
+                if (_hiddenByAdopt[i] != null) _hiddenByAdopt[i].SetHidden(false);
+            _hiddenByAdopt.Clear();
+
+            if (_adoptedRect == null) return;
+
+            try
+            {
+                var parent = _adoptedParent != null
+                    ? _adoptedParent
+                    : (_window != null && _window.handler != null ? _window.handler.rectTransform : null);
+
+                _adoptedRect.SetParent(parent, false);
+                _adoptedRect.anchorMin = _adoptedAnchorMin;
+                _adoptedRect.anchorMax = _adoptedAnchorMax;
+                _adoptedRect.pivot = _adoptedPivot;
+                _adoptedRect.sizeDelta = _adoptedSize;
+                _adoptedRect.anchoredPosition = _adoptedPosition;
+                _adoptedRect.localScale = _adoptedScale;
+            }
+            catch { }
+        }
+
         internal void Destroy()
         {
             try
@@ -1770,6 +2218,8 @@ namespace ItemCatalog.UI
                 _moduleGrid = null;
                 _inputGrid = null;
                 _outputGrid = null;
+                _inputSlot = null;
+                _outputSlot = null;
                 _containerSlot = null;
                 _distillateSlot = null;
                 _productSlot = null;
@@ -1779,11 +2229,20 @@ namespace ItemCatalog.UI
                 _desqInputSlot = null;
                 _desqOutputSlot = null;
                 _gunSlots = null;
-                if (_window != null && _window.rectTransform != null)
+                if (_borrowed) RestoreAdopted();
+                else if (_window != null && _window.rectTransform != null)
                     UnityEngine.Object.Destroy(_window.rectTransform.gameObject);
+
+                // 独立演示实例：窗口已还回去，现在可以安全销毁
+                DestroyOwnedItem();
             }
             catch { }
             _window = null;
+            _borrowed = false;
+            _borrowedRow = null;
+            _hiddenByAdopt.Clear();
+            _adoptedRect = null;
+            _adoptedParent = null;
             _attachedRect = null;
         }
 

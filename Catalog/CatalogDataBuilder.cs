@@ -36,6 +36,34 @@ namespace ItemCatalog.Catalog
         /// <summary>上一次构建时收录的「额外条目」id（来自 ItemCatalogApi 提供者）。</summary>
         private static readonly HashSet<string> _knownExtraIds = new HashSet<string>(StringComparer.Ordinal);
 
+        /// <summary>游戏目录里被标成 unused 的物品 id（UnusedDirectory / isDebugMenu）。</summary>
+        private static readonly HashSet<string> _unusedIds = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>本次快照里真实存在的全部物品 id（含 unused）。</summary>
+        private static readonly HashSet<string> _itemIds = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>这件 id 在游戏的实际注册表里是否存在（UnusedDirectory 不会注册，查不到）。</summary>
+        internal static bool HasItemId(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+
+            EnsureBuilt();
+            return _itemIds.Contains(id);
+        }
+
+        /// <summary>
+        /// 这件物品在游戏自己的目录分类里是否被标成 unused。
+        /// 数据表（uses.csv 等）里出现这类 id 时整条关系忽略：它们不在图鉴里，
+        /// 画出来也只是没有图标的文字，而且游戏本身也没把它们当成正式内容。
+        /// </summary>
+        internal static bool IsUnusedId(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+
+            EnsureBuilt();
+            return _unusedIds.Contains(id);
+        }
+
         internal static void EnsureBuilt()
         {
             if (_built) return;
@@ -328,7 +356,7 @@ namespace ItemCatalog.Catalog
                 entry.ModName = TagString(item, ModHelper.MOD_NAME_TAG);
                 entry.SpriteAtlas = Trimmed(item.spriteAtlasPath);
                 entry.SpriteName = Trimmed(item.spritePath);
-                entry.SpriteKey = BuildSpriteKey(item, entry.ModId);
+                entry.SpriteFromMod = item.useSpriteFromMod;
             }
             catch (Exception e)
             {
@@ -336,7 +364,9 @@ namespace ItemCatalog.Catalog
             }
 
             All.Add(entry);
-            if (!entry.Unused) Visible.Add(entry);
+            _itemIds.Add(id);
+            if (entry.Unused) _unusedIds.Add(id);
+            else Visible.Add(entry);
         }
 
         internal static void Build(bool force)
@@ -346,6 +376,8 @@ namespace ItemCatalog.Catalog
             var watch = Stopwatch.StartNew();
             All.Clear();
             Visible.Clear();
+            _unusedIds.Clear();
+            _itemIds.Clear();
             FailedCount = 0;
 
             var ids = CollectAllIds();
@@ -505,19 +537,6 @@ namespace ItemCatalog.Catalog
                     ids[id] = unusedDirectory;
                 }
             }
-        }
-
-        private static string BuildSpriteKey(GameItem item, string modId)
-        {
-            string path = item.spritePath;
-            if (string.IsNullOrEmpty(path)) return null;
-
-            if (!string.IsNullOrEmpty(modId)) return modId + ":" + path;
-
-            string atlas = item.spriteAtlasPath;
-            if (item.useSpriteFromMod) return path;      // 没有来源标签时退回单键
-            if (!string.IsNullOrEmpty(atlas)) return atlas + "/" + path;
-            return path;
         }
 
         private static string TagString(GameItem item, string tag)

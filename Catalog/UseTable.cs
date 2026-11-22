@@ -166,6 +166,11 @@ namespace ItemCatalog.Catalog
 
                 if (info.Sources.Length == 0 && info.SourceTags.Length == 0) continue;
 
+                // 游戏目录里标成 unused 的物品（UnusedDirectory / 调试物品）一律忽略：
+                // 投入或产物里只要有这种 id，整条关系都不登记——它们不在图鉴里，
+                // 画出来只会留下没有图标的文字格。
+                if (HasUnusedItem(info)) continue;
+
                 _all.Add(info);
 
                 for (int k = 0; k < info.Sources.Length; k++)
@@ -189,11 +194,65 @@ namespace ItemCatalog.Catalog
             if (ModEntry.Log != null)
                 ModEntry.Log.Log("[uses] loaded " + _all.Count + " rows from " + UsesCsvPath);
 
+            // 螺丝刀拆枪：能拆的枪从 ADV_GUN_TAG 自动来（含模组枪），
+            // 每把枪的产出查 GunDisassembly（照抄 DisassembleWeapon 的 IL）。
+            AppendGunDisassemblyUses();
+
             // 可溶化学品（SOLUBLE_TAG）在游戏里可以直接对任意液体容器使用
             // （ChemicalHelper.InitChemItem 注册的 onItemTargetItemFunc → DissolveInto）；
             // 其它装液体的容器则通过内容物标签说明「里面是什么」。
             // 这两类关系都没有配方表可读，按标签 / 内容物自动补一条使用记录。
             AppendDissolveUses();
+
+            // 紫外滤片对的是容器里的液体，不是容器本身（见方法注释）
+            AppendLiquidFilterUses();
+        }
+
+        /// <summary>
+        /// 螺丝刀拆枪的使用关系：哪些枪能拆由 <c>ADV_GUN_TAG</c> 自动决定
+        /// （目录里可见的枪逐把生成，模组枪也自动跟上）；每把枪的产出查
+        /// <see cref="GunDisassembly"/>——游戏里这部分是写死在 DisassembleWeapon
+        /// 的 if/else，没有数据表可读。表里没有的枪拆完不掉东西。
+        /// </summary>
+        private static void AppendGunDisassemblyUses()
+        {
+            var items = CatalogDataBuilder.Visible;
+            if (items == null) return;
+
+            for (int i = 0; i < items.Count; i++)
+            {
+                var entry = items[i];
+                var item = entry == null ? null : entry.Item;
+                if (item == null || string.IsNullOrEmpty(entry.Id)) continue;
+
+                bool gun;
+                try { gun = item.IsTag("ADV_GUN_TAG"); }
+                catch { gun = false; }
+                if (!gun) continue;
+
+                var info = new UseInfo
+                {
+                    Sources = new[] { "screwdriver", entry.Id },
+                    SourceTags = new string[0],
+                    Kind = "apply",
+                    Produces = GunDisassemblyProbe.OutputsFor(entry.Id),
+                    Note = null
+                };
+
+                _all.Add(info);
+
+                for (int k = 0; k < info.Sources.Length; k++)
+                {
+                    Append(_using, info.Sources[k], info);
+                    AppendAlias(_using, info.Sources[k], info);
+                }
+
+                for (int k = 0; k < info.Produces.Length; k++)
+                {
+                    Append(_producing, info.Produces[k], info);
+                    AppendAlias(_producing, info.Produces[k], info);
+                }
+            }
         }
 
         /// <summary>
@@ -268,6 +327,49 @@ namespace ItemCatalog.Catalog
             }
         }
 
+        /// <summary>
+        /// 紫外滤片（uv_filter）作用于容器里的**液体**，不是容器物品本身：
+        /// WaterHelper.HandleFilter 里只有 `identifier == "microbe"` 返回 0，其它液体原样返回，
+        /// 即它唯一改变的就是微生物这一项成分。
+        /// 所以只登记一条「uv_filter + liquid:microbe」：查滤片时用途里出现微生物，
+        /// 查微生物液体时也能看到滤片。液体必须真的在 <c>Liquid.Liquids</c> 里才登记。
+        /// </summary>
+        private static void AppendLiquidFilterUses()
+        {
+            const string FilterId = "uv_filter";
+            const string MicrobeId = "microbe";
+
+            if (!CatalogDataBuilder.HasItemId(FilterId)) return;
+
+            var liquids = Liquid.Liquids;
+            if (liquids == null) return;
+
+            bool hasMicrobe = false;
+            for (int i = 0; i < liquids.Count && !hasMicrobe; i++)
+            {
+                var liquid = liquids[i];
+                hasMicrobe = liquid != null &&
+                             string.Equals(liquid.identifier, MicrobeId, StringComparison.Ordinal);
+            }
+
+            if (!hasMicrobe) return;
+
+            var info = new UseInfo
+            {
+                Sources = new[] { FilterId, LiquidCatalog.EntryPrefix + MicrobeId },
+                SourceTags = new string[0],
+                Kind = "apply",
+                Produces = new string[0],
+                Note = null
+            };
+
+            _all.Add(info);
+
+            // 两个 id 都登记：查滤片能看到微生物，查微生物液体能看到滤片
+            for (int k = 0; k < info.Sources.Length; k++)
+                Append(_using, info.Sources[k], info);
+        }
+
         /// <summary>液体条目的来源里是否已经登记过这件物品（避免和 uses.csv 重复）。</summary>
         private static bool HasProduceSource(string product, string id)
         {
@@ -284,6 +386,42 @@ namespace ItemCatalog.Catalog
             }
 
             return false;
+        }
+
+        /// <summary>这条使用关系是否引用了游戏里不存在的物品（unused 目录 / 未注册 id）。</summary>
+        private static bool HasUnusedItem(UseInfo info)
+        {
+            if (info == null) return false;
+
+            if (info.Sources != null)
+            {
+                for (int i = 0; i < info.Sources.Length; i++)
+                    if (IsIgnoredId(info.Sources[i])) return true;
+            }
+
+            if (info.Produces != null)
+            {
+                for (int i = 0; i < info.Produces.Length; i++)
+                    if (IsIgnoredId(info.Produces[i])) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 这个 id 要不要当成“游戏里没有的物品”忽略：
+        /// · 目录快照里标成 unused 的；
+        /// · 注册表里根本不存在的（UnusedDirectory 不注册，DirectoryMaster.Item 只会返回空壳）；
+        /// · 但运行时改名 / 变体后缀（mini_alcohol_bottle、full_*、*_used…）能解析回真实本体的要保留。
+        /// </summary>
+        private static bool IsIgnoredId(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+            if (CatalogDataBuilder.IsUnusedId(id)) return true;
+            if (CatalogDataBuilder.HasItemId(id)) return false;
+
+            string baseId = LootSource.BaseItemId(id);
+            return string.IsNullOrEmpty(baseId) || !CatalogDataBuilder.HasItemId(baseId);
         }
 
         /// <summary>

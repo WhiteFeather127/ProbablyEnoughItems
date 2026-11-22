@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using ProbablyEnoughItems.Api;
@@ -77,6 +77,14 @@ namespace ItemCatalog.UI
 
         private static readonly Dictionary<string, Sprite> SpriteCache = new Dictionary<string, Sprite>();
 
+        /// <summary>
+        /// 本次整页渲染里解析失败过的精灵键：同一页内不再重复解析。
+        /// 只按「一次渲染」生效，页面重建就清空——避免把「预热时还没就绪」永久缓存成缺图。
+        /// 没有它时，一个缺图物品（外模图集里不存在的 gse_* 等）每格会重复解析 2~3 次，
+        /// 每次都触发游戏自己的 "Sprite ... not found" 日志写入。
+        /// </summary>
+        private static readonly HashSet<string> _spriteMissKeys = new HashSet<string>(StringComparer.Ordinal);
+
         private static int _spriteHits;
         private static int _spriteMisses;
         private static int _spriteLogged;
@@ -132,14 +140,11 @@ namespace ItemCatalog.UI
         /// <summary>GameItem.contentWindow 的私有 backing field（setter 非 public）。</summary>
         private static FieldInfo _contentWindowField;
 
-        // ---- 页面级自动刷新（不依赖悬停） ----
-        private const float PageRefreshSeconds = 1f;   // 每节拍间隔
+        // ---- 当前页的格子（悬停/拖拽反查与覆盖层重试用） ----
         private static readonly List<ItemEntry> _pageEntries = new List<ItemEntry>();
         private static readonly Dictionary<string, UnityEngine.UI.Image> _pageImages =
             new Dictionary<string, UnityEngine.UI.Image>();
-        private static float _pageRefreshNextAt;
         private static string _hoveredEntryId;      // 存的是 entry.Key（变体格子带 #index）
-        private static int _refreshLogs;
 
         /// <summary>
         /// 详情窗口（以及其它外部窗口）里的物品格子。拖拽起手靠 _hoveredEntryId 反查 entry，
@@ -203,10 +208,6 @@ namespace ItemCatalog.UI
 
 
 
-
-        /// <summary>模组注册的变体提供者的播放游标。</summary>
-        private static readonly Dictionary<string, int> _providerCursor =
-            new Dictionary<string, int>(StringComparer.Ordinal);
 
         private static int _liquidFillWarns;
 
@@ -303,46 +304,52 @@ namespace ItemCatalog.UI
             try { MachinePanels.DiscoverFurnaceRecipes(); }
             catch (Exception e) { Warn("warmup: furnace discovery failed: " + e.Message); }
 
+            // 拆枪产出：加载时在隔离容器里模拟一次并写缓存（失败回退 IL 表）。
+            // 不放到打开图鉴时做——打开图鉴的那一下不该有模拟开销。
+            try { ItemCatalog.Catalog.GunDisassemblyProbe.Warmup(); }
+            catch (Exception e) { Warn("warmup: gun disassembly probe failed: " + e.Message); }
+
             // 变体来源只有接口提供者与硬编码生成器表，预热阶段不做任何探测。
             var items = CatalogDataBuilder.Visible;
             bool uiReady = CustomUIManager.Instance != null;
 
-            // 图标：只在 UI 管理器就绪时预热，避免把 null 写进缓存
-            int sprites = 0;
-            if (uiReady)
-            {
-                for (int i = 0; i < items.Count; i++)
-                {
-                    var entry = items[i];
-                    if (entry != null && GetSprite(entry) != null) sprites++;
-                }
-            }
-
-            // 变体格子：一次性展开、建实例、预解析图标，
-            // 否则第一次翻到那些页时才现场工厂调用 + 解析贴图，会卡一下。
+            // 懒加载：变体格子的实例、以及其余页面的图标，都等渲染到那一页时再建/解析
+            // （BuildCell → EnsureCellItem + GetSprite）。
+            // 预热只保留两件必须提前做的事：
+            //   ① 基础条目（VariantIndex < 0）的实例级加工——实例建表时就有，不额外造东西；
+            //   ② 第一页的实例与图标，避免首次打开图鉴时那一屏现建。
             int cells = 0;
+            int sprites = 0;
             int missingItem = 0;
             int missingSprite = 0;
 
             try
             {
+                // 基础条目必须有实例（元数据就来自它）；变体格子按需创建，不算缺失。
+                for (int i = 0; i < items.Count; i++)
+                    if (items[i] != null && items[i].Item == null) missingItem++;
+
                 var flat = FlatEntries();
                 cells = flat.Count;
 
-                for (int i = 0; i < flat.Count; i++)
+                if (uiReady)
                 {
-                    var cell = flat[i];
-                    if (cell == null) continue;
-
-                    if (cell.VariantIndex >= 0 && uiReady) EnsureCellItem(cell);
-
-                    if (cell.Item == null) missingItem++;
-
-                    if (uiReady)
+                    for (int i = 0; i < flat.Count; i++)
                     {
-                        var sprite = GetSprite(cell);
-                        if (sprite == null) missingSprite++;
-                        else if (cell.VariantIndex >= 0) sprites++;
+                        var cell = flat[i];
+                        if (cell == null || cell.VariantIndex >= 0) continue;
+                        EnsureCellItem(cell);
+                    }
+
+                    int warm = Mathf.Min(_perPage, flat.Count);
+                    for (int i = 0; i < warm; i++)
+                    {
+                        var cell = flat[i];
+                        if (cell == null) continue;
+
+                        EnsureCellItem(cell);
+                        if (GetSprite(cell) != null) sprites++;
+                        else missingSprite++;
                     }
                 }
             }
@@ -359,7 +366,8 @@ namespace ItemCatalog.UI
                 "[warmup] items={0} cells={1} sprites={2} build={3}ms total={4}ms",
                 items.Count, cells, sprites, buildMs, watch.ElapsedMilliseconds));
 
-            // 完整性自检：目录里的条目能不能都造出实例、能不能都取到图标
+            // 完整性自检：基础条目都有实例、第一页图标都能解析
+            // （其余页面按需加载，不参与预检）
             bool complete = missingItem == 0 && missingSprite == 0 && CatalogDataBuilder.FailedCount == 0;
 
             // 配方索引跟物品表一起在加载阶段建好，打开合成表时不用现扫
@@ -383,9 +391,8 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 只补解析图标（不做建表、不展开变体格子）。
-        /// 运行中有模组新注册了物品时调一次，避免玩家第一次翻到那一页时现加载贴图。
-        /// 已解析过的条目在 SpriteCache 里命中，开销只是一次字典查询。
+        /// 只补解析第一页图标；其余页面翻到时按需解析（GetSprite 有缓存）。
+        /// 运行中有模组新注册了物品时调一次。
         /// </summary>
         internal static void WarmupSpritesOnly()
         {
@@ -393,12 +400,10 @@ namespace ItemCatalog.UI
 
             try
             {
-                var items = CatalogDataBuilder.Visible;
-                for (int i = 0; i < items.Count; i++)
-                {
-                    var entry = items[i];
-                    if (entry != null) GetSprite(entry);
-                }
+                var flat = FlatEntries();
+                int warm = Mathf.Min(_perPage, flat.Count);
+                for (int i = 0; i < warm; i++)
+                    if (flat[i] != null) GetSprite(flat[i]);
             }
             catch (Exception e)
             {
@@ -432,12 +437,22 @@ namespace ItemCatalog.UI
             Toggle();
         }
 
-        internal static void ResetForScene()
+        /// <summary>
+        /// 换场景后的收尾。
+        /// reloadItems=true 表示物品目录本身被重建了（读档），必须整表重造实例；
+        /// 普通场景切换（进/出店铺）目录没变，复用现有实例——否则每次进出店
+        /// 都要把上千件物品重新造一遍（枪匠 130 把枪每把还带一套改装窗口）。
+        /// </summary>
+        internal static void ResetForScene(bool reloadItems)
         {
             HideNativeTooltip();   // 切场景/重建前先把悬停提示框收掉
 
-            // 换场景后物品实例全换了：重建目录，顺带让配方 / 来源索引一起失效重算
-            try { Catalog.CatalogDataBuilder.Build(true); } catch { }
+            try
+            {
+                if (reloadItems) Catalog.CatalogDataBuilder.Build(true);
+                else Catalog.CatalogDataBuilder.EnsureBuilt();
+            }
+            catch { }
 
             AnchorOverride = null;   // 旧场景的对象已销毁，别拿它算锚点
             _dropMark = null;        // 红底随窗口一起没了
@@ -462,19 +477,12 @@ namespace ItemCatalog.UI
             _pageEntries.Clear();
             _pageImages.Clear();
 
-            // 分帧建格/刷新是跨帧状态，切场景必须断掉（旧 builder 的容器已随场景销毁）
+            // 分帧建格是跨帧状态，切场景必须断掉（旧 builder 的容器已随场景销毁）
             _building = false;
             _buildBuilder = null;
             _buildItems = null;
-            _refreshing = false;
-            _refreshCursor = 0;
             _cellOverlays.Clear();
-            _pageRefreshNextAt = 0f;
-
-            // 「这一格会不会变」的判定结果按 id 缓存，但变体提供者可能在任意时刻注册或撤销，
-            // 缓存的前提（会话内不变）不成立。场景切换后一律重判，
-            // 否则先前判成「非动态」的 id 即使后来注册了提供者也不会轮播。
-            _dynamicCellCache.Clear();
+            _overlayRetries.Clear();
 
             DestroyProbe();
         }
@@ -611,16 +619,12 @@ namespace ItemCatalog.UI
 
         // ── 分帧建格（懒加载）──────────────────────────────────────────────
         // 一页 84 格一次性建完要 300~400ms，打开/翻页会明显卡一下。
-        // 现在每帧只建 CellsPerFrame 格，剩下的交给常驻节拍器继续，
+        // 现在每帧按「格数 + 时间」双上限分批建，剩下的交给常驻节拍器继续，
         // 首帧先建两批保证立刻有内容，不会出现整页空白。
         private const int CellsPerFrame = 8;
 
-        // 每秒一轮的图标刷新同样分摊到多帧：机器容器单格就要 40~95ms，
-        // 一帧刷完 84 格是几百毫秒的硬卡。
-        private const int RefreshCellsPerFrame = 12;
-
-        private static bool _refreshing;
-        private static int _refreshCursor;
+        /// <summary>单帧建格的耗时上限（毫秒）：到点就让出这一帧。</summary>
+        private const long BuildFrameBudgetMs = 4;
 
         private static CustomUIBuilder _buildBuilder;
         private static List<ItemEntry> _buildItems;
@@ -633,15 +637,23 @@ namespace ItemCatalog.UI
         {
             if (!_building || _buildBuilder == null) return;
 
+            var perf = System.Diagnostics.Stopwatch.StartNew();
+            int built = 0;
+            long layoutMs = 0;
+
             try
             {
-                int built = 0;
-                while (_buildCursor < _buildEnd && built < budget)
+                // 食物券/浆果这类单格 6~9ms 的页面，只按格数切分会造成 50ms 长帧。
+                // 用时间预算兜底：至少建一格，之后到 4ms 就交出这一帧。
+                while (_buildCursor < _buildEnd && built < budget
+                       && (built == 0 || perf.ElapsedMilliseconds < BuildFrameBudgetMs))
                 {
                     BuildCell(_buildBuilder, _buildItems[_buildCursor]);
                     _buildCursor++;
                     built++;
                 }
+
+                long beforeLayout = perf.ElapsedMilliseconds;
 
                 if (_buildCursor >= _buildEnd)
                 {
@@ -663,6 +675,8 @@ namespace ItemCatalog.UI
                     // 已建好的格子先排好版，用户看到的是逐步填充而不是空白
                     CustomUIBuilder.RebuildLayout(_gridHost);
                 }
+
+                layoutMs = perf.ElapsedMilliseconds - beforeLayout;
             }
             catch (Exception e)
             {
@@ -671,6 +685,18 @@ namespace ItemCatalog.UI
                 _buildItems = null;
                 Error("render item grid", e);
             }
+
+            perf.Stop();
+
+            // 单帧建格超过 6ms 就记一行：找出到底是格子建得慢还是排版慢
+            if (built > 0 && perf.ElapsedMilliseconds >= 6 && ModEntry.Log != null)
+            {
+                ModEntry.Log.Log("[perf] catalog cells built=" + built
+                                 + " frameMs=" + perf.ElapsedMilliseconds
+                                 + " cellMs=" + (perf.ElapsedMilliseconds - layoutMs)
+                                 + " layoutMs=" + layoutMs
+                                 + " cursor=" + _buildCursor + "/" + _buildEnd);
+            }
         }
 
         /// <summary>建一格（分帧建格的单元，内容与原整页循环里的单格逻辑一致）。</summary>
@@ -678,11 +704,17 @@ namespace ItemCatalog.UI
         {
             if (builder == null || entry == null) return;
 
+            var cellPerf = System.Diagnostics.Stopwatch.StartNew();
+
             // 变体格子：按需创建第 index 个实例（内部完成覆盖层采集）
             EnsureCellItem(entry);
 
+            long tItem = cellPerf.ElapsedMilliseconds;
+
             var sprite = GetSprite(entry);
             string elementId = "i:" + entry.Key;
+
+            long tSprite = cellPerf.ElapsedMilliseconds;
 
             if (sprite != null)
             {
@@ -731,7 +763,22 @@ namespace ItemCatalog.UI
                     AttachRightClick(buttonHost, entry);
                 }
             }
+
+            cellPerf.Stop();
+
+            // 单格建得慢（≥3ms）：记下具体物品 + 分段耗时，最多 40 行，排查偶发卡用
+            if (cellPerf.ElapsedMilliseconds >= 3 && ModEntry.Log != null && _slowCellLogs < 40)
+            {
+                _slowCellLogs++;
+                ModEntry.Log.Log("[perf] cell id=" + entry.Id + " variant=" + entry.VariantIndex
+                                 + " ms=" + cellPerf.ElapsedMilliseconds
+                                 + " [item=" + tItem
+                                 + " sprite=" + (tSprite - tItem)
+                                 + " add=" + (cellPerf.ElapsedMilliseconds - tSprite) + "]");
+            }
         }
+
+        private static int _slowCellLogs;
 
         /// <summary>
         /// 窗口层级遮挡：拖拽落点用 RenderHandler.RaycastElement 从前往后找
@@ -779,8 +826,12 @@ namespace ItemCatalog.UI
             var manager = CustomUIManager.Instance;
             if (manager == null || _window == null || !_window.IsAlive || _gridHost == null) return;
 
+            var perf = System.Diagnostics.Stopwatch.StartNew();
+            long phase = perf.ElapsedMilliseconds;
+
             EnsureInputBlocker();
 
+            long tEnsure = perf.ElapsedMilliseconds;
 
             var items = FilterItems();
             int perPage = Math.Max(1, _perPage);
@@ -788,21 +839,23 @@ namespace ItemCatalog.UI
             if (_page < 0) _page = 0;
             if (_page >= pages) _page = pages - 1;
 
+            long tFilter = perf.ElapsedMilliseconds;
+            long tClear = tFilter;
+
             _spriteHits = 0;
             _spriteMisses = 0;
+            _spriteMissKeys.Clear();   // 每次整页渲染给缺图物品一次重新解析的机会
 
             _pageEntries.Clear();
             _pageImages.Clear();
 
-            // 翻页/搜索会重建列表：正在进行的刷新游标要作废，否则会指向旧条目
-            _refreshing = false;
-            _refreshCursor = 0;
             // 注意：翻页重建不清理 _cellOverlays——key 是格子键、物品实例跨翻页存活，
             // 覆盖层仍然有效；清空会让「采集在重建前、应用在重建后」的时序全部丢失。
 
             try
             {
                 CustomUIBuilder.ClearContainer(_gridHost);
+                tClear = perf.ElapsedMilliseconds;
 
                 var builder = new CustomUIBuilder(manager, _window, _gridHost);
                 builder.BeginGrid(_columns, CellWidth, CellHeight, CellSpacing);
@@ -824,10 +877,26 @@ namespace ItemCatalog.UI
                 Error("render item grid", e);
             }
 
+            long tBuild = perf.ElapsedMilliseconds;
+
             SetText("count", string.Format(ModEntry.T("count"), items.Count));
             SetText("page", string.Format(ModEntry.T("page"), _page + 1, pages));
             SetInteractable("prev", _page > 0);
             SetInteractable("next", _page < pages - 1);
+
+            perf.Stop();
+
+            if (ModEntry.Log != null)
+            {
+                ModEntry.Log.Log("[perf] catalog render page=" + (_page + 1) + "/" + pages
+                                 + " items=" + items.Count + " search=" + (_search ?? "")
+                                 + " ms=" + perf.ElapsedMilliseconds
+                                 + " [ensure=" + (tEnsure - phase)
+                                 + " filter=" + (tFilter - tEnsure)
+                                 + " clear=" + (tClear - tFilter)
+                                 + " build=" + (tBuild - tClear)
+                                 + " ui=" + (perf.ElapsedMilliseconds - tBuild) + "]");
+            }
         }
 
         /// <summary>翻页到头时禁用按钮，明确告诉用户不能循环。</summary>
@@ -884,10 +953,6 @@ namespace ItemCatalog.UI
 
             _flat.Clear();
             _baseById.Clear();
-
-            // 重建往往就是"变体提供者刚注册/撤销"引起的，
-            // 「这一格会不会变」的缓存必须跟着失效，否则会沿用旧判定。
-            _dynamicCellCache.Clear();
 
             // 模块的「形状 → 效果」排列在格子展开内部完成（见 ModuleCells），
             // 条目本身保持目录顺序。
@@ -1223,15 +1288,21 @@ namespace ItemCatalog.UI
                 ApplyElementOverlayPipeline(item);
                 CaptureContainerOverlays(item, key);
 
-                // 诊断：采集结果（每 id 一条）——容量/液体/覆盖层层数
-                if (entry != null && ModEntry.Log != null && _compositeDiag.Add("fin:" + entry.Id))
+                // 诊断：只记真正带液体/覆盖层的物品（每 id 一条）。
+                // 给上千个普通物品各刷一行日志本身就是可观的 I/O 开销。
+                if (entry != null && ModEntry.Log != null)
                 {
                     List<ContainerOverlay> ov;
                     _cellOverlays.TryGetValue(key, out ov);
+                    int overlayCount = ov == null ? 0 : ov.Count;
+                    bool liquid = HasLiquidContent(item);
 
-                    ModEntry.Log.Log("[container-diag] " + entry.Id + " cap=" + cap
-                                     + " liquid=" + HasLiquidContent(item)
-                                     + " overlays=" + (ov == null ? 0 : ov.Count));
+                    if ((cap > 0 || liquid || overlayCount > 0) && _compositeDiag.Add("fin:" + entry.Id))
+                    {
+                        ModEntry.Log.Log("[container-diag] " + entry.Id + " cap=" + cap
+                                         + " liquid=" + liquid
+                                         + " overlays=" + overlayCount);
+                    }
                 }
             }
             catch { }
@@ -2018,6 +2089,15 @@ namespace ItemCatalog.UI
 
                 AttachHover(host, entry, emptyBottle, clientComposition);
                 AttachRightClick(host, entry);
+
+                // 详情窗口是整窗可拖的：物品格子上要拦掉拖拽，否则按住物品拖会连窗口一起动。
+                // 挂在元素根节点上，格子里的文字说明（×数量 / 标签名）同样算物品。
+                var cellRoot = element.Rect;
+                if (cellRoot != null &&
+                    cellRoot.gameObject.GetComponent<ItemCellDragBlocker>() == null)
+                {
+                    cellRoot.gameObject.AddComponent<ItemCellDragBlocker>();
+                }
             }
             catch (Exception e)
             {
@@ -3907,25 +3987,28 @@ namespace ItemCatalog.UI
             string atlas, name;
             CurrentSpritePaths(entry, out atlas, out name);
 
-            string cacheKey = (entry.ModId ?? "") + "|" + atlas + "|" + name + "|" + (entry.SpriteKey ?? "");
+            string cacheKey = (entry.ModId ?? "") + "|" + atlas + "|" + name;
 
             Sprite sprite;
             if (!force && SpriteCache.TryGetValue(cacheKey, out sprite)) return sprite;
+
+            // 同一页内已经确认解析失败的键：直接返回，别再次触发图集查找与游戏自己的缺图日志。
+            if (!force && _spriteMissKeys.Contains(cacheKey)) return null;
 
             sprite = ResolveSprite(entry);
 
             // 只缓存成功结果：预热阶段管理器可能还没就绪，
             // 缓存 null 会让图标永远缺图。
             if (sprite != null) SpriteCache[cacheKey] = sprite;
+            else if (!force) _spriteMissKeys.Add(cacheKey);
 
             if (sprite != null) _spriteHits++; else _spriteMisses++;
 
             if (_spriteLogged < 120 && ModEntry.Log != null)
             {
                 _spriteLogged++;
-                ModEntry.Log.Log(string.Format("[sprite] {0} atlas='{1}' name='{2}' key='{3}' mod='{4}' -> {5}",
-                    entry.Id, atlas, name, entry.SpriteKey ?? "-",
-                    entry.ModId ?? "-", sprite != null ? "ok" : "MISS"));
+                ModEntry.Log.Log(string.Format("[sprite] {0} atlas='{1}' name='{2}' mod='{3}' -> {4}",
+                    entry.Id, atlas, name, entry.ModId ?? "-", sprite != null ? "ok" : "MISS"));
             }
 
             return sprite;
@@ -3953,50 +4036,47 @@ namespace ItemCatalog.UI
             catch { }
         }
 
-        /// <summary>依次尝试：mod 图集 → 原版图集(atlas,name) → 引擎统一键 → 文件加载。</summary>
+        /// <summary>
+        /// 物品图标只走游戏自己的解析入口：原版图集、LoadedMod.Sprites，
+        /// 以及其它模组挂在 GameItemElement.ResolveSpriteByName 上的运行时精灵
+        /// （CorpPresence 的 corp_med_* 就是现场合成的）。
+        /// 失败时游戏返回 unknownSprite（非 null），不能当成成功，否则缺图会被缓存成假图标。
+        /// </summary>
         private static Sprite ResolveSprite(ItemEntry entry)
         {
-            var manager = CustomUIManager.Instance;
-
             string atlas, name;
             CurrentSpritePaths(entry, out atlas, out name);
+            if (string.IsNullOrEmpty(name)) return null;
 
             try
             {
-                if (!string.IsNullOrEmpty(entry.ModId) && !string.IsNullOrEmpty(name) && manager != null)
-                {
-                    var fromMod = manager.GetModSprite(entry.ModId, name);
-                    if (fromMod != null) return fromMod;
-                }
+                // 探针只建一次；每次同步成当前条目的真实路径（变体重掷后可能变）。
+                if (_spriteProbe == null)
+                    _spriteProbe = new GameItemElement(entry.Id + "#spriteProbe", atlas, name, null);
 
-                if (!string.IsNullOrEmpty(atlas) && !string.IsNullOrEmpty(name))
-                {
-                    var fromAtlas = RenderHandler.TryLoadFromAtlas(atlas, name);
-                    if (fromAtlas != null) return fromAtlas;
-                }
+                _spriteProbe.spriteAtlasPath = atlas;
+                _spriteProbe.spritePath = name;
+                _spriteProbe.useSpriteFromMod = entry.SpriteFromMod;
 
-                if (manager != null && !string.IsNullOrEmpty(entry.SpriteKey))
-                {
-                    var byKey = manager.GetSprite(entry.SpriteKey);
-                    if (byKey != null) return byKey;
-                }
+                var sprite = _spriteProbe.ResolveSpriteByName(name);
+                if (sprite != null && sprite != RenderHandler.unknownSprite) return sprite;
 
-                if (!string.IsNullOrEmpty(name))
-                {
-                    var single = manager == null ? null : manager.GetSprite(name);
-                    if (single != null) return single;
+                // 兜底：模组把精灵直接塞进 SpriteDict 的情况（不进图集、也没挂解析钩子）。
+                var dict = SpriteDict.Instance;
+                if (dict != null && dict.spriteDictionary != null &&
+                    dict.spriteDictionary.TryGetValue(name, out sprite))
+                    return sprite;
 
-                    var fromFile = RenderHandler.LoadFromFile(name);
-                    if (fromFile != null) return fromFile;
-                }
+                return null;
             }
             catch (Exception e)
             {
                 Warn("resolve sprite '" + entry.Id + "': " + e.Message);
+                return null;
             }
-
-            return null;
         }
+
+        private static GameItemElement _spriteProbe;
 
         private static string Shorten(string text)
         {
@@ -4411,10 +4491,16 @@ namespace ItemCatalog.UI
         /// <summary>探针元素会实例化一个 UI 节点，换物品或切场景时要销毁。</summary>
         private static void DestroyProbe()
         {
-            var handler = _probeElement == null ? null : _probeElement.handler;
+            DestroyProbeHandler(_probeElement == null ? null : _probeElement.handler);
+            DestroyProbeHandler(_spriteProbe == null ? null : _spriteProbe.handler);
+
             _probeElement = null;
             _probeId = null;
+            _spriteProbe = null;
+        }
 
+        private static void DestroyProbeHandler(TreeNodeRender handler)
+        {
             if (handler == null) return;
 
             try { UnityEngine.Object.Destroy(handler.gameObject); }
@@ -4428,9 +4514,8 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 页面级刷新：窗口可见时每 1 秒刷整页图标，
-        /// 随机物品顺便重掷数据，然后重新解析精灵图并就地替换，不重建整个网格。
-        /// 当前悬停的那件每轮都刷，提示框会跟着变。
+        /// 常驻节拍：处理待重绘、分帧建格的剩余部分，以及覆盖层采集失败的有限次重试。
+        /// 物品数据不再周期性重掷——随机性已经由多格展开固定下来。
         /// </summary>
         internal static void AutoRefreshTick()
         {
@@ -4452,148 +4537,54 @@ namespace ItemCatalog.UI
                 return;
             }
 
-
-            // 分帧建格优先：还有格子没建完就接着建，别和整页刷新抢同一帧
+            // 分帧建格：还有格子没建完就接着建
             if (_building)
             {
                 PumpBuild(CellsPerFrame);
                 return;
             }
 
-            // 刷新一轮（每秒一次）也是跨帧走的：每帧只刷 RefreshCellsPerFrame 格
-            if (_refreshing)
+            RetryOverlayCaptures();
+        }
+
+        /// <summary>
+        /// 覆盖层首次采集可能因图集/生成器尚未就绪而拿到空列表（液体好运瓶这类尤其明显）。
+        /// 每格最多重试 2 次，采到后立刻把合成图换上；非容器尝试几次后自然放弃。
+        /// </summary>
+        private static void RetryOverlayCaptures()
+        {
+            for (int i = 0; i < _pageEntries.Count; i++)
             {
-                int total = _pageEntries.Count;
-                int done = 0;
-                while (_refreshCursor < total && done < RefreshCellsPerFrame)
-                {
-                    RefreshCellIcon(_pageEntries[_refreshCursor]);
-                    _refreshCursor++;
-                    done++;
-                }
+                var entry = _pageEntries[i];
+                if (entry == null || entry.Item == null || string.IsNullOrEmpty(entry.Key)) continue;
+                if (_cellOverlays.ContainsKey(entry.Key)) continue;
 
-                if (_refreshCursor >= total) _refreshing = false;
-                return;
-            }
+                int tries;
+                _overlayRetries.TryGetValue(entry.Key, out tries);
+                if (tries >= 2) continue;
 
-            if (Time.unscaledTime < _pageRefreshNextAt) return;
+                _overlayRetries[entry.Key] = tries + 1;
+                try { CaptureContainerOverlays(entry.Item, entry.Key); } catch { }
 
-            _pageRefreshNextAt = Time.unscaledTime + PageRefreshSeconds;
-
-            int count = _pageEntries.Count;
-            if (count == 0) return;
-
-            // 一整页在一帧里刷完要 240~430ms（机器类单格就 40~95ms），
-            // 现在改成跨帧分摊：每秒发起一轮，每帧只刷 RefreshCellsPerFrame 格。
-            _refreshing = true;
-            _refreshCursor = 0;
-
-            if (_refreshLogs < 3 && ModEntry.Log != null)
-            {
-                _refreshLogs++;
-                ModEntry.Log.Log(string.Format("[refresh] page={0} icons={1} hovered='{2}'",
-                    count, _pageImages.Count, _hoveredEntryId ?? "-"));
+                if (_cellOverlays.ContainsKey(entry.Key)) ApplyCellSprite(entry);
             }
         }
 
-        private static void RefreshCellIcon(ItemEntry entry)
+        /// <summary>把当前精灵（含液体覆盖层合成）就地刷到格子上，不重建网格。</summary>
+        private static void ApplyCellSprite(ItemEntry entry)
         {
-            if (entry == null) return;
-
-            // 变体格子（VariantIndex >= 0）是固定的一格，数据不再变，只按需刷新图标；
-            // 单格条目才走下面的轮播/重掷链 —— 且只对「真的会变」的条目走（结果按 id 缓存），
-            // 静态物品每秒重扫标签表是整页刷新 71ms 的主要来源。
-            if (entry.VariantIndex < 0 && IsDynamicCell(entry))
-            {
-                // 单格轮播来源只有两类：接口注册的变体提供者、硬编码生成器表。
-                if (TryCycleRegisteredVariant(entry)) { }
-                else if (PrebuiltVariants.ContainsKey(entry.Id)) RerollEntryItem(entry);
-            }
-
-            // 容器液体视觉管线：默认停用，容器一律显示空容器。
-            // 想要液体显示时用 ItemCatalogApi 的变体提供者接口注册，
-            // 或把下面的 #if false 改为 true 恢复自动检测
-            // （预灌容器 → 收口管线；id 在游戏预置生成器注册表 → 用生成器；
-            //   id 与液体注册表同名（酸/碱…）→ 按同名液体灌满）。
-#if false
-            // 容器初始就带液体（工厂预灌的单格容器）：走与多格相同的收口管线，
-            // 显示原版液体覆盖层（类型变水 → 元素管线 → 采集 → 合成）。
-            // 判定全数据驱动：带容量标签 + 实际有液体 → 自动进入本管线。
-            // 化学品这类「出厂即带内容物」的物品，工厂给的是空容器，但它们在
-            // 游戏自己的预置生成器注册表（PreBuiltItemHelper.preBuiltItems）里
-            // 有生成函数——用它生成真实实例（带正确的酸/碱/纯度），同样收口。
-            // 都没有的（水瓶等真·空容器）→ 只显示空瓶；覆盖层不变时合成走缓存。
-            if (entry.VariantIndex < 0 && entry.Item != null)
-            {
-                try
-                {
-                    if (ReadIntTag(entry.Item, "LIQUID_CONTAINER_CAPACITY") > 0)
-                    {
-                        if (!HasLiquidContent(entry.Item) && HasPrebuiltGenerator(entry.Id))
-                        {
-                            var generated = TrySpawnPrebuilt(entry.Id);
-
-                            // 诊断：生成器产物有没有液体、容量/成分标签是什么
-                            if (ModEntry.Log != null && _prebuiltDiag.Add(entry.Id))
-                            {
-                                int cap = ReadIntTag(generated, "LIQUID_CONTAINER_CAPACITY");
-                                int cur = ReadIntTag(generated, "LIQUID_CONTAINER_CURRENT");
-                                ModEntry.Log.Log("[prebuilt] " + entry.Id
-                                                 + " -> gen=" + (generated == null ? "null" : "ok")
-                                                 + " cap=" + cap + " cur=" + cur
-                                                 + " liquid=" + (generated != null && HasLiquidContent(generated)));
-                            }
-
-                            if (generated != null && HasLiquidContent(generated))
-                                entry.Item = generated;
-                        }
-                        else if (!HasLiquidContent(entry.Item) && LiquidRegistryContains(entry.Id))
-                        {
-                            // Item id matches a registered liquid (acid/base etc.):
-                            // this item IS that chemical in bottle form - fill it.
-                            FillFromLiquidRegistry(entry.Item, entry.Id);
-                        }
-                        else if (!HasLiquidContent(entry.Item) && ModEntry.Log != null && _prebuiltDiag.Add(entry.Id))
-                        {
-                            ModEntry.Log.Log("[prebuilt] " + entry.Id + " -> 无预置生成器，保持空瓶");
-                        }
-
-                        if (HasLiquidContent(entry.Item))
-                            FinalizeItemSprites(entry.Item, entry);
-                    }
-                }
-                catch { }
-            }
-#endif
-
-            // 覆盖层首次采集可能因图集/生成器尚未就绪而拿到空列表（liquid_luck 这类
-            // 没有容量标签、只靠修饰器函数的物品尤其明显）。给它有限次重试，
-            // 拿到之后下面的合成分支就会自动生效。非容器重试几次后自然放弃。
-            if (entry.Item != null && !string.IsNullOrEmpty(entry.Key)
-                && !_cellOverlays.ContainsKey(entry.Key))
-            {
-                int tries;
-                _overlayRetries.TryGetValue(entry.Key, out tries);
-                if (tries < 2)
-                {
-                    _overlayRetries[entry.Key] = tries + 1;
-                    try { CaptureContainerOverlays(entry.Item, entry.Key); } catch { }
-                }
-            }
-
-            // 悬停中的那一格：先把数据同步到探针，提示框下一帧就能读到新数值
-            if (string.Equals(entry.Key, _hoveredEntryId, StringComparison.Ordinal))
-            {
-                SyncProbeData(entry);
-            }
-
             UnityEngine.UI.Image icon;
             if (!_pageImages.TryGetValue(entry.Key, out icon) || icon == null) return;
 
-            // 走缓存：key 里含当前物品的图集/精灵名，变体换了才会重新解析，
-            // 否则每秒重复解析（尤其是解析失败时的文件回退）会白耗性能。
             var sprite = GetSprite(entry);
             if (sprite == null) return;
+
+            List<ContainerOverlay> overlays;
+            if (_cellOverlays.TryGetValue(entry.Key, out overlays) && overlays != null && overlays.Count > 0)
+            {
+                var composite = BuildCompositeSprite(entry.Key, sprite, overlays);
+                if (composite != null) sprite = composite;
+            }
 
             if (icon.sprite != sprite) icon.sprite = sprite;
 
@@ -4606,52 +4597,6 @@ namespace ItemCatalog.UI
             {
                 rect.sizeDelta = new Vector2(w, h);
             }
-
-            // 液体容器：按原版渲染方式把主精灵与覆盖层组合成一张图，整体替换图标。
-            // 单格轮播与多格通用：覆盖层每秒随轮播水源变化，合成缓存自动失效重建。
-            List<ContainerOverlay> pendingOverlays = null;
-            if (!string.IsNullOrEmpty(entry.Key))
-                _cellOverlays.TryGetValue(entry.Key, out pendingOverlays);
-            if (pendingOverlays != null && pendingOverlays.Count > 0)
-            {
-                var composite = BuildCompositeSprite(entry.Key, sprite, pendingOverlays);
-                if (composite != null)
-                {
-                    if (icon.sprite != composite) icon.sprite = composite;
-
-                    float cw, ch;
-                    FitSprite(composite, IconMaxSide, out cw, out ch);
-                    if (rect != null &&
-                        (Mathf.Abs(rect.sizeDelta.x - cw) > 0.5f || Mathf.Abs(rect.sizeDelta.y - ch) > 0.5f))
-                    {
-                        rect.sizeDelta = new Vector2(cw, ch);
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// 这一格每秒需不需要走轮播/重掷链？结果按 id 缓存——
-        /// 判定本身要遍历标签表（液体内容判定等），84 格 × 每秒一次就是整页刷新 71ms 的主要来源。
-        /// 判定输入全部来自探测结果与物品模板（会话内不变），缓存是安全的。
-        /// </summary>
-        private static readonly Dictionary<string, bool> _dynamicCellCache =
-            new Dictionary<string, bool>(StringComparer.Ordinal);
-
-        private static bool IsDynamicCell(ItemEntry entry)
-        {
-            if (entry == null || string.IsNullOrEmpty(entry.Id)) return false;
-
-            bool cached;
-            if (_dynamicCellCache.TryGetValue(entry.Id, out cached)) return cached;
-
-            // 只有两类单格会变：接口注册的变体提供者、硬编码生成器表。
-            // 不再做标签层面的探测。
-            bool dynamic = ItemCatalogApi.FindVariantProvider(entry.Id) != null
-                           || PrebuiltVariants.ContainsKey(entry.Id);
-
-            _dynamicCellCache[entry.Id] = dynamic;
-            return dynamic;
         }
 
 
@@ -4776,21 +4721,29 @@ namespace ItemCatalog.UI
                 if (func == null)
                 {
                     // 目录里的实例可能是空壳（没注册修饰器），换个新实例再试一次。
-                    // liquid_luck 这类由工厂注册 func 的物品，空壳永远没有覆盖层。
+                    // 但只有液体容器值得这么做：其它物品（占绝大多数）本来就没有覆盖层，
+                    // 每次重建一份实例会明显拖慢建格与预热（实测这是单格 6~9ms 的主因）。
+                    bool liquid = false;
                     try
                     {
-                        var fresh = DirectoryMaster.Item(item == null ? null : item.identifier);
-                        if (fresh != null && !ReferenceEquals(fresh, item))
-                        {
-                            func = fresh.getItemSpriteModifierForItemFunc;
-                            if (func != null) item = fresh;
-                        }
+                        liquid = ReadIntTag(item, "LIQUID_CONTAINER_CAPACITY") > 0
+                                 || HasLiquidContent(item);
                     }
                     catch { }
 
-                    if (ModEntry.Log != null && _compositeDiag.Add("ov-null:" + key))
-                        ModEntry.Log.Log("[overlay] " + key + " -> no modifier func (retry="
-                                         + (func != null) + ")");
+                    if (liquid)
+                    {
+                        try
+                        {
+                            var fresh = DirectoryMaster.Item(item == null ? null : item.identifier);
+                            if (fresh != null && !ReferenceEquals(fresh, item))
+                            {
+                                func = fresh.getItemSpriteModifierForItemFunc;
+                                if (func != null) item = fresh;
+                            }
+                        }
+                        catch { }
+                    }
                 }
 
                 if (func != null)
@@ -4818,7 +4771,8 @@ namespace ItemCatalog.UI
                     }
                 }
 
-                if (ModEntry.Log != null && _compositeDiag.Add("ov:" + key))
+                // 只在真的采到覆盖层时记一行：普通物品没有修饰器是常态，逐条记录会刷上万行日志。
+                if (list.Count > 0 && ModEntry.Log != null && _compositeDiag.Add("ov:" + key))
                     ModEntry.Log.Log("[overlay] " + key + " n=" + total + " kept=" + list.Count);
             }
             catch (Exception e)
@@ -5119,40 +5073,6 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 优先使用模组注册的变体提供者（ItemCatalogApi.ICatalogVariantProvider）：
-        /// 它明确知道「一共几种、第几种长什么样」，所以按 0..N-1 顺序播放即可。
-        /// </summary>
-        private static bool TryCycleRegisteredVariant(ItemEntry entry)
-        {
-            if (entry == null) return false;
-
-            var provider = ItemCatalogApi.FindVariantProvider(entry.Id);
-            if (provider == null) return false;
-
-            int count;
-            try { count = provider.VariantCount; }
-            catch (Exception e) { Warn("variant provider count '" + entry.Id + "': " + e.Message); return false; }
-
-            if (count <= 0) return false;   // 0 表示未知，退回自动探测
-
-            int cursor;
-            _providerCursor.TryGetValue(entry.Id, out cursor);
-            _providerCursor[entry.Id] = cursor + 1;
-
-            GameItem variant;
-            try { variant = provider.CreateVariant(cursor % count); }
-            catch (Exception e) { Warn("variant provider create '" + entry.Id + "': " + e.Message); return false; }
-
-            if (variant == null) return false;
-
-            entry.Item = variant;
-            return true;
-        }
-
-
-
-
-        /// <summary>
         /// 该标签值能否当作「有限取值轴」：
         /// - 滤掉序列号/时间戳这类大整数（每次生成都不同，本质是连续值）；
         /// - 滤掉纯美术变体（`..._VISUAL_VARIANT_INT`），图鉴用图集贴图，多一格看不出区别。
@@ -5196,12 +5116,6 @@ namespace ItemCatalog.UI
                 return state.valueInt.ToString();
             }
             catch { return null; }
-        }
-
-        private static void RerollEntryItem(ItemEntry entry)
-        {
-            var fresh = CreatePreviewItem(entry.Id);
-            if (fresh != null) entry.Item = fresh;
         }
 
         /// <summary>
@@ -6111,13 +6025,25 @@ namespace ItemCatalog.UI
 
             if (ModEntry.Log != null)
             {
-                ModEntry.Log.Log(string.Format(
-                    "[panel] screen={0}x{1} inventoryRightX={2:F1} leftNorm={3:F3} panel={4}x{5} grid={6}x{7}={8}/page",
-                    Mathf.RoundToInt(parentWidth), Mathf.RoundToInt(parentHeight), inventoryRight,
-                    leftNorm, Mathf.RoundToInt(availableWidth), Mathf.RoundToInt(parentHeight),
-                    _columns, _rows, _perPage));
+                // 物品栏几何每变一次都会走到这里（有时每秒数次），只在尺寸/格数真的变了时记一行。
+                string signature = string.Format(
+                    "{0}x{1}|{2:F3}|{3}x{4}|{5}",
+                    Mathf.RoundToInt(parentWidth), Mathf.RoundToInt(parentHeight),
+                    leftNorm, _columns, _rows, _perPage);
+
+                if (signature != _lastPanelLog)
+                {
+                    _lastPanelLog = signature;
+                    ModEntry.Log.Log(string.Format(
+                        "[panel] screen={0}x{1} inventoryRightX={2:F1} leftNorm={3:F3} panel={4}x{5} grid={6}x{7}={8}/page",
+                        Mathf.RoundToInt(parentWidth), Mathf.RoundToInt(parentHeight), inventoryRight,
+                        leftNorm, Mathf.RoundToInt(availableWidth), Mathf.RoundToInt(parentHeight),
+                        _columns, _rows, _perPage));
+                }
             }
         }
+
+        private static string _lastPanelLog;
 
         private static float _nextPlacementCheckAt;
 

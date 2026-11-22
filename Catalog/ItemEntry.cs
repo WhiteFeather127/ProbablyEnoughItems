@@ -12,14 +12,14 @@ namespace ItemCatalog.Catalog
         public long Value;
         public List<string> Types;
 
-        /// <summary>原版："图集/精灵名"；模组物品："modId:精灵名"（仅供日志与兜底取图）。</summary>
-        public string SpriteKey;
-
-        /// <summary>GameItem.spriteAtlasPath（原版图集名，模组物品通常为空）。</summary>
+        /// <summary>GameItem.spriteAtlasPath（原版是图集名；模组物品是 mod id）。</summary>
         public string SpriteAtlas;
 
         /// <summary>GameItem.spritePath（精灵名 / 文件相对路径）。</summary>
         public string SpriteName;
+
+        /// <summary>GameItem.useSpriteFromMod：精灵来自 ModLoader 的 LoadedMod.Sprites。</summary>
+        public bool SpriteFromMod;
 
         public string ModId;
         public string ModName;
@@ -89,9 +89,9 @@ namespace ItemCatalog.Catalog
                 Desc = Desc,
                 Value = Value,
                 Types = Types,
-                SpriteKey = SpriteKey,
                 SpriteAtlas = SpriteAtlas,
                 SpriteName = SpriteName,
+                SpriteFromMod = SpriteFromMod,
                 ModId = ModId,
                 ModName = ModName,
                 Item = null,

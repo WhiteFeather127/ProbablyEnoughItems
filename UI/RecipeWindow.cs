@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using System;
+﻿﻿﻿﻿﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 
@@ -46,7 +46,11 @@ namespace ItemCatalog.UI
         /// </summary>
         private static float GridContentWidth()
         {
-            return _gridContentWidth > 60f ? _gridContentWidth : WinWidth - 36f;
+            // 内容水平居中：滚动条只占右侧 S，但居中会把内容右半边多推出去 S/2 的两倍，
+            // 所以可用宽要扣 2 × 滚动条宽，最右一列才不会被压住。
+            return _gridContentWidth > 60f
+                ? _gridContentWidth
+                : WinWidth - 36f - _scrollbarWidth * 2f;
         }
 
         /// <summary>每行格数随容器宽自适应：可用宽除以「格宽 + 间距」。</summary>
@@ -80,8 +84,6 @@ namespace ItemCatalog.UI
             }
         }
 
-        private static int ItemsPerPage { get { return GridColumns() * RowsPerPage; } }
-
         /// <summary>客人立绘最长边。客人精灵本身一般是 256 见方，再放大会开始发虚。</summary>
         private const float PortraitMaxSide = 300f;
 
@@ -89,6 +91,14 @@ namespace ItemCatalog.UI
         private const float PortraitSwitchSeconds = 1f;
 
         private static float _lastHeight = -1f;
+        private static float _lastWidth = -1f;
+
+        /// <summary>
+        /// 机器页需要更宽时由渲染阶段写入（0 = 用默认 WinWidth）。
+        /// 机器面板按「默认宽度」排布：一行放不下就加宽窗口，只有超过
+        /// <see cref="MaxMachinePanelWidth"/> 才退回自动换行。
+        /// </summary>
+        private static float _pageWidthOverride;
 
         // 网格可用宽：布局完成后量到的 _bodyHost 真宽（-1 = 还没量到，用假定值）
         private static float _gridContentWidth = -1f;
@@ -207,17 +217,14 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 一页 = 某个内容块（Block）里的一段。
-        /// Start/Count 是块内条目范围；Count == 0 表示这一块不做切片、整块一页
-        /// （配方 / 使用 / 机器纯度档这类「一条关系一页」的内容）。
+        /// 一页 = 一个内容块（客人 / 配方 / 机器档位 / 掉落池 …）。
+        /// 块内不再切片：内容超高由页面滚动条处理，Start/Count 恒为 0。
         /// </summary>
         private struct PageSlice
         {
             internal int Block;
             internal int Start;
             internal int Count;
-
-            internal bool IsWholeBlock { get { return Count <= 0; } }
         }
 
         /// <summary>
@@ -231,17 +238,7 @@ namespace ItemCatalog.UI
             /// <summary>内容块数量（客人数量 / 配方数量 / 机器纯度档数量 …）。</summary>
             internal Func<Category, int> BlockCount;
 
-            /// <summary>第 block 块可切片的条目数；返回 0 表示整块一页。</summary>
-            internal Func<Category, int, int> BlockItems;
-
-            /// <summary>
-            /// 第 block 块每页装得下几条；null = 用全局 ItemsPerPage。
-            /// 来源页 / 掉落页按「这一块实际画不画立绘、箱子」自己算行数，
-            /// 超出的行由分页计划自动放到下一页。
-            /// </summary>
-            internal Func<Category, int, int> PageItems;
-
-            /// <summary>渲染某个块里的某一段。</summary>
+            /// <summary>渲染某个块。块内不再切片，超高由页面滚动条处理。</summary>
             internal Action<CustomUIBuilder, Category, PageSlice> Render;
         }
 
@@ -265,15 +262,6 @@ namespace ItemCatalog.UI
 
         /// <summary>当前大类的完整分页计划：翻页 / 页码上限的唯一依据。</summary>
         private static readonly List<PageSlice> _pagePlan = new List<PageSlice>();
-
-        /// <summary>
-        /// 来源块实测出来的每页容量（block → 条目数）。
-        /// 公式只是初值；第一次真正排版后按 LayoutUtility 量到的剩余高度校正，
-        /// 保证有立绘的页也能排满到和机器页相同的最大高度。
-        /// </summary>
-        private static readonly Dictionary<int, int> _sourceCapacity = new Dictionary<int, int>();
-
-        private static bool _calibratingCapacity;
 
         /// <summary>当前正在渲染的那一页（_page 对应的切片）。</summary>
         private static PageSlice _currentSlice;
@@ -385,6 +373,8 @@ namespace ItemCatalog.UI
         {
             if (entry == null) return;
 
+            var openPerf = System.Diagnostics.Stopwatch.StartNew();
+
             _entry = entry;
             QueryTarget.Set(entry);   // 查询态（绿底 / 停轮播）的唯一来源
             _asUse = asUse;
@@ -399,6 +389,8 @@ namespace ItemCatalog.UI
                 Render();
             }
 
+            long tRender = openPerf.ElapsedMilliseconds;
+
             if (_window != null && _window.IsAlive) Raise();
 
             // 这一帧往后一点点再提一次：点击事件里图鉴自己也会 BringToFront，
@@ -409,6 +401,14 @@ namespace ItemCatalog.UI
             {
                 try
                 {
+                    if (openPerf.ElapsedMilliseconds >= 20)
+                    {
+                        ModEntry.Log.Log("[perf] detail-open id=" + entry.Id
+                                         + " ms=" + openPerf.ElapsedMilliseconds
+                                         + " (render=" + tRender
+                                         + " raise=" + (openPerf.ElapsedMilliseconds - tRender) + ")");
+                    }
+
                     ModEntry.Log.Log("[recipe] open id=" + entry.Id + " asUse=" + asUse
                                      + " cats=" + _categories.Count + " " + CategoryDigest()
                                      + " " + State());
@@ -484,7 +484,6 @@ namespace ItemCatalog.UI
             _categories = new List<Category>();
             _sourceBlocks.Clear();
             _pagePlan.Clear();
-            _sourceCapacity.Clear();
             _currentSlice = new PageSlice();
             _inputBlocker = null;
             _chromeHost = null;
@@ -558,16 +557,25 @@ namespace ItemCatalog.UI
             }
 
             // 标签格只重建自己那一小块，其余格子的 _cellAnims 仍然有效，不用提前返回
+            var tickPerf = System.Diagnostics.Stopwatch.StartNew();
+            long t0 = tickPerf.ElapsedMilliseconds;
             TickTagRolls();
 
             // 机器静态配方：同一纯度组内轮播不同投料方案（模块也轮播）
+            long t1 = tickPerf.ElapsedMilliseconds;
             TickMachineRecipes();
 
             // 枪械配件：每个改装槽轮播这一槽能装的全部配件
+            long t2 = tickPerf.ElapsedMilliseconds;
             TickGunMods();
 
             // 货单里的容器图标：成分不同 → 瓶身精灵不同，逐张轮播
-            if (_cellAnims.Count == 0) return;
+            long t3 = tickPerf.ElapsedMilliseconds;
+            if (_cellAnims.Count == 0)
+            {
+                LogTickPerf(t0, t1, t2, t3, t3);
+                return;
+            }
 
             foreach (var pair in _cellAnims)
             {
@@ -579,6 +587,20 @@ namespace ItemCatalog.UI
                 try { anim.Image.sprite = anim.Sprites[anim.Index]; }
                 catch { }
             }
+
+            LogTickPerf(t0, t1, t2, t3, tickPerf.ElapsedMilliseconds);
+        }
+
+        /// <summary>每秒轮播的总耗时超过 5ms 就记一行，按环节拆开（偶发卡排查用）。</summary>
+        private static void LogTickPerf(long t0, long t1, long t2, long t3, long t4)
+        {
+            if (t4 < 5 || ModEntry.Log == null) return;
+
+            ModEntry.Log.Log("[perf] detail tick tag=" + (t1 - t0)
+                             + " machine=" + (t2 - t1)
+                             + " gun=" + (t3 - t2)
+                             + " anim=" + (t4 - t3)
+                             + " total=" + t4 + "ms");
         }
 
         /// <summary>
@@ -990,15 +1012,11 @@ namespace ItemCatalog.UI
                 // ===== 用途方向 =====
                 AddClientCategory(null, SourceIndex.WantedBy(_entry.Id, _entry.Item));
 
-                if (MachinePanels.For(_entry.Id) != null ||
-                    MachinePanels.RecipesFor(_entry.Id) != null ||
-                    RecipeIndex.ByMachine(_entry.Id).Count > 0)
+                // 只有真有配方组可画时才建机器页：contentWindow 是 MachineryPanelRow
+                // 的物品远不止机器（枪、储物舱、动物笼、远征箱…），没有配方组时整页空白。
+                if (MachineGroupCount() > 0)
                 {
-                    _categories.Add(new Category
-                    {
-                        Kind = CatMachine,
-                        Recipes = RecipeIndex.ByMachine(_entry.Id)
-                    });
+                    _categories.Add(new Category { Kind = CatMachine });
                 }
 
                 AddMachineRecipeCategories();
@@ -1015,15 +1033,11 @@ namespace ItemCatalog.UI
                                   SourceIndex.WantedBy(_entry.Id, _entry.Item));
                 AddSourceCategory(CatLocation, SourceIndex.For(_entry.Id));
 
-                if (MachinePanels.For(_entry.Id) != null ||
-                    MachinePanels.RecipesFor(_entry.Id) != null ||
-                    RecipeIndex.ByMachine(_entry.Id).Count > 0)
+                // 只有真有配方组可画时才建机器页：contentWindow 是 MachineryPanelRow
+                // 的物品远不止机器（枪、储物舱、动物笼、远征箱…），没有配方组时整页空白。
+                if (MachineGroupCount() > 0)
                 {
-                    _categories.Add(new Category
-                    {
-                        Kind = CatMachine,
-                        Recipes = RecipeIndex.ByMachine(_entry.Id)
-                    });
+                    _categories.Add(new Category { Kind = CatMachine });
                 }
 
                 AddMachineRecipeCategories();
@@ -1228,9 +1242,10 @@ namespace ItemCatalog.UI
             try
             {
                 builder = CustomUIManager.Window(WinId,
-                    _entry == null ? ModEntry.T("rec_title") : _entry.DisplayName, "paper")
+                    _entry == null ? "?" : _entry.DisplayName, "paper")
                     .SetDraggable(true)
-                    .SetSize(WinWidth, WinMinHeight)
+                    .SetCloseOnEscape(true)   // ESC = Close()：销毁窗口（含演示机器实例），不是只隐藏
+                    .SetSize(WinWidth, WindowFixedHeight())
                     .Center()
                     .UseMachineryStyle(true)
                     .OnClose(OnWindowClosed);
@@ -1246,8 +1261,19 @@ namespace ItemCatalog.UI
             builder.End();
 
             _window = builder.Show();
+
+            // 整窗拖动：正文容器 + 正文外层的框架 ScrollRect + 窗口根节点各挂一层。
+            // 事件从被点中的物体往上找最近的 IDragHandler，正文里有东西挡着时
+            // 必须比祖先 ScrollRect 更近才能收到（滚动区里的挂点见 AttachScrollDragHandler）。
+            AttachWindowDragHandlers(_window == null ? null : _window.Rect);
+
             _lastHeight = -1f;   // 新窗口要重新按内容量一次高
+            _lastWidth = -1f;
+            _pageWidthOverride = 0f;
             _inputBlocker = null;
+            _scrollHost = null;  // 窗口重建：旧滚动区已随旧窗口销毁
+            _scrollRoot = null;
+            _scrollbarWidth = 0f;
 
             // 窗口是新的：旧的固定区 / 可变区宿主都已随旧窗口销毁
             _chromeHost = null;
@@ -1313,12 +1339,18 @@ namespace ItemCatalog.UI
             var manager = CustomUIManager.Instance;
             if (manager == null || _window == null || !_window.IsAlive || _bodyHost == null) return;
 
+            var renderPerf = System.Diagnostics.Stopwatch.StartNew();
+
             BuildCategories();
+
+            long tCats = renderPerf.ElapsedMilliseconds;
 
             var category = CurrentCategory();
             BuildSourceBlocks(category);
             BuildPagePlan(category);
             ClampPage();
+
+            long tBlocks = renderPerf.ElapsedMilliseconds;
 
             try
             {
@@ -1339,14 +1371,36 @@ namespace ItemCatalog.UI
                 ApplyDirectionLabel();
 
                 RenderChrome(manager);
+
+                long tChrome = renderPerf.ElapsedMilliseconds;
+
+                // 页面宽度由 RenderContent 内部按需写入（进入时先复位成默认宽）
                 RenderContent(manager, category);
+
+                long tContent = renderPerf.ElapsedMilliseconds;
+
                 RenderPager(manager, category);
+
+                long tPager = renderPerf.ElapsedMilliseconds;
 
                 CustomUIBuilder.RebuildLayout(_bodyHost);
                 ApplyContentHeight();
 
                 // 布局重建默认延后到帧末；先强制定稿，绿底才能按最终 rect 一次贴准。
                 FinalizeLayoutAndSyncHighlights(_bodyHost);
+
+                long tLayout = renderPerf.ElapsedMilliseconds;
+
+                if (ModEntry.Log != null && tLayout >= 20)
+                {
+                    ModEntry.Log.Log("[perf] detail-render cats=" + tCats
+                                     + " blocks=" + (tBlocks - tCats)
+                                     + " chrome=" + (tChrome - tBlocks)
+                                     + " content=" + (tContent - tChrome)
+                                     + " pager=" + (tPager - tContent)
+                                     + " layout=" + (tLayout - tPager)
+                                     + " total=" + tLayout);
+                }
             }
             catch (Exception e)
             {
@@ -1420,11 +1474,32 @@ namespace ItemCatalog.UI
 
             // 嵌套列的默认 childAlignment 是左上，宽度不会自己撑满；
             // 显式给 1 的 flexibleWidth，机器面板等居中内容才有完整的横向空间。
+            // 高度上让正文吃掉窗口剩余空间：翻页条因此固定在窗口最下面，
+            // 不会随内容多少上下浮动。
             var bodyLe = EnsureLayoutElement(_bodyHost);
             bodyLe.flexibleWidth = 1f;
-            if (_chromeHost != null) EnsureLayoutElement(_chromeHost).flexibleWidth = 1f;
-            if (_contentHost != null) EnsureLayoutElement(_contentHost).flexibleWidth = 1f;
-            if (_pagerHost != null) EnsureLayoutElement(_pagerHost).flexibleWidth = 1f;
+            bodyLe.flexibleHeight = 1f;
+
+            if (_chromeHost != null)
+            {
+                var le = EnsureLayoutElement(_chromeHost);
+                le.flexibleWidth = 1f;
+                le.flexibleHeight = 0f;
+            }
+
+            if (_contentHost != null)
+            {
+                var le = EnsureLayoutElement(_contentHost);
+                le.flexibleWidth = 1f;
+                le.flexibleHeight = 1f;
+            }
+
+            if (_pagerHost != null)
+            {
+                var le = EnsureLayoutElement(_pagerHost);
+                le.flexibleWidth = 1f;
+                le.flexibleHeight = 0f;
+            }
         }
 
         /// <summary>
@@ -1477,6 +1552,13 @@ namespace ItemCatalog.UI
         {
             if (_contentHost == null) return;
 
+            // 机器页放不下时会加宽窗口；先复位成默认宽度，只有本页真的需要才重新写入。
+            // 翻页 / 切大类不会走整窗 Render，所以复位必须放在这里——
+            // 否则宽机器页的宽度会残留到后面所有页面上。
+            _pageWidthOverride = 0f;
+
+            var perf = System.Diagnostics.Stopwatch.StartNew();
+
             // 离开机器页时把原版面板一起销毁，别留一个挂在已销毁容器上的对象
             if (_vanillaMachine != null && (category == null || category.Kind != CatMachine))
             {
@@ -1484,7 +1566,21 @@ namespace ItemCatalog.UI
                 _vanillaMachine = null;
             }
 
-            CustomUIBuilder.ClearContainer(_contentHost);
+            // 机器页的面板是借用的工厂窗口：必须先还回窗口，再清容器，
+            // 否则 ClearContainer 会把窗口自己的 UI 一起销毁。
+            if (_vanillaMachine != null)
+            {
+                try { _vanillaMachine.RestoreContent(); } catch { }
+            }
+
+            // 正文统一放进可滚动区域：内容超过可用高度时出现原版滚动条。
+            // ScrollView 只在第一次（或窗口重建后）实例化一次；翻页只清它的 content，
+            // 不再每页重建整个滚动条 / Viewport / Mask 子树——这是换页卡顿的大头。
+            bool reuseScroll = _scrollHost != null && _scrollHost.IsChildOf(_contentHost);
+
+            // 复用：只清页面内容；否则连旧滚动区一起清掉再重建
+            CustomUIBuilder.ClearContainer(reuseScroll ? _scrollHost : _contentHost);
+
             _highlights.Clear();          // 旧绿底随容器一起销毁
             _cellAnims.Clear();           // 旧格子的 Image 已销毁，不能留着继续改
             _tagStrips.Clear();           // 标签格这一轮重新收集
@@ -1499,7 +1595,28 @@ namespace ItemCatalog.UI
             SourceSeed = null;
             SourceWater = null;
 
-            var builder = new CustomUIBuilder(manager, _window, _contentHost);
+            if (reuseScroll)
+            {
+                _scrollbarWidth = MeasureScrollbarWidth(_scrollHost);
+            }
+            else
+            {
+                _scrollHost = null;
+                _scrollRoot = null;
+                _scrollbarWidth = 0f;
+
+                var scrollBuilder = new CustomUIBuilder(manager, _window, _contentHost);
+                scrollBuilder.BeginScrollFlexible(0f);
+                _scrollHost = scrollBuilder.CurrentContainer;
+                scrollBuilder.End();
+
+                _scrollbarWidth = MeasureScrollbarWidth(_scrollHost);
+            }
+
+            // 页面内容直接建在滚动区 content 上；滚动区本身复用
+            var builder = new CustomUIBuilder(manager, _window, _scrollHost);
+
+            long tSetup = perf.ElapsedMilliseconds;
 
             if (category == null)
             {
@@ -1511,14 +1628,205 @@ namespace ItemCatalog.UI
                 if (type != null) type.Render(builder, category, _currentSlice);
             }
 
+            long tRender = perf.ElapsedMilliseconds;
+
+            // 滚动区没重建，拖拽挂点仍然在；重建时补挂
+            if (!reuseScroll) AttachScrollDragHandler();
+
             // 内容区嵌在正文列里：高度要先经 _contentHost 传到 _bodyHost，
             // ApplyContentHeight 才能量到本页真实的首选高度（否则窗口停在上一页的尺寸）。
             try
             {
                 CustomUIBuilder.RebuildLayout(_contentHost);
                 CustomUIBuilder.RebuildLayout(_bodyHost);
+                LimitScrollHeight();
+
+                // 复用滚动区时位置会留着上一页的：翻页后回到顶部
+                if (reuseScroll && _scrollHost != null)
+                {
+                    var scroll = _scrollHost.GetComponentInParent<UnityEngine.UI.ScrollRect>(true);
+                    if (scroll != null) scroll.verticalNormalizedPosition = 1f;
+                }
             }
             catch { }
+
+            perf.Stop();
+
+            if (ModEntry.Log != null)
+            {
+                ModEntry.Log.Log("[perf] detail kind=" + (category == null ? "none" : CategoryName(category.Kind))
+                                 + " page=" + (_page + 1) + "/" + _pagePlan.Count
+                                 + " uses=" + (category == null || category.Uses == null ? 0 : category.Uses.Count)
+                                 + " ms=" + perf.ElapsedMilliseconds
+                                 + " [setup=" + tSetup
+                                 + " render=" + (tRender - tSetup)
+                                 + " layout=" + (perf.ElapsedMilliseconds - tRender) + "]");
+            }
+        }
+
+        /// <summary>日志里的页面类型名（排查性能用）。</summary>
+        private static string CategoryName(int kind)
+        {
+            switch (kind)
+            {
+                case CatClient: return "client";
+                case CatLocation: return "location";
+                case CatMachine: return "machine";
+                case CatCraft: return "craft";
+                case CatUse: return "use";
+                case CatLoot: return "loot";
+                case CatMachineRecipe: return "machine-recipe";
+                case CatReaction: return "reaction";
+                case CatGunUpgrade: return "gun-upgrade";
+                case CatGunMods: return "gun-mods";
+                default: return kind.ToString();
+            }
+        }
+
+        private static RectTransform _scrollHost;   // ScrollRect.content
+        private static RectTransform _scrollRoot;   // ScrollView 元素本体（带 LayoutElement）
+        private static float _scrollbarWidth;       // 竖向滚动条占掉的宽度（内容排版要扣掉）
+
+        /// <summary>
+        /// 把整窗拖动的手柄挂到本页 ScrollRect 的 viewport 上。
+        /// 不能挂 ScrollRect 自己那个节点：同一个 GameObject 上有两个 IDragHandler 时
+        /// 两个都会收到拖拽（窗口和内容一起动）。viewport 比它更靠近被点中的内容，
+        /// 拖拽在 viewport 就停住——滚轮（IScrollHandler）仍然归 ScrollRect。
+        /// </summary>
+        private static void AttachScrollDragHandler()
+        {
+            try
+            {
+                var root = _window == null ? null : _window.Rect;
+                var content = _scrollHost;
+                if (root == null || content == null) return;
+
+                var scroll = content.GetComponentInParent<UnityEngine.UI.ScrollRect>(true);
+                if (scroll == null) return;
+
+                var viewport = scroll.viewport;
+                GameObject host = viewport != null && viewport.gameObject != scroll.gameObject
+                    ? viewport.gameObject
+                    : content.gameObject;
+
+                if (host == null || host.GetComponent<WindowDragHandler>() != null) return;
+
+                var handler = host.AddComponent<WindowDragHandler>();
+                handler.Target = root;
+            }
+            catch (Exception e) { Warn("scroll drag: " + e.Message); }
+        }
+
+        /// <summary>
+        /// 整窗拖动的手柄布置：正文容器、正文外层的框架 ScrollRect、窗口根节点。
+        /// 都是“比会抢拖拽的 ScrollRect 更靠近被点物体”的位置，互不重叠（同一个节点只挂一个）。
+        /// </summary>
+        private static void AttachWindowDragHandlers(RectTransform root)
+        {
+            if (root == null) return;
+
+            try
+            {
+                // 1) 正文容器（翻页条 / 大类行 / 边距都在它里面）
+                ExplicitDragHandler(_bodyHost, root);
+
+                // 1.5) 框架内容根：正文以外的窗口留白
+                var contentRoot = _window == null ? null : _window.ContentRoot;
+                if (contentRoot != null &&
+                    contentRoot.GetComponent<UnityEngine.UI.ScrollRect>() == null)
+                {
+                    ExplicitDragHandler(contentRoot, root);
+                }
+
+                // 2) 正文外层若还有框架自带的 ScrollRect，它的 viewport 也要挂
+                Transform t = _bodyHost != null ? _bodyHost.parent : root;
+                while (t != null)
+                {
+                    var scroll = t.GetComponent<UnityEngine.UI.ScrollRect>();
+                    if (scroll != null)
+                    {
+                        var viewport = scroll.viewport;
+                        Transform host = viewport != null && viewport.gameObject != scroll.gameObject
+                            ? viewport
+                            : (scroll.content != null ? (Transform)scroll.content : null);
+                        ExplicitDragHandler(host, root);
+                    }
+
+                    if (t == root) break;
+                    t = t.parent;
+                }
+
+                // 3) 根节点：原生 UIDragHandler 已经覆盖时不再叠第二个（会双倍位移）
+                if (root.GetComponent<UIDragHandler>() == null)
+                    ExplicitDragHandler(root, root);
+            }
+            catch (Exception e) { Warn("window drag: " + e.Message); }
+        }
+
+        private static void ExplicitDragHandler(Transform target, RectTransform root)
+        {
+            if (target == null) return;
+
+            var go = target.gameObject;
+            if (go == null || go.GetComponent<WindowDragHandler>() != null) return;
+
+            var handler = go.AddComponent<WindowDragHandler>();
+            handler.Target = root;
+        }
+
+        /// <summary>竖向滚动条宽度：内容区可用宽必须扣掉它，否则格子会被滚动条压住。</summary>
+        private static float MeasureScrollbarWidth(RectTransform content)
+        {
+            try
+            {
+                var scroll = content == null ? null : content.GetComponentInParent<UnityEngine.UI.ScrollRect>(true);
+                if (scroll == null) return 0f;
+
+                var bar = scroll.verticalScrollbar != null
+                    ? scroll.verticalScrollbar
+                    : scroll.GetComponentInChildren<UnityEngine.UI.Scrollbar>(true);
+                if (bar == null) return 0f;
+
+                var rt = bar.transform as RectTransform;
+                if (rt == null) return 0f;
+
+                float w = rt.rect.width;
+                if (w <= 0.5f) w = Mathf.Abs(rt.sizeDelta.x);
+                if (w <= 0.5f) w = UnityEngine.UI.LayoutUtility.GetPreferredWidth(rt);
+                return Mathf.Clamp(w, 0f, 48f);
+            }
+            catch { return 0f; }
+        }
+
+        /// <summary>
+        /// 滚动区域高度 = 内容高度，但不超过正文可用高度。
+        /// 内容没超高时窗口照常按内容收缩；超高时窗口停在上限、内容内部滚动。
+        /// </summary>
+        private static void LimitScrollHeight()
+        {
+            if (_scrollHost == null) return;
+
+            if (_scrollRoot == null)
+            {
+                // ScrollView 元素本体 = 从 content 的父节点往上第一个带 LayoutElement 的节点
+                // （content 自己也可能带 LayoutElement，必须跳过，否则会把内容本身钉死高度）
+                var rt = _scrollHost.parent as RectTransform;
+                while (rt != null && rt != _contentHost)
+                {
+                    if (rt.GetComponent<UnityEngine.UI.LayoutElement>() != null) { _scrollRoot = rt; break; }
+                    rt = rt.parent as RectTransform;
+                }
+            }
+
+            if (_scrollRoot == null) return;
+
+            // 滚动区交给布局组吃掉正文剩余高度：内容短时铺满（不留下方空白），
+            // 内容超高由 ScrollRect 内部滚动。不能再按像素写死高度——
+            // 首帧量到的 _contentHost 高度偏大时会把窗口标题栏挤掉。
+            var le = EnsureLayoutElement(_scrollRoot);
+            le.minHeight = 0f;
+            le.preferredHeight = -1f;
+            le.flexibleHeight = 1f;
         }
 
         /// <summary>翻页条：只在换大类 / 列数变化时重建；单纯翻页只原地改文字与按钮。</summary>
@@ -1591,84 +1899,36 @@ namespace ItemCatalog.UI
         {
             if (_pageTypes != null) return;
 
-            // 客人 / 地点：每个来源一块，块内货单按每页格数切片。
+            // 客人 / 地点：每个来源一块，整块一页（货单太长时页面内滚动，不再切到下一页）。
             // 块数取自实际建好的 _sourceBlocks，保证与渲染数据一一对应。
-            var sources = new PageType
-            {
-                BlockCount = c => _sourceBlocks.Count,
-                BlockItems = (c, b) => SourceBlockItemCount(b),
-                PageItems = SourcePageItemsPerPage,
-                Render = RenderSourceBlock
-            };
+            var sources = OnePerBlock(c => _sourceBlocks.Count, RenderSourceBlock);
 
             _pageTypes = new Dictionary<int, PageType>
             {
                 { CatClient, sources },
                 { CatLocation, sources },
-
-                // 合成 / 使用：一条关系一页（整块不切片）
-                { CatCraft, new PageType
-                    {
-                        BlockCount = c => c.Recipes == null ? 0 : c.Recipes.Count,
-                        BlockItems = (c, b) => 0,
-                        Render = RenderRecipeBlock
-                    } },
-                { CatUse, new PageType
-                    {
-                        BlockCount = c => c.Uses == null ? 0 : c.Uses.Count,
-                        BlockItems = (c, b) => 0,
-                        Render = RenderUseBlock
-                    } },
-
-                // 掉落：一张地点池一块，物品多时按每页格数切片
-                { CatLoot, new PageType
-                    {
-                        BlockCount = c => c.Loot == null ? 0 : c.Loot.Count,
-                        BlockItems = LootBlockItemCount,
-                        PageItems = LootPageItemsPerPage,
-                        Render = RenderLootBlock
-                    } },
-
+                { CatCraft, OnePerBlock(c => c.Recipes == null ? 0 : c.Recipes.Count, RenderRecipeBlock) },
+                { CatUse, new PageType { BlockCount = c => UsePageTotal(c), Render = RenderUseBlock } },
+                // 掉落：一张地点池一块，整块一页（内容超高时页面内滚动）
+                { CatLoot, OnePerBlock(c => c.Loot == null ? 0 : c.Loot.Count, RenderLootBlock) },
                 // 机器：一个纯度档一块，整块一页（档内配方自己轮播）
-                { CatMachine, new PageType
-                    {
-                        BlockCount = c => MachineGroupCount(),
-                        BlockItems = (c, b) => 0,
-                        Render = RenderMachineBlock
-                    } },
-
+                { CatMachine, OnePerBlock(c => MachineGroupCount(), RenderMachineBlock) },
                 // 反查：当前物品是某台机器的投入 / 模块 / 产出
-                { CatMachineRecipe, new PageType
-                    {
-                        BlockCount = c => c.MachineGroups == null ? 0 : c.MachineGroups.Count,
-                        BlockItems = (c, b) => 0,
-                        Render = RenderMachineRecipeBlock
-                    } },
-
+                { CatMachineRecipe, OnePerBlock(c => c.MachineGroups == null ? 0 : c.MachineGroups.Count, RenderMachineRecipeBlock) },
                 // 成分反应：一条反应一页（左侧反应物 / 中间条件 / 右侧产物）
-                { CatReaction, new PageType
-                    {
-                        BlockCount = c => c.Reactions == null ? 0 : c.Reactions.Count,
-                        BlockItems = (c, b) => 0,
-                        Render = RenderReactionBlock
-                    } },
-
+                { CatReaction, OnePerBlock(c => c.Reactions == null ? 0 : c.Reactions.Count, RenderReactionBlock) },
                 // 枪械翻新：一把枪的一个品相一页（只列可翻新的品相）
-                { CatGunUpgrade, new PageType
-                    {
-                        BlockCount = c => c.GunUpgrades == null ? 0 : c.GunUpgrades.Count,
-                        BlockItems = (c, b) => 0,
-                        Render = RenderGunUpgradeBlock
-                    } },
-
+                { CatGunUpgrade, OnePerBlock(c => c.GunUpgrades == null ? 0 : c.GunUpgrades.Count, RenderGunUpgradeBlock) },
                 // 枪械配件：一把枪一页（原版改装窗口，8 个槽位轮播可装配件）
-                { CatGunMods, new PageType
-                    {
-                        BlockCount = c => c.GunModGunIds == null ? 0 : c.GunModGunIds.Count,
-                        BlockItems = (c, b) => 0,
-                        Render = RenderGunModsBlock
-                    } }
+                { CatGunMods, OnePerBlock(c => c.GunModGunIds == null ? 0 : c.GunModGunIds.Count, RenderGunModsBlock) }
             };
+        }
+
+        /// <summary>「一块一页」：块数由数据给出，块内不切片（超高由页面滚动条处理）。</summary>
+        private static PageType OnePerBlock(Func<Category, int> blockCount,
+                                            Action<CustomUIBuilder, Category, PageSlice> render)
+        {
+            return new PageType { BlockCount = blockCount, Render = render };
         }
 
         private static PageType PageTypeFor(Category category)
@@ -1679,90 +1939,6 @@ namespace ItemCatalog.UI
 
             PageType type;
             return _pageTypes.TryGetValue(category.Kind, out type) ? type : null;
-        }
-
-        private static int SourceBlockItemCount(int block)
-        {
-            if (block < 0 || block >= _sourceBlocks.Count) return 0;
-
-            var page = _sourceBlocks[block];
-            return page == null ? 0 : page.Count;
-        }
-
-        private static int LootBlockItemCount(Category category, int block)
-        {
-            if (category == null || category.Loot == null ||
-                block < 0 || block >= category.Loot.Count) return 0;
-
-            var table = category.Loot[block];
-            return table == null || table.Items == null ? 0 : table.Items.Count;
-        }
-
-        /// <summary>页面正文之外必定占用的高度：窗口标题栏、大类行、翻页条、层间距。</summary>
-        private static float PageBaseOverhead()
-        {
-            return WindowChrome + 34f + 34f + 32f;
-        }
-
-        /// <summary>按这一页实际要画的额外内容反算每页容量（列 × 行）。</summary>
-        private static int PageCapacity(float overhead)
-        {
-            int rows = Mathf.FloorToInt((MaxContentHeight() - overhead)
-                                        / (CellHeight + CellSpacing));
-            return Mathf.Max(1, GridColumns() * Mathf.Max(1, rows));
-        }
-
-        /// <summary>
-        /// 来源页：这一块画不画阵营标题 / 客人名 / 立绘，自己决定能排几行。
-        /// 有立绘的页行数少、没立绘的页行数多，内容都顶到同一个最大高度，
-        /// 装不下的行由 <see cref="BuildPagePlan"/> 自动放到下一页。
-        /// </summary>
-        private static int SourcePageItemsPerPage(Category category, int block)
-        {
-            if (block < 0 || block >= _sourceBlocks.Count) return ItemsPerPage;
-
-            var page = _sourceBlocks[block];
-            var source = page == null ? null : page.Source;
-
-            // 已经按实测校正过：直接用校正后的容量
-            int calibrated;
-            if (_sourceCapacity.TryGetValue(block, out calibrated) && calibrated > 0)
-                return calibrated;
-
-            float overhead = PageBaseOverhead();
-
-            if (source != null && source.Kind != SourceKind.Location) overhead += 30f; // 阵营标题
-            if (category != null && category.Kind == CatClient) overhead += 28f;       // 客人名
-
-            if (source != null && ClientSprite.AllFor(source.Sprite) != null)
-                overhead += PortraitMaxSide + 8f;
-
-            return PageCapacity(overhead);
-        }
-
-        /// <summary>掉落页：有箱子/卡那一行时少排一行货，其余空间全给内容物。</summary>
-        private static int LootPageItemsPerPage(Category category, int block)
-        {
-            if (category == null || category.Loot == null ||
-                block < 0 || block >= category.Loot.Count) return ItemsPerPage;
-
-            var table = category.Loot[block];
-            float overhead = PageBaseOverhead();
-
-            string boxId = null;
-            if (table != null)
-            {
-                string site = category.Site;
-                boxId = !string.IsNullOrEmpty(site) &&
-                        site.StartsWith("item:", StringComparison.OrdinalIgnoreCase)
-                    ? site.Substring(5).Trim()
-                    : (LootSource.BoxForPool(table.TableId) ?? table.TableId);
-            }
-
-            if (!string.IsNullOrEmpty(boxId) && RecipeIndex.FindEntry(boxId) != null)
-                overhead += CellHeight + CellSpacing + 30f;   // 箱子/卡一行 +「可能开出」
-
-            return PageCapacity(overhead);
         }
 
         private static int MachineGroupCount()
@@ -1790,34 +1966,9 @@ namespace ItemCatalog.UI
 
             int blocks = type.BlockCount == null ? 1 : Mathf.Max(1, type.BlockCount(category));
 
+            // 一块一页：块内不再切片，内容超高由页面滚动条处理。
             for (int block = 0; block < blocks; block++)
-            {
-                int items = type.BlockItems == null ? 0 : type.BlockItems(category, block);
-
-                // 整块一页（配方 / 使用 / 机器档位）
-                if (items <= 0)
-                {
-                    _pagePlan.Add(new PageSlice { Block = block, Start = 0, Count = 0 });
-                    continue;
-                }
-
-                // 每页容量由页面类型自己算（来源页会扣掉立绘/标题，掉落页扣掉箱子），
-                // 装不下的行自然落到下一页。
-                int per = type.PageItems != null
-                    ? Mathf.Max(1, type.PageItems(category, block))
-                    : Mathf.Max(1, ItemsPerPage);
-
-                // 按容量切片（客人货单 / 地点池）
-                for (int start = 0; start < items; start += per)
-                {
-                    _pagePlan.Add(new PageSlice
-                    {
-                        Block = block,
-                        Start = start,
-                        Count = Mathf.Min(per, items - start)
-                    });
-                }
-            }
+                _pagePlan.Add(new PageSlice { Block = block, Start = 0, Count = 0 });
 
             if (_pagePlan.Count == 0) _pagePlan.Add(new PageSlice());
         }
@@ -1839,7 +1990,6 @@ namespace ItemCatalog.UI
             if (manager == null || _window == null || !_window.IsAlive) return;
 
             var category = CurrentCategory();
-            _sourceCapacity.Clear();   // 列数变了，按旧列数实测的容量作废
             BuildPagePlan(category);
             ClampPage();
 
@@ -2096,15 +2246,11 @@ namespace ItemCatalog.UI
                 if (_contentHost != null) CustomUIBuilder.RebuildLayout(_contentHost);
                 CustomUIBuilder.RebuildLayout(_bodyHost);
 
-                float preferred = UnityEngine.UI.LayoutUtility.GetPreferredHeight(_bodyHost);
-                if (preferred < 1f) preferred = EstimateHeight();
+                // 固定高度：屏幕高度的 2/3（上限仍是 WinMaxHeight），内容超高交给内部滚动
+                float height = WindowFixedHeight();
 
                 var pageCategory = CurrentCategory();
                 bool machinePage = pageCategory != null && pageCategory.Kind == CatMachine;
-
-                // 机器页与普通页完全共用这个公式，不再有第二套高度逻辑。
-                // preferred 取自 _bodyHost，翻页条就在它内部，所以已包含翻页条高度。
-                float height = Mathf.Clamp(preferred + WindowChrome, WinMinHeight, MaxContentHeight());
 
                 // 顶部行（配方名 + 右上角机器图标）固定高度：
                 // 不给它声明高度的话，布局组会按剩余空间压缩/拉伸它，
@@ -2144,26 +2290,27 @@ namespace ItemCatalog.UI
                     // （已移除机器页的高度实测/采纳：机器页现与普通页共用同一公式）
                 }
 
-                if (Mathf.Abs(height - _lastHeight) > 2f)
+                float winW = _pageWidthOverride > 0f ? _pageWidthOverride : WinWidth;
+                if (Mathf.Abs(height - _lastHeight) > 2f || Mathf.Abs(winW - _lastWidth) > 2f)
                 {
                     // 锚点就是窗口自身中心：改高度时上下对称伸缩，
                     // 不再锁顶边。窗口拖到哪，中心就留在哪。
-                    _window.SetSize(WinWidth, height);
+                    _window.SetSize(winW, height);
                     _lastHeight = height;
+                    _lastWidth = winW;
 
                     // 窗口变了尺寸，让内容根再排一次，避免内容按旧尺寸算
                     CustomUIBuilder.RebuildLayout(_window.ContentRoot);
                 }
 
-                // 实测校正：公式算少了一行时，按真实剩余高度补容量并重画一次
-                if (TryCalibrateSourceCapacity(height)) return;
-
                 // 布局完成后量一次容器真宽：比首帧的假定值准。
-                // 列数受它影响时只多渲染一轮（这里不会再置位，不会循环）。
+                // 扣掉 2 × 滚动条宽（内容居中，右侧要留出对称的余量）。
                 float w = _bodyHost.rect.width;
-                if (w > 320f && w < 900f && Math.Abs(w - 12f - _gridContentWidth) > 8f)
+                float usable = w - 12f - _scrollbarWidth * 2f;
+                if (_pageWidthOverride <= 0f && w > 320f && w < 900f &&
+                    Math.Abs(usable - _gridContentWidth) > 8f)
                 {
-                    _gridContentWidth = w - 12f;
+                    _gridContentWidth = usable;
                     if (GridColumns() != _lastColumnsUsed)
                     {
                         _lastColumnsUsed = GridColumns();
@@ -2182,66 +2329,17 @@ namespace ItemCatalog.UI
             }
         }
 
-        /// <summary>
-        /// 来源页容量的实测校正：公式只是初值，真正排版后用 LayoutUtility 量到的
-        /// 剩余高度补行。只校正每块的**第一页**，结果缓存进 _sourceCapacity，
-        /// 后续翻页直接用，不会每次翻页都重排。
-        /// </summary>
-        private static bool TryCalibrateSourceCapacity(float usedHeight)
+        /// <summary>详情窗口的固定高度：屏幕高度的 2/3（上限 WinMaxHeight，下限 WinMinHeight）。</summary>
+        private static float WindowFixedHeight()
         {
-            if (_calibratingCapacity) return false;
-
-            var category = CurrentCategory();
-            if (category == null || category.Sources == null) return false;
-
-            var slice = _currentSlice;
-            if (slice.IsWholeBlock || slice.Count <= 0 || slice.Start != 0) return false;
-
-            int block = slice.Block;
-            if (_sourceCapacity.ContainsKey(block)) return false;
-
-            int total = SourceBlockItemCount(block);
-            if (total <= slice.Count) return false;   // 这一块已经全装下，没有行可加
-
-            float room = MaxContentHeight() - usedHeight;
-            int rowH = Mathf.RoundToInt(CellHeight + CellSpacing);
-            int extraRows = Mathf.FloorToInt(room / rowH);
-            if (extraRows <= 0) return false;
-
-            int per = slice.Count + extraRows * GridColumns();
-            if (per <= slice.Count) return false;
-
-            var manager = CustomUIManager.Instance;
-            if (manager == null || _window == null || !_window.IsAlive) return false;
-
-            _sourceCapacity[block] = per;
-
-            BuildPagePlan(category);
-            ClampPage();
-
-            _calibratingCapacity = true;
-            try
-            {
-                RenderContent(manager, category);
-                UpdatePagerState();
-                ApplyContentHeight();
-            }
-            catch (Exception e) { Warn("calibrate capacity: " + e.Message); }
-            finally { _calibratingCapacity = false; }
-
-            if (ModEntry.Log != null)
-                ModEntry.Log.Log("[recipe] capacity block=" + block
-                                 + " " + slice.Count + " -> " + per
-                                 + " (room=" + room.ToString("F0") + ")");
-
-            return true;
+            float h = Screen.height > 0 ? Screen.height * (2f / 3f) : WinMaxHeight;
+            return Mathf.Clamp(h, WinMinHeight, WinMaxHeight);
         }
 
-        /// <summary>窗口最长到 WinMaxHeight，但别长出屏幕（留 40px 给标题栏与任务栏）。</summary>
         private static float MaxContentHeight()
         {
-            float cap = Screen.height > 0 ? Mathf.Min(WinMaxHeight, Screen.height - 40f) : WinMaxHeight;
-            return Mathf.Max(cap, WinMinHeight);
+            // 内容区上限跟着固定窗口高度走：窗口外框之外的高度不能再用
+            return Mathf.Max(WinMinHeight, WindowFixedHeight() - WindowChrome);
         }
 
         /// <summary>
@@ -2275,8 +2373,8 @@ namespace ItemCatalog.UI
                 if (page.Source != null && !string.IsNullOrEmpty(page.Source.Sprite))
                     h += PortraitMaxSide + 8f;
 
-                // 本页只画切片里的那一段（整块一页时 Count=0，按 0 行算）
-                int cells = _currentSlice.IsWholeBlock ? 0 : _currentSlice.Count;
+                // 一块一页：按整块货单的行数估（超高由滚动条处理，这里只用来兜底）
+                int cells = page.Count;
                 int rows = Math.Max(1, (cells + GridColumns() - 1) / GridColumns());
                 h += rows * (CellHeight + CellSpacing);
             }
@@ -2385,7 +2483,6 @@ namespace ItemCatalog.UI
         private static void BuildSourceBlocks(Category category)
         {
             _sourceBlocks.Clear();
-            _sourceCapacity.Clear();   // 块重建后实测容量作废
             if (category == null || category.Sources == null) return;
 
             for (int i = 0; i < category.Sources.Count; i++)
@@ -2673,13 +2770,9 @@ namespace ItemCatalog.UI
                 return vanilla;
             }
 
-            // 原版确实没有对应类型键的极少数标签，才用模组自己的文案
-            switch (key)
-            {
-                case "LIQUID_CONTAINER_TAG": return ModEntry.T("buy_tag_container");
-                case "GUN_CALIBER_TAG": return ModEntry.T("buy_tag_caliber");
-                default: break;
-            }
+            // 原版确实没有对应类型键的极少数标签才需要模组文案；
+            // 当前只有 ALL_TYPE 会走到这里（游戏 `type_all_type` 已覆盖），
+            // 所以不再保留容器 / 口径的自译分支。
 
             // 兜底：数据里误把物品 id 写进「标签」列（`black_injector` 这种），
             // 不要把它原样印在界面上——能查到物品就用物品名，查不到才退回原字符串。
@@ -3283,20 +3376,49 @@ namespace ItemCatalog.UI
                 string machineId = KnownMachines[m];
                 if (string.Equals(_entry.Id, machineId, StringComparison.Ordinal)) continue;
 
-                // DNA 编辑器：已写入的盘（dna:*）在来源方向直接指向它自己那一页
-                // ——页序与 DnaManager 的特质顺序一致，所以用管理器拿到页码就行，
-                // 不按 plant_dna_disk 这个 id 匹配（所有写入盘共用本体 id）。
-                // 空白盘只是提取的耗材，不在此列。
+                // DNA 编辑器：页序与 DnaManager 的特质顺序一致。
+                //   来源方向：已写入的盘（dna:*）直接指向它自己那一页；
+                //   用途方向：种子 / 空白盘都是提取的投入，按页匹配（空白盘每一页都要）。
+                // 空白盘不能当「产出」匹配（所有写入盘共用本体 id），所以来源方向仍然跳过它。
                 if (string.Equals(machineId, "plant_dna_manipulator", StringComparison.Ordinal))
                 {
-                    if (_asUse) continue;
+                    var dnaGroups = MachinePanels.RecipesFor(machineId);
+                    if (dnaGroups == null || dnaGroups.Length == 0) continue;
+
+                    if (_asUse)
+                    {
+                        bool blankDisk = string.Equals(_entry.Id, DnaManager.DiskId, StringComparison.Ordinal);
+                        var matchedUse = new List<MachinePanels.RecipeGroup>();
+
+                        for (int g = 0; g < dnaGroups.Length; g++)
+                        {
+                            var group = dnaGroups[g];
+                            var recipe = group != null && group.Variants != null && group.Variants.Length > 0
+                                ? group.Variants[0] : null;
+                            if (recipe == null) continue;
+
+                            if (blankDisk || ContainsId(recipe.Inputs, _entry.Id))
+                                matchedUse.Add(group);
+                        }
+
+                        if (matchedUse.Count > 0)
+                        {
+                            _categories.Add(new Category
+                            {
+                                Kind = CatMachineRecipe,
+                                MachineId = machineId,
+                                MachineGroups = matchedUse
+                            });
+                        }
+
+                        continue;
+                    }
 
                     var dnaTrait = DnaManager.TraitForEntry(_entry.Id);
                     if (dnaTrait == null) continue;
 
-                    var dnaGroups = MachinePanels.RecipesFor(machineId);
                     int page = DnaManager.IndexOf(dnaTrait);
-                    if (dnaGroups != null && page >= 0 && page < dnaGroups.Length)
+                    if (page >= 0 && page < dnaGroups.Length)
                     {
                         _categories.Add(new Category
                         {
@@ -3305,6 +3427,7 @@ namespace ItemCatalog.UI
                             MachineGroups = new List<MachinePanels.RecipeGroup> { dnaGroups[page] }
                         });
                     }
+
                     continue;
                 }
 
@@ -3777,17 +3900,89 @@ namespace ItemCatalog.UI
         // ---------------------------------------------------------------- 使用页
 
         /// <summary>
+        /// 一条使用记录占几页：内部 `_TAG`（ADV_GUN_TAG / STANDARD_MACHINE_TAG 这类）
+        /// 会展开成一整类物品，一格一页；其它记录恒为 1 页。
+        /// 当前查询的物品本身就在这一类里时只占 1 页（查哪台机器就只显示哪台，
+        /// 不能把整类的机器都摊出来）。
+        /// </summary>
+        private static int UsePageCount(UseInfo use)
+        {
+            int pages = 1;
+            if (use == null || use.SourceTags == null) return pages;
+
+            string self = QueryTarget.Id;
+
+            for (int i = 0; i < use.SourceTags.Length; i++)
+            {
+                string tag = use.SourceTags[i];
+                if (!IsInternalTag(tag)) continue;
+
+                var ids = ItemsWithTag(tag);
+                int count = !string.IsNullOrEmpty(self) && ids.Contains(self) ? 1 : ids.Count;
+                pages = Mathf.Max(pages, count);
+            }
+
+            return pages;
+        }
+
+        private static int UsePageTotal(Category category)
+        {
+            if (category == null || category.Uses == null) return 0;
+
+            int total = 0;
+            for (int i = 0; i < category.Uses.Count; i++)
+                total += UsePageCount(category.Uses[i]);
+
+            return total;
+        }
+
+        /// <summary>
+        /// 使用页里一个标签源在这一页要画的那一件：
+        /// 当前查询的物品自身就在这一类里 → 固定显示它（查哪台机器只显示哪台）；
+        /// 否则内部 `_TAG` 按页码取第 N 件，其它标签取第一件。
+        /// </summary>
+        private static string TagSourceItem(string tag, int page)
+        {
+            var ids = ItemsWithTag(tag);
+            if (ids.Count == 0) return null;
+
+            if (!string.IsNullOrEmpty(QueryTarget.Id) && ids.Contains(QueryTarget.Id))
+                return QueryTarget.Id;
+
+            if (IsInternalTag(tag))
+                return ids[Mathf.Clamp(page, 0, ids.Count - 1)];
+
+            return ids[0];
+        }
+
+        private static void RenderUseBlock(CustomUIBuilder builder, Category category, PageSlice slice)
+        {
+            if (category == null || category.Uses == null) return;
+
+            // Block 是「使用大类里的第几页」，要跨过前面每条记录各自的页数才能落到具体记录
+            int page = slice.Block;
+            for (int i = 0; i < category.Uses.Count; i++)
+            {
+                int pages = UsePageCount(category.Uses[i]);
+                if (page < pages)
+                {
+                    RenderUsePage(builder, category.Uses, i, page);
+                    return;
+                }
+                page -= pages;
+            }
+        }
+
+        /// <summary>
         /// 使用页：一件事一行 —— 哪件东西被怎么用掉、换回了什么。
         /// 例：开箱子 → 内容物；喝掉液体好运 → 空瓶；绷带缠玻璃片 → 玻璃刀。
         /// 布局：来源格子在上，「产物」一行当分界线，产物格子在下——
         /// 方向 / 方式标签都不写（大类标题已经说了这是「使用」）。
+        /// 标签源（ADV_GUN_TAG / STANDARD_MACHINE_TAG…）由 <paramref name="tagPage"/>
+        /// 指定这一页画这一类里的第几件。
         /// </summary>
-        private static void RenderUseBlock(CustomUIBuilder builder, Category category, PageSlice slice)
-        {
-            RenderUsePage(builder, category.Uses, slice.Block);
-        }
-
-        private static void RenderUsePage(CustomUIBuilder builder, List<UseInfo> uses, int useIndex)
+        private static void RenderUsePage(CustomUIBuilder builder, List<UseInfo> uses, int useIndex,
+                                          int tagPage = 0)
         {
             if (uses == null || useIndex < 0 || useIndex >= uses.Count) return;
 
@@ -3796,83 +3991,40 @@ namespace ItemCatalog.UI
 
             var sources = new List<string>(use.Sources ?? new string[0]);
 
-            // 标签源是一整类，看有没有能画的（比如 SPECIES_HUMAN 只挂在
-            // GameCharacterItem 上，注册表里一件都没有）
-            bool hasTagCells = false;
-            if (use.SourceTags != null)
-            {
-                for (int i = 0; i < use.SourceTags.Length; i++)
-                {
-                    if (ItemsWithTag(use.SourceTags[i]).Count > 0) { hasTagCells = true; break; }
-                }
-            }
-
             bool hasProduces = use.Produces != null && use.Produces.Length > 0;
             bool hasTags = use.SourceTags != null && use.SourceTags.Length > 0;
 
-            if (!hasTags && (sources.Count > 0 || hasProduces))
+            // 统一走配方行：`来源 + 标签目标 → 产物`。
+            // 标签源（ADV_GUN_TAG / STANDARD_MACHINE_TAG…）在 UsePageCount 里已经一格一页，
+            // 这一页只取第 tagPage 件，和具体来源用「+」连在同一行里。
+            var inputs = new List<FormulaCell>(sources.Count + (hasTags ? use.SourceTags.Length : 0));
+            for (int i = 0; i < sources.Count; i++) inputs.Add(Formula(sources[i]));
+
+            if (hasTags)
             {
-                // 配方行模版：来源 + 来源 → 产物
-                var inputs = new List<FormulaCell>(sources.Count);
-                for (int i = 0; i < sources.Count; i++) inputs.Add(Formula(sources[i]));
-
-                var outputs = new List<FormulaCell>();
-                if (hasProduces)
+                for (int i = 0; i < use.SourceTags.Length; i++)
                 {
-                    for (int i = 0; i < use.Produces.Length; i++)
-                        outputs.Add(Formula(use.Produces[i]));
+                    string id = TagSourceItem(use.SourceTags[i], tagPage);
+                    if (string.IsNullOrEmpty(id)) continue;
+                    inputs.Add(Formula(id));
                 }
-
-                RenderFormulaRow(builder, inputs, outputs, 600);
             }
-            else
+
+            var outputs = new List<FormulaCell>();
+            if (hasProduces)
             {
-                // 标签源是一整类物品，必须完整列出来（会轮播），所以仍然分块画；
-                // 产物块前用箭头代替原来的「产物」标题。
-                if (sources.Count > 0 || hasTagCells)
-                {
-                    if (sources.Count > 0)
-                        RenderItemGrid(builder, sources.ToArray(), 600);
+                for (int i = 0; i < use.Produces.Length; i++)
+                    outputs.Add(Formula(use.Produces[i]));
+            }
 
-                    // 每个标签单独一格；当前物品自己在标签里就固定显示自己，否则轮播。
-                    // 标签格圈进自己的容器，轮播时只重建这一块（不整页重画）。
-                    if (hasTags)
-                    {
-                        builder.BeginColumn(2f);
-                        var stripHost = builder.CurrentContainer;
-                        builder.End();
+            RenderFormulaRow(builder, inputs, outputs, 600);
 
-                        var strip = new TagStrip
-                        {
-                            Host = stripHost,
-                            Tags = use.SourceTags,
-                            Base = 640 + _tagStripSeq * 8,
-                            CurrentId = QueryTarget.Id
-                        };
-                        _tagStripSeq++;
-                        _tagStrips.Add(strip);
-
-                        RenderTagStrip(strip);
-                    }
-                }
-
-                // 全是内部 `_TAG` 时这一行会是空的，别留空标题
-                if (hasTags)
-                {
-                    string tagLine = DescribeTags(use.SourceTags);
-                    if (!string.IsNullOrEmpty(tagLine))
-                        builder.AddLabel(tagLine, "use_source_tags");
-                }
-
-                if (hasProduces)
-                {
-                    builder.BeginRow(4f, UnityEngine.TextAnchor.MiddleCenter);
-                    builder.AddLabel("→", "use_arrow");
-                    builder.AddFlexibleSpace();
-                    builder.End();
-
-                    RenderItemGrid(builder, use.Produces, 700);
-                }
+            // 非内部标签（`WATER` 这类种类词）仍写一行说明；内部 `_TAG` 会展开成物品，不写名字
+            if (hasTags)
+            {
+                string tagLine = DescribeTags(use.SourceTags);
+                if (!string.IsNullOrEmpty(tagLine))
+                    builder.AddLabel(tagLine, "use_source_tags");
             }
 
             bool dissolve = string.Equals(use.Kind, "dissolve", StringComparison.Ordinal);
@@ -3986,6 +4138,11 @@ namespace ItemCatalog.UI
             bool hasOutputs = outputs != null && outputs.Count > 0;
             if (!hasInputs && !hasOutputs) return;
 
+            // 拆解这类产物按个数重复（shotgun 一次 7 个零件）：一行塞不下时，
+            // 输入留着「+」公式行，产物换成可换行的网格，不再让格子挤出窗口。
+            int total = (inputs == null ? 0 : inputs.Count) + (outputs == null ? 0 : outputs.Count);
+            bool stacked = hasOutputs && total > 6;
+
             builder.BeginRow(8f, UnityEngine.TextAnchor.MiddleCenter);
 
             if (hasInputs)
@@ -3997,7 +4154,7 @@ namespace ItemCatalog.UI
                 }
             }
 
-            if (hasOutputs)
+            if (hasOutputs && !stacked)
             {
                 builder.AddLabel("→", "formula_arrow" + elementBase);
 
@@ -4005,6 +4162,18 @@ namespace ItemCatalog.UI
                     RenderFormulaCell(builder, outputs[i], elementBase + 100 + i);
             }
 
+            builder.End();
+
+            if (!stacked) return;
+
+            builder.BeginRow(4f, UnityEngine.TextAnchor.MiddleCenter);
+            builder.AddLabel("→", "formula_arrow" + elementBase);
+            builder.AddFlexibleSpace();
+            builder.End();
+
+            builder.BeginGrid(GridColumns(), GridCellWidth(), CellHeight, CellSpacing);
+            for (int i = 0; i < outputs.Count; i++)
+                RenderFormulaCell(builder, outputs[i], elementBase + 100 + i);
             builder.End();
         }
 
@@ -4436,8 +4605,9 @@ namespace ItemCatalog.UI
             var all = CatalogDataBuilder.All;
             for (int i = 0; i < all.Count; i++)
             {
-                var item = all[i] != null ? all[i].Item : null;
-                if (item == null) continue;
+                var entry = all[i];
+                var item = entry != null ? entry.Item : null;
+                if (item == null || entry.Unused) continue;   // 游戏里标成 unused 的不参与标签展开
 
                 // `ADV_GUN_TAG` 这类是真标签；`WEAPON` / `FOOD`（客人收购词）
                 // 是 itemTypes，两个都试一遍。
@@ -4469,14 +4639,11 @@ namespace ItemCatalog.UI
                 // 内部 `_TAG` 不写名字：它们会展开成具体物品，标签名是代码细节
                 if (IsInternalTag(tag)) continue;
 
-                switch (tag)
-                {
-                    case "SPECIES_HUMAN": names.Add(ModEntry.T("use_tag_humanoid")); break;
-                    case "SPECIES_XENO": names.Add(ModEntry.T("use_tag_xeno")); break;
-                    // 其余一律先问游戏自己的物品类型表（`type_weapon` / `type_food` /
-                    // `type_household_good` / `type_document` …），取不到再原样显示。
-                    default: names.Add(TagDisplayName(tag)); break;
-                }
+                // 一律先问游戏自己的物品类型表（`type_weapon` / `type_food` /
+                // `type_household_good` / `type_document` …），取不到再原样显示。
+                // 尸体标签（SPECIES_HUMAN / SPECIES_XENO）在游戏里不可达：
+                // 战斗未实装、不会有尸体，uses.csv 里也没有对应记录。
+                names.Add(TagDisplayName(tag));
             }
 
             return string.Join(" / ", names.ToArray());
@@ -4527,8 +4694,7 @@ namespace ItemCatalog.UI
         ///
         /// 游戏有 63 个 `type_*` 键（`type_household_good`、`type_document`、
         /// `type_weapon`、`type_food`、`type_brevage` …），就是物品类型表；
-        /// 规则是 `type_` + 小写。取不到（`ADV_GUN_TAG` 这种）就原样返回，
-        /// 由 `DescribeTags` 的 switch 兜住。
+        /// 规则是 `type_` + 小写。取不到（`ADV_GUN_TAG` 这种）就原样返回。
         /// </summary>
         private static string TagDisplayName(string tag)
         {
@@ -4639,12 +4805,6 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 机器页：上半部分按游戏窗口的面板顺序还原机器界面
-        /// （电池 / 模块 / 功能槽 / 容器网格），下半部分是它自己的产出配方
-        /// （工具 = 必需的模块，材料 = 原料，产物 = 做出来的东西）。
-        /// 面板结构与标签来自 <see cref="MachinePanels"/>（抄自各机器类的 IL）。
-        /// </summary>
-        /// <summary>
         /// 机器页：机器原生格子就是配方的载体——一条配方 = 画一遍面板，
         /// 物品图标放进对应格子。每个纯度组一个容器，容器内每秒轮播一条配方。
         /// </summary>
@@ -4705,6 +4865,8 @@ namespace ItemCatalog.UI
         {
             if (builder == null || string.IsNullOrEmpty(subjectId)) return false;
 
+            var mtPerf = System.Diagnostics.Stopwatch.StartNew();
+
             // 标题行：左标题（可空），右上角主体图标（机器 / 枪），统一入口
             builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
             _machineTopRow = builder.CurrentContainer;   // 实测高度用
@@ -4713,6 +4875,8 @@ namespace ItemCatalog.UI
             builder.End();
 
             if (extraHeader != null) extraHeader();
+
+            long tHeader = mtPerf.ElapsedMilliseconds;
 
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _vanillaMachine = new VanillaMachinePanel();
@@ -4725,15 +4889,23 @@ namespace ItemCatalog.UI
                 return false;
             }
 
+            long tShell = mtPerf.ElapsedMilliseconds;
+
             // 量尺寸前先预填（枪械配件页用「每槽最大件」占位，保证轮播时面板不缩）
             if (beforeMeasure != null) beforeMeasure(_vanillaMachine);
 
             // 面板上限与普通页共用 MaxContentHeight()；面板下方还有内容时先扣掉那部分高度
             float panelMaxH = MaxMachinePanelHeight() - Mathf.Max(0f, belowHeight);
 
+            // 宽度按「内容里最宽的那一块」定，其余面板在同等宽度内自动换行。
+            // 内容居中，扣 2 × 滚动条宽才不会被右侧滚动条压住。
+            float defaultW = WinWidth - 40f - _scrollbarWidth * 2f;
+            float panelW = _vanillaMachine.FitWidth(_bodyHost, defaultW);
+            _pageWidthOverride = panelW > defaultW + 1f ? panelW + 40f + _scrollbarWidth * 2f : 0f;
+
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
-            float panelH = Mathf.Max(1f, _vanillaMachine.ScaledSize(_bodyHost, panelMaxH, WinWidth - 40f).y);
+            float panelH = Mathf.Max(1f, _vanillaMachine.ScaledSize(_bodyHost).y);
             builder.End();
 
             // host 在 bodyHost 的 VerticalLayoutGroup 下，childControlWidth/Height=true，
@@ -4741,7 +4913,7 @@ namespace ItemCatalog.UI
             if (host != null)
             {
                 var hostLayout = EnsureLayoutElement(host);
-                hostLayout.preferredWidth = WinWidth - 40f;
+                hostLayout.preferredWidth = panelW;
                 hostLayout.flexibleWidth = 1f;
                 hostLayout.minHeight = panelH;
                 hostLayout.preferredHeight = panelH;
@@ -4750,12 +4922,16 @@ namespace ItemCatalog.UI
 
             // 把面板挂进占位容器、相对 host 正中心绝对定位，再缩放补偿 Canvas 差异；
             // 布局跑一次后塞物品（否则 inventory inner rect 还是 0，物品会浮到格子外）。
+            long tFit = mtPerf.ElapsedMilliseconds;
+
             var rect = _vanillaMachine.AttachContentTo(host);
             if (rect != null) CustomUIBuilder.RebuildLayout(rect);
 
+            long tAttach = mtPerf.ElapsedMilliseconds;
+
             // 用**实测内容高度**（不是 rect 高度）修正占位与 host：
             // rect 含底部留白，按它给高度会让内容下方空一段、翻页条被推远。
-            float visualH = _vanillaMachine.MatchGameCanvasScale(host, panelMaxH, WinWidth - 40f);
+            float visualH = _vanillaMachine.MatchGameCanvasScale(host);
             if (visualH > 10f && host != null)
             {
                 var hostLe = EnsureLayoutElement(host);
@@ -4764,12 +4940,68 @@ namespace ItemCatalog.UI
                 hostLe.flexibleHeight = 0f;
             }
 
+            long tScale = mtPerf.ElapsedMilliseconds;
+
             if (fill != null) fill(_vanillaMachine);
 
+            long tFill = mtPerf.ElapsedMilliseconds;
+
+            // 放入样本后再量一次宽度：空槽和装满的槽宽度不同（水培的水 / 种子槽、
+            // 模块网格等都会随内容变宽），预填前算出的列数会偏多或偏少——
+            // 换行与页面宽度必须以**放进物品后的实际宽度**为准。
+            float filledW = _vanillaMachine.FitWidth(_bodyHost, defaultW);
+            if (Mathf.Abs(filledW - panelW) > 0.5f)
+            {
+                panelW = filledW;
+                _pageWidthOverride = panelW > defaultW + 1f ? panelW + 40f + _scrollbarWidth * 2f : 0f;
+
+                if (host != null)
+                {
+                    var widthLe = EnsureLayoutElement(host);
+                    widthLe.preferredWidth = panelW;
+                    widthLe.flexibleWidth = 1f;
+                }
+
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[machine-page] refit after fill " + subjectId
+                                     + " panelW=" + panelW.ToString("F1")
+                                     + " override=" + _pageWidthOverride.ToString("F1"));
+            }
+
+            // 填完后再按实际内容校正一次高度与居中（物品会改变面板行尺寸）
+            float filledH = _vanillaMachine.MatchGameCanvasScale(host);
+            if (filledH > 10f && host != null)
+            {
+                var heightLe = EnsureLayoutElement(host);
+                heightLe.minHeight = filledH;
+                heightLe.preferredHeight = filledH;
+                heightLe.flexibleHeight = 0f;
+            }
+
+            long tRefit = mtPerf.ElapsedMilliseconds;
+
             if (ModEntry.Log != null)
+            {
                 ModEntry.Log.Log("[machine-page] " + subjectId
                                  + " panelH=" + panelH + " visualH=" + visualH
+                                 + " filledH=" + filledH
+                                 + " panelW=" + panelW.ToString("F1")
                                  + " rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
+
+                if (mtPerf.ElapsedMilliseconds >= 30)
+                {
+                    ModEntry.Log.Log("[perf] machine-template " + subjectId
+                                     + " ms=" + mtPerf.ElapsedMilliseconds
+                                     + " [header=" + tHeader
+                                     + " shell=" + (tShell - tHeader)
+                                     + " fit=" + (tFit - tShell)
+                                     + " attach=" + (tAttach - tFit)
+                                     + " scale=" + (tScale - tAttach)
+                                     + " fill=" + (tFill - tScale)
+                                     + " refit=" + (tRefit - tFill)
+                                     + " highlight=" + (mtPerf.ElapsedMilliseconds - tRefit) + "]");
+                }
+            }
 
             // 每次填完都会清掉旧绿底（ClearSamples → ClearMatchHighlights），
             // 所以高亮回调要在 fill 之后跑；轮播时由 RefreshMachinePageHighlights 再跑一次。
@@ -4791,17 +5023,72 @@ namespace ItemCatalog.UI
             catch (Exception e) { Warn("machine highlight: " + e.Message); }
         }
 
-        /// <summary>机器 id → 原版面板外壳。新增机器只在这里加一行。</summary>
+        /// <summary>
+        /// 各机器只显示哪些面板（沿用原来手写壳的取舍，不把无关框加进来）。
+        /// 返回 null = 这台机器没有既定取舍，保留所有有角色的面板。
+        /// </summary>
+        private static string[] MachineRoles(string machineId)
+        {
+            switch (machineId)
+            {
+                case "furnace": return new[] { "module", "input", "output" };
+                case "blender": return new[] { "input", "container" };
+                case "chem_finisher": return new[] { "container", "output" };
+                case "evaporator": return new[] { "container", "distillate" };
+                case "hydroponic": return new[] { "module", "seed", "water", "output" };
+                case "desequencer": return new[] { "chip", "input", "output" };
+                case "printer": return new[] { "module", "input", "chip", "output" };
+                case "purifier": return new[] { "module", "container" };
+                case "projector": return new[] { "module" };
+                default: return null;
+            }
+        }
+
+        /// <summary>
+        /// 机器页外壳：统一借用工厂造好的原版窗口（含模组对面板的修改）。
+        /// 借用不到时才退回手写壳——手写壳只作为老版本 / 非标准窗口的兜底。
+        /// </summary>
         private static bool BuildMachineShell(VanillaMachinePanel panel, string machineId)
         {
             if (panel == null || string.IsNullOrEmpty(machineId)) return false;
+
+            // DNA 编辑器带特性盘 / 数据盘等与「提取」无关的面板，
+            // 按用户要求只显示种子 / 空白盘 / 产出，继续用手写壳。
+            if (machineId == "plant_dna_manipulator") return panel.BuildDnaManipulatorShell();
+
+            string[] roles = MachineRoles(machineId);
+
+            // 演示用机器必须是**独立实例**：不能借用图鉴条目里的 Item，
+            // 否则 Adopt/隐藏面板/放宽过滤器会改到图鉴自己的那份实例，
+            // 关窗或翻页时还会留下挂载状态。每次现建一个，随 VanillaMachinePanel 一起销毁。
+            var shellPerf = System.Diagnostics.Stopwatch.StartNew();
+            var demo = UI.CatalogWindow.CreatePreviewItem(machineId);
+            long tCreate = shellPerf.ElapsedMilliseconds;
+
+            bool adopted = demo != null && panel.AdoptOwned(demo, roles);
+
+            if (ModEntry.Log != null && shellPerf.ElapsedMilliseconds >= 20)
+            {
+                ModEntry.Log.Log("[perf] machine-shell " + machineId
+                                 + " create=" + tCreate
+                                 + " adopt=" + (shellPerf.ElapsedMilliseconds - tCreate)
+                                 + " total=" + shellPerf.ElapsedMilliseconds);
+            }
+
+            if (adopted) return true;
+            if (demo != null)
+            {
+                try { demo.Destroy(); } catch { }
+            }
+
+            if (ModEntry.Log != null)
+                ModEntry.Log.Log("[machine-page] " + machineId + ": adopt unavailable, using hand-written shell");
 
             if (machineId == "furnace") return panel.BuildFurnaceShell();
             if (machineId == "blender") return panel.BuildBlenderShell();
             if (machineId == "chem_finisher") return panel.BuildChemFinisherShell();
             if (machineId == "evaporator") return panel.BuildEvaporatorShell();
             if (machineId == "hydroponic") return panel.BuildHydroponicShell();
-            if (machineId == "plant_dna_manipulator") return panel.BuildDnaManipulatorShell();
             if (machineId == "desequencer") return panel.BuildDesequencerShell();
             if (machineId == "printer") return panel.BuildPrinterShell();
 
@@ -5116,7 +5403,7 @@ namespace ItemCatalog.UI
 
             builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
             var host = builder.CurrentContainer;
-            float panelH = Mathf.Max(1f, _vanillaMachine.ScaledSize(_bodyHost, panelMaxH, WinWidth - 40f).y);
+            float panelH = Mathf.Max(1f, _vanillaMachine.ScaledSize(_bodyHost).y);
             builder.End();
 
             if (host != null)
@@ -5132,7 +5419,7 @@ namespace ItemCatalog.UI
             var rect = _vanillaMachine.AttachContentTo(host);
             if (rect != null) CustomUIBuilder.RebuildLayout(rect);
 
-            float visualH = _vanillaMachine.MatchGameCanvasScale(host, panelMaxH, WinWidth - 40f);
+            float visualH = _vanillaMachine.MatchGameCanvasScale(host);
             if (visualH > 10f && host != null)
             {
                 var hostLe = EnsureLayoutElement(host);
@@ -5248,14 +5535,38 @@ namespace ItemCatalog.UI
                     ? reaction.ConditionFallback
                     : Loc(reaction.ConditionKey, reaction.ConditionFallback);
 
-                // 条件里点名的液体统一走液体管理器取名字（占位符 {0}/{1}），只给名字本身加绿底
+                // 条件里的液体名与绝对数字都由代码提供：
+                //   液体名走液体管理器（占位符 {0}/{1}），
+                //   阈值取 LiquidReactions 的规则常量，本地化文件里不再写死 5:1 / 10% / 40% / 100 °C。
+                var args = new List<object>();
                 var liquidArgs = ConditionLiquidArgs(reaction);
-                if (liquidArgs != null && liquidArgs.Length > 0)
+                if (liquidArgs != null)
                 {
-                    var names = new object[liquidArgs.Length];
                     for (int i = 0; i < liquidArgs.Length; i++)
-                        names[i] = ConditionLiquidName(liquidArgs[i]);
-                    try { condition = string.Format(condition, names); } catch { }
+                        args.Add(ConditionLiquidName(liquidArgs[i]));
+                }
+
+                switch (reaction.ConditionKey)
+                {
+                    case "react_cond_solvent_ratio":
+                        args.Add(LiquidReactions.SolventRatioParts);
+                        args.Add(LiquidReactions.SolventRatioBase);
+                        break;
+                    case "react_cond_nomore_alcohol":
+                        args.Add(LiquidReactions.NoMoreAlcoholPercent);
+                        break;
+                    case "react_cond_alcohol_ratio":
+                        args.Add(LiquidReactions.AlcoholKillPercent);
+                        break;
+                    case "react_cond_waste_full":
+                    case "react_cond_microbe_heat":
+                        args.Add(LiquidReactions.FullReactionTemp);
+                        break;
+                }
+
+                if (args.Count > 0)
+                {
+                    try { condition = string.Format(condition, args.ToArray()); } catch { }
                 }
 
                 if (!string.IsNullOrEmpty(condition)) lines.Add(condition);
@@ -5331,107 +5642,6 @@ namespace ItemCatalog.UI
             _vanillaMachine.Fill(recipe.Inputs, recipe.Modules, recipe.Outputs, purity,
                                  recipe.Container, recipe.ContainerLiquid, recipe.ContainerVolume,
                                  recipe.OutputItem, recipe.InputItem, recipe.Chip);
-        }
-
-        /// <summary>
-        /// 机器原生面板：逐格画出界面结构，配方物品按角色放进对应格子。
-        /// Grid 的 7x5 形状格依次填投料；单槽按角色填模块 / 产物；电池 / 纸条留空框。
-        /// 格子里只画图标（不画名字标签），否则一个槽里多个元素会在行布局里叠成一团。
-        /// </summary>
-        private static void DrawMachinePanel(CustomUIBuilder builder, MachinePanels.Panel[] panels,
-                                             string[] inputs, string moduleId, string[] outputs, int idBase,
-                                             string chipId = null)
-        {
-            if (panels == null || panels.Length == 0) return;
-
-            int outputAt = 0;
-            for (int p = 0; p < panels.Length; p++)
-            {
-                var panel = panels[p];
-                if (panel == null) continue;
-
-                string label = MachinePanelLabel(panel);
-
-                if (panel.Kind == MachinePanels.Grid)
-                {
-                    builder.AddLabel(label, "mach_panel");
-                    DrawGridShape(builder, slotIndex =>
-                    {
-                        if (panel.Role == MachinePanels.RoleInput && inputs != null && slotIndex < inputs.Length)
-                            return inputs[slotIndex];
-                        return null;
-                    }, idBase + p * 16);
-                    continue;
-                }
-
-                builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleLeft);
-                builder.AddLabel(label, "mach_panel");
-                builder.AddFlexibleSpace();
-
-                string itemId = null;
-                if (panel.Role == MachinePanels.RoleModule) itemId = moduleId;
-                else if (panel.Role == MachinePanels.RoleChip) itemId = chipId;
-                else if (panel.Role == MachinePanels.RoleOutput && outputs != null && outputAt < outputs.Length)
-                    itemId = outputs[outputAt++];
-
-                DrawItemInSlot(builder, itemId, idBase + p);
-                builder.End();
-            }
-        }
-
-        /// <summary>格子里放一个物品：有图标就画图标，没图标画空框。只画图标，不画名字。</summary>
-        private static void DrawItemInSlot(CustomUIBuilder builder, string id, int elementId)
-        {
-            if (string.IsNullOrEmpty(id))
-            {
-                DrawSlot(builder);
-                return;
-            }
-
-            var sprite = CatalogWindow.IconFor(id) ?? CatalogWindow.CompositeIconFor(id);
-            if (sprite == null)
-            {
-                DrawSlot(builder);
-                return;
-            }
-
-            float side = MachineCellSide(24f);
-            float w, h;
-            CatalogWindow.FitIcon(sprite, side, out w, out h);
-            builder.AddImage(sprite, w, h, "mach_item" + elementId);
-
-            // 物品图标下面垫一层原版机器格子底框（和空槽同一张 cell 精灵）
-            PutCellFrame(builder, side);
-        }
-
-        /// <summary>
-        /// 在刚画的物品格下面垫一层原版格子底框：挂到同一个父级、排在图标之前绘制，
-        /// ignoreLayout 不参与布局，靠 _highlights 跟随图标格对齐。
-        /// </summary>
-        private static void PutCellFrame(CustomUIBuilder builder, float side)
-        {
-            var frame = MachineSlotSprite();
-            var cell = builder.Last != null ? builder.Last.Rect : null;
-            if (frame == null || cell == null || cell.parent == null) return;
-
-            try
-            {
-                var go = new GameObject("machFrame", typeof(RectTransform), typeof(UnityEngine.UI.Image));
-                go.transform.SetParent(cell.parent, false);
-                go.transform.SetSiblingIndex(cell.GetSiblingIndex());
-
-                var image = go.GetComponent<UnityEngine.UI.Image>();
-                image.sprite = frame;
-                image.raycastTarget = false;
-                var rect = (RectTransform)go.transform;
-                rect.sizeDelta = new Vector2(side, side);
-
-                var ignore = go.AddComponent<UnityEngine.UI.LayoutElement>();
-                ignore.ignoreLayout = true;
-
-                _highlights.Add(new KeyValuePair<RectTransform, RectTransform>(rect, cell));
-            }
-            catch (Exception e) { Warn("machine cell frame: " + e.Message); }
         }
 
         /// <summary>每秒推进机器配方的轮播索引：配方组间独立，模块数多个时也单独轮。</summary>
@@ -5548,136 +5758,6 @@ namespace ItemCatalog.UI
             string quality = VanillaMachinePanel.MechLabel("mech_module_stat_quality", "Quality");
 
             return prefix + " " + quality + " +" + recipe.RequiredQualityPercent + "%";
-        }
-
-        /// <summary>面板标签：优先游戏自己的 mech_*_label_* 键（跟随游戏语言），取不到用兜底。</summary>
-        private static string MachinePanelLabel(MachinePanels.Panel panel)
-        {
-            if (panel == null) return "-";
-
-            if (!string.IsNullOrEmpty(panel.GameLabelKey))
-            {
-                string text = null;
-                try { text = LocHelper.GetLocalizedMechanicOrDefault(panel.GameLabelKey, null); } catch { }
-
-                if (!string.IsNullOrEmpty(text) &&
-                    !string.Equals(text, panel.GameLabelKey, StringComparison.OrdinalIgnoreCase) &&
-                    text.IndexOf("Translation Error", StringComparison.OrdinalIgnoreCase) < 0)
-                {
-                    return text;
-                }
-            }
-
-            switch (panel.Kind)
-            {
-                case MachinePanels.Battery: return Loc("mach_battery", "电池");
-                case MachinePanels.Module: return Loc("mach_module", "模块");
-                case MachinePanels.Note: return Loc("mach_note", "纸条");
-                default: return panel.Fallback ?? "-";
-            }
-        }
-
-        /// <summary>画容器网格：形状码 7 列一行，'1' 画格框，'0' 留空。</summary>
-        private static void DrawGridShape(CustomUIBuilder builder,
-                                          System.Func<int, string> itemFor = null, int idBase = 0)
-        {
-            string shape = MachinePanels.ContainerShape;
-            var frame = MachineSlotSprite();
-            float side = MachineCellSide(18f);
-
-            // 布局还没就绪拿不到描边图时，退回字符画（等宽方块 + 全角空格对齐）
-            if (frame == null)
-            {
-                for (int r = 0; r * MachinePanels.ShapeCols < shape.Length; r++)
-                {
-                    var row = new System.Text.StringBuilder();
-                    for (int c = 0; c < MachinePanels.ShapeCols; c++)
-                    {
-                        int idx = r * MachinePanels.ShapeCols + c;
-                        row.Append(idx < shape.Length && shape[idx] == '1' ? "▢" : "　");
-                    }
-
-                    builder.AddLabel(row.ToString(), "mach_grid_r" + r);
-                }
-
-                return;
-            }
-
-            for (int r = 0; r * MachinePanels.ShapeCols < shape.Length; r++)
-            {
-                builder.BeginRow(2f, UnityEngine.TextAnchor.MiddleCenter);
-
-                for (int c = 0; c < MachinePanels.ShapeCols; c++)
-                {
-                    int idx = r * MachinePanels.ShapeCols + c;
-                    if (idx < shape.Length && shape[idx] == '1')
-                    {
-                        string itemId = itemFor == null ? null : itemFor(idx);
-                        var sprite = string.IsNullOrEmpty(itemId) ? null
-                            : (CatalogWindow.IconFor(itemId) ?? CatalogWindow.CompositeIconFor(itemId));
-                        if (sprite != null)
-                        {
-                            float w, h;
-                            CatalogWindow.FitIcon(sprite, side, out w, out h);
-                            builder.AddImage(sprite, w, h, "mach_cellitem_" + idBase + "_" + idx);
-                            PutCellFrame(builder, side);   // 物品图标下面垫原版格子底框
-                        }
-                        else builder.AddImage(frame, side, side, "mach_cell_" + r + "_" + c);
-                    }
-                    else
-                        builder.AddSpace(side);
-                }
-
-                builder.End();
-            }
-        }
-
-        /// <summary>单格功能槽：一个格框。</summary>
-        private static void DrawSlot(CustomUIBuilder builder)
-        {
-            var frame = MachineSlotSprite();
-            if (frame != null)
-            {
-                float side = MachineCellSide(24f);
-                builder.AddImage(frame, side, side, "mach_slot");
-            }
-            else builder.AddLabel("▢", "mach_slot_text");
-        }
-
-        /// <summary>
-        /// 机器格子精灵：直接用游戏原版的那一张——
-        /// <c>GameGridInventory.SetMachineryStyle</c> 里写死了
-        /// <c>SetBackgroundSprite("Window/machinery", "cell")</c>。
-        /// 之前用血条描边凑合，和原版窗口里的格子完全不是一个样子。
-        /// 拿不到才退回描边，再不行走字符画兜底。
-        /// </summary>
-        private static Sprite _machineSlotSprite;
-        private static bool _machineSlotTried;
-
-        private static Sprite MachineSlotSprite()
-        {
-            if (_machineSlotTried) return _machineSlotSprite;
-            _machineSlotTried = true;
-
-            // 原版机器格子（SetMachineryStyle 的实参）
-            try { _machineSlotSprite = RenderHandler.TryLoadFromAtlas("Window/machinery", "cell"); }
-            catch { }
-            if (_machineSlotSprite != null) return _machineSlotSprite;
-
-            var handler = RenderHandler.current;
-            if (handler != null) _machineSlotSprite = handler.healthBarOutline;
-            return _machineSlotSprite;
-        }
-
-        /// <summary>格子的边长：优先用原版精灵的像素大小（SetNativeSize），拿不到退回旧值。</summary>
-        private static float MachineCellSide(float fallback)
-        {
-            var sprite = MachineSlotSprite();
-            if (sprite == null) return fallback;
-
-            float w = sprite.rect.width / Mathf.Max(1f, sprite.pixelsPerUnit);
-            float h = sprite.rect.height / Mathf.Max(1f, sprite.pixelsPerUnit);
-            return Mathf.Max(8f, Mathf.Max(w, h));
         }
 
         private static void RenderRecipe(CustomUIBuilder builder, RecipeInfo recipe)
@@ -5853,19 +5933,6 @@ namespace ItemCatalog.UI
             return LootSource.BaseItemId(id);
         }
 
-        /// <summary>占位 id 的可读名；不认识的返回 null。</summary>
-        private static string PlaceholderName(string id)
-        {
-            switch ((id ?? string.Empty).Trim())
-            {
-                case "random_performance_module": return Loc("item_random_perf", "随机性能模块");
-                case "random_efficiency_module": return Loc("item_random_eff", "随机效率模块");
-                case "random_quality_module": return Loc("item_random_qual", "随机品质模块");
-                case "random_node": return Loc("item_random_node", "随机节点");
-                default: return null;
-            }
-        }
-
         private static readonly Dictionary<string, string> _nameCache =
             new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -5880,9 +5947,6 @@ namespace ItemCatalog.UI
 
             var entry = RecipeIndex.FindEntry(id);
             if (entry != null) return entry.DisplayName;
-
-            string placeholder = PlaceholderName(id);
-            if (!string.IsNullOrEmpty(placeholder)) return placeholder;
 
             string cached;
             if (_nameCache.TryGetValue(id, out cached)) return cached;

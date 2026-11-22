@@ -1,4 +1,4 @@
-﻿btn_open,Каталог
+﻿﻿﻿﻿btn_open,Каталог
 win_title,Каталог предметов
 count,Записей: {0}
 page,{0} / {1}
@@ -8,12 +8,10 @@ tt_impurity,Примеси
 build_log,Каталог предметов готов: {0}
 search_placeholder,Поиск по названию или ID
 take_toggle,Чит-режим
-rec_title,Рецепты
 rec_mats,Материалы
 rec_tools,Инструменты
 rec_result,Результат
 src_commissary,Снабжение
-src_none,Источники неизвестны
 src_clients,Клиенты
 src_sold,Продажа
 src_wanted,Скупка
@@ -21,115 +19,24 @@ src_locations,Магазины локаций
 src_client_supplier,Поставщик
 src_client_scavenger,Старьёвщик
 src_doctor_shop,Доктор Джексон (магазин)
-rec_cat_craft_out,Крафт
-rec_cat_craft_in,В крафте
-use_none,Применение неизвестно
 faction_none,Без фракции
 faction_location,Магазины локаций
-rec_cat_use_out,Из использования
-rec_cat_use_in,Применение
-use_source,Используемый предмет
-use_kind_open,Открыть
-use_kind_drink,Выпить
-use_kind_apply,Применить
-use_kind_combine,Совместить
-use_kind_use,Использовать
-buy_tag_water,Вода
-buy_tag_food,Еда
-buy_tag_substance,Вещества
-buy_tag_weapon,Оружие
-buy_tag_armor,Броня
-buy_tag_ammunition,Патроны
-buy_tag_household,Хозтовары
-buy_tag_container,Ёмкости
-buy_tag_caliber,Калибры
-buy_tag_drink,Напитки
-src_loot,Добыча
-src_loot_hint,Может выпасть из контейнеров
 loot_opens,Может содержать
-loot_needs,Нужна карта
-loot_use,Открыть
-lock_id,ID замка
-lock_opens,Открывает замок
-lock_master,Командная карта открывает любой замок
-pool_dumping,Свалка
-pool_junk,Хлам
-pool_access_card,Пропуска
-pool_module_all,Модули (все)
-pool_module_t1,Модули ур.1
-pool_module_t2,Модули ур.2
-pool_weapon_makeshift,Самодельное оружие
-pool_material,Материалы
-pool_household,Хозтовары
-pool_food_packed,Упакованная еда
-pool_tool,Инструменты
-pool_medical,Медикаменты
-item_random_perf,Случайный модуль производительности
-item_random_eff,Случайный модуль эффективности
-item_random_qual,Случайный модуль качества
-item_random_node,Случайный узел
 
 faction_name_church,Нейроцерковь
 name_abby,Эбби
 name_church_engineer,Инженер Церкви
-name_billy,Билли
-name_aug_med,Медик аугментаций
-name_aug_material,Поставщик аугментаций
 all_items,Все предметы
-use_tag_blade,ножи
-use_tag_broken_machine,сломанные машины
-use_tag_gun,огнестрельное оружие
-use_tag_humanoid,трупы гуманоидов
 use_tag_water,качество воды
-use_tag_xeno,трупы ксеносов
 dir_source,Источник
 dir_use,Применение
 
 prebuilt_durability,Прочность {0}
 cat_machine,Машина
-mach_title,Интерфейс машины
-mach_recipes,Рецепты
-mach_battery,Батарея
-mach_module,Модуль
-mach_note,Записка
 cat_use,Использование
-use_dir_source,Как получить
-use_dir_target,Что из неё делают
 cat_craft,Крафт
-mach_furnace_perfect,Слиток идеальной чистоты
-mach_furnace_very_high,Слиток очень высокой чистоты
-mach_furnace_high,Слиток высокой чистоты
-mach_furnace_fair,Слиток средней чистоты
-mach_furnace_low,Слиток низкой чистоты
-mach_furnace_very_low,Слиток очень низкой чистоты
 mach_furnace_junk,Переработка мусора
-mach_note_perfect,Две руды +2 и продвинутый флюс +1; нужно ещё качество +2 (суммарно ≥200%)
-mach_note_perfect_alt,Три руды +2, взрыв -1 и продвинутый флюс +1; нужно качество +2; два слитка
-mach_note_perfect_core,Две руды +2; нужно качество +200% → идеально
-mach_note_perfect_core_blast,Три руды +2; взрыв -1; нужно качество +300% → идеально; два слитка
-mach_note_perfect_flux_core,Две руды +2; флюс только поднимает минимум до +1 и не складывается; всё ещё нужно качество +200% → идеально
-mach_note_uncapped,Две руды +2; нужно качество +100% → очень высокая
-mach_note_capped2,Две руды +2; два крытых нейроядра +1 → очень высокая
-mach_note_blast_core1,Три руды +2; взрыв -1; нужно качество +100% → высокая; два слитка
-mach_note_blast_core2,Три руды +2; взрыв -1; нужно качество +200% → очень высокая; два слитка
-mach_note_flux,Две руды +2; флюс гарантирует +1 (расходуется)
-mach_note_quality,Модули качества дают уровень только при сумме ≥100%
-mach_note_ore2,Две руды: +2 уровня
-mach_note_ore_flux,Одна руда +1; флюс гарантирует +1 (расходуется)
-mach_note_ore1,Руда + лом: +1 уровень
-mach_note_flux2,Лом + флюс гарантирует +1 (расходуется)
-mach_note_scrap,Только лом: базовый уровень
-mach_note_blast,Взрыв: -1 уровень, но два слитка за цикл
-mach_note_blast_low,Взрыв: -1 уровень; два слитка
-mach_note_blast_flux,Три руды +2; взрыв -1 и флюс +1; два слитка
-mach_note_adv_flux,Две руды +2; продвинутый флюс +1 (не расходуется)
-mach_note_adv_flux_blast,Три руды +2; взрыв -1 и продвинутый флюс +1; два слитка
-mach_note_junk,С модулем мусора: 6 мусора → 4 лома
 purity_suffix, ({0})
-mach_inputs,Вход
-mach_modules,Модули
-mach_outputs,Выход
-mach_evap_output,Перегонка
 cat_reaction,Реакции
 react_input,Реагенты
 react_condition,Условия
@@ -138,28 +45,20 @@ react_temp,Температура
 react_ambient,Комнатная
 react_solvent,Растворитель
 react_catalyst,Катализатор
-react_cond_excess,Избыток {0}/{1}
 react_cond_acid_or_base,{0}/{1}
-react_cond_solvent_ratio,{0}:{1} ≥ 5:1
-react_cond_nomore_alcohol,{0} ≤ 10%
+react_cond_solvent_ratio,{0}:{1} ≥ {2}:{3}
+react_cond_nomore_alcohol,{0} ≤ {1}%
 react_cond_fanta_order,{0} > {1}
-react_cond_waste_full,Полная реакция при ≥100 °C
-react_cond_alcohol_ratio,{0} ≥ 40%
-react_cond_microbe_heat,Полная реакция при ≥100 °C
+react_cond_waste_full,Полная реакция при ≥{0} °C
+react_cond_alcohol_ratio,{0} ≥ {1}%
+react_cond_microbe_heat,Полная реакция при ≥{0} °C
 react_none,Нет
 mach_trap_output,Ловушка
-mach_note_evap,Сушка ёмкости: модуль + спирт
-mach_note_evap_beer,Любая ёмкость со спиртом даёт спирт
-mach_note_trap,Приманка: сыр → переработанный сыр
-mach_note_trap_food,Любая еда подходит
 mach_hydro_chance,Шанс: {0}
 mach_hydro_purify,Очистка
-note_state,Нового предмета не даёт: меняет только состояние цели (улучшение / ремонт / заряд / бонус)
 cat_gun_upgrade,Ремонт оружия
 gun_up_chance,Начальный шанс успеха при ремонте: {0}%
 cat_gun_mods,Модуль оружия
 note_neuter,Стерилизует живое животное (предмет не расходуется)
-note_module_unstuck,Освобождает застрявший модуль (базовый извлекатель тратит одно применение)
-note_module_expand,Добавляет машине слоты модулей (в пределах лимита; комплект расходуется)
 note_lockpick,Попытка вскрыть механический замок (сложность 1; инструмент не расходуется)
 note_keycard,Карта-ключ для своего типа замка; уничтожается после успешного вскрытия

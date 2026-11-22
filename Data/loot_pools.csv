@@ -35,9 +35,6 @@ dumpingGroundTG,location_dumping_grounds
 dumpingGroundFreshTG,location_dumping_grounds
 dumpingGroundMedical,location_dumping_grounds
 POI_dumpingGround,location_dumping_grounds
-# scav_afterhour ← ScavHelper.GetRandomScavengedItem（夜巡拾荒的硬编码产出池，
-#   LootSource.EnsureBuilt 手动注入；金属探测器升级带来的双倍掉落是概率修正不进池）
-scav_afterhour,location_dumping_grounds
 # householdTable / medicalTable 不再映射到扒手：扒手来访摆货（AddDirectSellingItemToTable）
 # 已由「客人」类覆盖，掉落池页与它重复且措辞误导（2026-11-15）
 packedFoodTable,name_scavenger

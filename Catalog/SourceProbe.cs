@@ -11,16 +11,11 @@ namespace ItemCatalog.Catalog
     ///
     /// 配方与掉落表都是运行时数据（<c>GameItem.recipeManager</c> / <c>LootRegistry</c>），
     /// 离线扫 DLL 得不到，所以只能进游戏后靠这里实测。
-    /// 触发方式：F9 → 「Catalog: Probe Sources」，或由 CatalogTicker 自动探几次。
+    /// 触发方式：F9 → 「Catalog: Probe Sources」（只手动触发，避免游戏中途遍历全部物品造成卡顿）。
     /// </summary>
     internal static class SourceProbe
     {
         private const string FileName = "source-probe.txt";
-
-        private static int _runs;
-        private static int _lastLoot = -2;
-        private static int _lastRecipe = -2;
-        private static float _nextCheck;
 
         /// <summary>出一份完整报告：摘要进日志，全量写文件。</summary>
         internal static void Log(string tag)
@@ -172,38 +167,6 @@ namespace ItemCatalog.Catalog
         {
             try { return Application.version ?? "?"; }
             catch { return "?"; }
-        }
-
-        /// <summary>
-        /// 由 CatalogTicker 每帧调用，内部 2 秒节流。
-        /// 第一次在来源索引建好后出报告；之后配方数 / 掉落表数发生变化再出，最多 3 次。
-        /// 这样能抓到「读档后运行时数据才注册」的那一刻，又不会刷屏。
-        /// </summary>
-        internal static void Tick()
-        {
-            if (_runs >= 3) return;
-            if (!SourceIndex.Built) return;
-
-            float now = Time.realtimeSinceStartup;
-            if (_nextCheck <= 0f) { _nextCheck = now + 3f; return; }
-            if (now < _nextCheck) return;
-            _nextCheck = now + 2f;
-
-            int loot = LootSource.Tables.Length;
-            int recipe = RecipeIndex.Built ? RecipeIndex.All.Count : -1;
-
-            if (_runs > 0 && loot == _lastLoot && recipe == _lastRecipe) return;
-
-            _lastLoot = loot;
-            _lastRecipe = recipe;
-            _runs++;
-
-            try { Log(_runs == 1 ? "auto" : "auto-changed"); }
-            catch (Exception e)
-            {
-                if (ModEntry.Log != null) ModEntry.Log.Warning("[probe] auto failed: " + e.Message);
-                _runs = 3;
-            }
         }
     }
 }

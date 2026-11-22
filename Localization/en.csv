@@ -1,4 +1,4 @@
-﻿btn_open,Catalog
+﻿﻿﻿﻿btn_open,Catalog
 win_title,Probably Enough Items
 count,{0} entries
 page,{0} / {1}
@@ -8,12 +8,10 @@ tt_impurity,Impurities
 build_log,Probably Enough Items ready: {0} entries
 search_placeholder,Search name or ID
 take_toggle,Cheat mode
-rec_title,Recipes
 rec_mats,Materials
 rec_tools,Tools
 rec_result,Result
 src_commissary,Commissary
-src_none,No known source
 src_clients,Clients
 src_sold,Selling
 src_wanted,Wanted
@@ -21,115 +19,24 @@ src_locations,Location shops
 src_client_supplier,Supply runner
 src_client_scavenger,Scavenger
 src_doctor_shop,Dr. Jackson (shop)
-rec_cat_craft_out,Crafting
-rec_cat_craft_in,Used in crafting
-use_none,No known use yet
 faction_none,Unaffiliated
 faction_location,Location Shops
-rec_cat_use_out,From use
-rec_cat_use_in,Uses
-use_source,Used item
-use_kind_open,Opening
-use_kind_drink,Drinking
-use_kind_apply,Applying
-use_kind_combine,Combining
-use_kind_use,Using
-buy_tag_water,Water
-buy_tag_food,Food
-buy_tag_substance,Substances
-buy_tag_weapon,Weapons
-buy_tag_armor,Armor
-buy_tag_ammunition,Ammo
-buy_tag_household,Household
-buy_tag_container,Liquid containers
-buy_tag_caliber,Gun calibers
-buy_tag_drink,Drinks
-src_loot,Loot
-src_loot_hint,Can drop from loot tables or containers
 loot_opens,Can contain
-loot_needs,Requires keycard
-loot_use,Opening
-lock_id,Lock ID
-lock_opens,Opens lock
-lock_master,Command key opens every lock
-pool_dumping,Dumping ground
-pool_junk,Junk pile
-pool_access_card,Access cards
-pool_module_all,Modules (all)
-pool_module_t1,Tier 1 modules
-pool_module_t2,Tier 2 modules
-pool_weapon_makeshift,Makeshift weapons
-pool_material,Materials
-pool_household,Household goods
-pool_food_packed,Packed food
-pool_tool,Tools
-pool_medical,Medical supplies
-item_random_perf,Random performance module
-item_random_eff,Random efficiency module
-item_random_qual,Random quality module
-item_random_node,Random node
-use_tag_gun,firearms
-use_tag_blade,blades
-use_tag_broken_machine,broken machines
-use_tag_humanoid,humanoid corpses
-use_tag_xeno,xeno corpses
 use_tag_water,water quality
 all_items,All items
 
 faction_name_church,Neural Church
 name_abby,Abby
 name_church_engineer,Church Engineer
-name_billy,Billy
-name_aug_med,Augmentation Medic
-name_aug_material,Augmentation Supplier
 dir_source,Source
 dir_use,Uses
 
 prebuilt_durability,Durability {0}
 cat_machine,Machine
-mach_title,Machine UI
-mach_recipes,Recipes
-mach_battery,Battery
-mach_module,Module
-mach_note,Note
 cat_use,Use
-use_dir_source,How to obtain
-use_dir_target,What it makes
 cat_craft,Crafting
-mach_furnace_perfect,Perfect purity ingot
-mach_furnace_very_high,Very high purity ingot
-mach_furnace_high,High purity ingot
-mach_furnace_fair,Fair purity ingot
-mach_furnace_low,Low purity ingot
-mach_furnace_very_low,Very low purity ingot
 mach_furnace_junk,Junk processing
-mach_note_perfect,Two ore +2 and advanced flux +1; still needs quality +2 (total quality ≥200%)
-mach_note_perfect_alt,Three ore +2, blast -1 and advanced flux +1; still needs quality +2; two ingots
-mach_note_perfect_core,Two ore +2; needs quality +200% → perfect
-mach_note_perfect_core_blast,Three ore +2; blast -1; needs quality +300% → perfect; two ingots
-mach_note_perfect_flux_core,Two ore +2; flux only floors at +1 and does not stack; still needs quality +200% → perfect
-mach_note_uncapped,Two ore +2; needs quality +100% → very high
-mach_note_capped2,Two ore +2; two capped neural cores +1 → very high
-mach_note_blast_core1,Three ore +2; blast -1; needs quality +100% → high; two ingots
-mach_note_blast_core2,Three ore +2; blast -1; needs quality +200% → very high; two ingots
-mach_note_flux,Two ore +2; flux guarantees +1 (consumed)
-mach_note_quality,Quality modules only add a tier at ≥100% total
-mach_note_ore2,Two ore → +2 tiers baseline
-mach_note_ore_flux,One ore +1; flux guarantees +1 (consumed)
-mach_note_ore1,Ore + scrap → +1 tier baseline
-mach_note_flux2,Scrap + flux guarantees +1 (consumed)
-mach_note_scrap,Pure scrap → base tier
-mach_note_blast,Blast costs a tier but yields two ingots per cycle
-mach_note_blast_low,Blast costs a tier; yields two ingots
-mach_note_blast_flux,Three ore +2; blast -1 offset by flux +1; two ingots
-mach_note_adv_flux,Two ore +2; advanced flux guarantees +1 (not consumed by code)
-mach_note_adv_flux_blast,Three ore +2; blast -1 offset by advanced flux +1; two ingots
-mach_note_junk,With junk module: 6 junk → 4 scrap
 purity_suffix, ({0})
-mach_inputs,Inputs
-mach_modules,Modules
-mach_outputs,Products
-mach_evap_output,Distillation output
 cat_reaction,Reactions
 react_input,Reactants
 react_condition,Conditions
@@ -138,28 +45,20 @@ react_temp,Temperature
 react_ambient,Ambient
 react_solvent,Solvent
 react_catalyst,Catalyst
-react_cond_excess,{0}/{1} in excess
 react_cond_acid_or_base,{0}/{1}
-react_cond_solvent_ratio,{0}:{1} ≥ 5:1
-react_cond_nomore_alcohol,{0} ≤ 10%
+react_cond_solvent_ratio,{0}:{1} ≥ {2}:{3}
+react_cond_nomore_alcohol,{0} ≤ {1}%
 react_cond_fanta_order,{0} > {1}
-react_cond_waste_full,Complete reaction at ≥100 °C
-react_cond_alcohol_ratio,{0} ≥ 40%
-react_cond_microbe_heat,Complete reaction at ≥100 °C
+react_cond_waste_full,Complete reaction at ≥{0} °C
+react_cond_alcohol_ratio,{0} ≥ {1}%
+react_cond_microbe_heat,Complete reaction at ≥{0} °C
 react_none,None
 mach_trap_output,Trap output
-mach_note_evap,Dry an alcoholic container: solvent recovery module + alcohol
-mach_note_evap_beer,Any alcoholic container yields alcohol
-mach_note_trap,Bait with cheese → processed cheese
-mach_note_trap_food,Any food works as bait
 mach_hydro_chance,Chance: {0}
 mach_hydro_purify,Purification
-note_state,No new item: only changes the target's state (upgrade / repair / recharge / buff)
 cat_gun_upgrade,Firearm refurbishing
 gun_up_chance,Initial refurbish success chance: {0}%
 cat_gun_mods,Gun mod
 note_neuter,Sterilises a living animal (item is not consumed)
-note_module_unstuck,Frees a stuck module (a basic extractor spends one use)
-note_module_expand,Adds module slots to a machine (limited by its cap; consumes the kit)
 note_lockpick,Tries to pick a mechanical lock (difficulty 1; tool is not consumed)
 note_keycard,Keycard for its own lock type; destroyed after a successful unlock

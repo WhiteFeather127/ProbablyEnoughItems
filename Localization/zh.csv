@@ -1,4 +1,4 @@
-﻿btn_open,图鉴
+﻿﻿﻿﻿btn_open,图鉴
 win_title,物品图鉴
 count,共 {0} 项
 page,{0} / {1}
@@ -8,12 +8,10 @@ tt_impurity,杂质
 build_log,物品图鉴已就绪：{0} 项
 search_placeholder,搜索物品名或 ID
 take_toggle,作弊模式
-rec_title,合成表
 rec_mats,材料
 rec_tools,工具
 rec_result,产物
 src_commissary,配给站
-src_none,暂无已知来源
 src_clients,客人
 src_sold,售出
 src_wanted,求购
@@ -21,117 +19,24 @@ src_locations,地点商店
 src_client_supplier,补给跑者
 src_client_scavenger,拾荒者
 src_doctor_shop,博士（店铺）
-rec_cat_craft_out,合成
-rec_cat_craft_in,合成材料
-use_none,暂未收录用途
 faction_none,无阵营
 faction_location,地点商店
-rec_cat_use_out,使用来源
-rec_cat_use_in,使用用途
-use_source,使用的物品
-use_kind_open,开启
-use_kind_drink,喝掉
-use_kind_apply,使用
-use_kind_combine,组合
-use_kind_use,使用
-buy_tag_water,水
-buy_tag_food,食物
-buy_tag_substance,成瘾物
-buy_tag_weapon,武器
-buy_tag_armor,护甲
-buy_tag_ammunition,弹药
-buy_tag_household,家居用品
-buy_tag_container,液体容器
-buy_tag_caliber,枪械口径
-buy_tag_drink,饮品
-src_loot,掉落池
-src_loot_hint,场景箱子 / 搜刮点按池随机产出
 loot_opens,可能开出
-loot_needs,需要卡
-loot_use,开启
-lock_id,锁编号
-lock_opens,可开的锁
-lock_master,命令卡可开所有锁
-pool_dumping,垃圾场
-pool_junk,杂物堆
-pool_access_card,门禁卡
-pool_module_all,模块（全部）
-pool_module_t1,一级模块
-pool_module_t2,二级模块
-pool_weapon_makeshift,自制武器
-pool_material,材料
-pool_household,家居用品
-pool_food_packed,包装食品
-pool_tool,工具
-pool_medical,医疗用品
-item_random_perf,随机性能模块
-item_random_eff,随机效率模块
-item_random_qual,随机品质模块
-item_random_node,随机节点
-use_tag_gun,枪械
-use_tag_blade,刀具
-use_tag_broken_machine,损坏机器
-use_tag_humanoid,人形尸体
-use_tag_xeno,异形尸体
 use_tag_water,水质
 all_items,全部物品
 
 faction_name_church,神经教会
 name_abby,艾比
 name_church_engineer,教会工程师
-name_billy,比利
-name_aug_med,义体医师
-name_aug_material,义体材料商
 dir_source,来源
 dir_use,用途
 
 prebuilt_durability,耐久 {0}
 cat_machine,机器
-mach_title,机器界面
-mach_recipes,产出配方
-mach_battery,电池
-mach_module,模块
-mach_note,纸条
 cat_use,使用
-use_dir_source,怎么得到它
-use_dir_target,能拿它做什么
-note_scav_scanner,拾荒道具：拿来升级基地的金属探测器（消耗一件），每级提高夜巡拾荒的双倍掉落几率
-note_scav_flashlight,拾荒道具：夜巡拾荒时随身携带，降低受伤几率（不消耗）
 cat_craft,合成
-mach_furnace_perfect,完美纯度金属锭
-mach_furnace_very_high,极高纯度金属锭
-mach_furnace_high,高纯度金属锭
-mach_furnace_fair,一般纯度金属锭
-mach_furnace_low,低纯度金属锭
-mach_furnace_very_low,极低纯度金属锭
 mach_furnace_junk,垃圾处理
-mach_note_perfect,两矿 +2、高级助熔剂 +1，再需品质加成 +2（总品质 ≥200%）
-mach_note_perfect_alt,三矿 +2，爆燃 -1、高级助熔剂 +1，再需品质加成 +2；双锭
-mach_note_perfect_core,两矿 +2，需品质加成 +200% → 完美
-mach_note_perfect_core_blast,三矿 +2，爆燃 -1，需品质加成 +300% → 完美；双锭
-mach_note_perfect_flux_core,两矿 +2；助熔剂只保底 +1、不叠加，仍需质量加成 +200% → 完美
-mach_note_uncapped,两矿 +2，需品质加成 +100% → 极高
-mach_note_capped2,两矿 +2，两个封顶神经核心 +1 → 极高
-mach_note_blast_core1,三矿 +2，爆燃 -1，需品质加成 +100% → 高；双锭
-mach_note_blast_core2,三矿 +2，爆燃 -1，需品质加成 +200% → 极高；双锭
-mach_note_flux,两矿 +2，助熔剂保底 +1（会被消耗）
-mach_note_quality,品质模块总加成 ≥100% 才 +1 档
-mach_note_ore2,两份矿石 → 基础 +2 档
-mach_note_ore_flux,一矿 +1，助熔剂保底 +1（会被消耗）
-mach_note_ore1,矿石与废金属各一份 → 基础 +1 档
-mach_note_flux2,废金属 + 助熔剂保底 +1（会被消耗）
-mach_note_scrap,纯废金属 → 基础档
-mach_note_blast,爆燃 -1 档，但每周期产出双锭
-mach_note_blast_low,爆燃 -1 档，产出双锭
-mach_note_blast_flux,三矿 +2，爆燃 -1、助熔剂 +1 抵消；双锭
-mach_note_adv_flux,两矿 +2，高级助熔剂保底 +1（代码不消耗）
-mach_note_adv_flux_blast,三矿 +2，爆燃 -1、高级助熔剂 +1；双锭
-mach_note_junk,装上垃圾模块后，6 个垃圾 → 4 份废金属
 purity_suffix,（{0}）
-mach_inputs,投入
-mach_modules,模块
-mach_outputs,产物
-mach_evap_output,蒸馏产出
 cat_reaction,反应
 react_input,反应物
 react_condition,条件
@@ -140,28 +45,20 @@ react_temp,温度
 react_ambient,常温
 react_solvent,溶剂
 react_catalyst,催化
-react_cond_excess,{0}/{1} 过量
 react_cond_acid_or_base,{0}/{1}
-react_cond_solvent_ratio,{0}:{1} ≥ 5:1
-react_cond_nomore_alcohol,{0} ≤ 10%
+react_cond_solvent_ratio,{0}:{1} ≥ {2}:{3}
+react_cond_nomore_alcohol,{0} ≤ {1}%
 react_cond_fanta_order,{0} > {1}
-react_cond_waste_full,≥100 °C 完全反应
-react_cond_alcohol_ratio,{0} ≥ 40%
-react_cond_microbe_heat,≥100 °C 完全反应
+react_cond_waste_full,≥{0} °C 完全反应
+react_cond_alcohol_ratio,{0} ≥ {1}%
+react_cond_microbe_heat,≥{0} °C 完全反应
 react_none,无
 mach_trap_output,捕鼠夹产出
-mach_note_evap,把含酒精的容器蒸干：留下溶剂回收模块，馏出酒精
-mach_note_evap_beer,任何含酒精的液体容器都能蒸出酒精
-mach_note_trap,放上奶酪作诱饵，周期结束后得到加工奶酪
-mach_note_trap_food,任何食物都能当诱饵
 mach_hydro_chance,生成概率：{0}
 mach_hydro_purify,净水
-note_state,不产出新物品：只改变目标的状态（升级 / 修复 / 充能 / 增益等）
 cat_gun_upgrade,枪械翻修
 gun_up_chance,初始翻修成功率：{0}%
 cat_gun_mods,枪械模组
 note_neuter,给活体动物绝育（不消耗物品）
-note_module_unstuck,给卡住的模块解卡（普通提取器会消耗 1 次使用次数）
-note_module_expand,给机器加装模块槽（受机器上限限制，消耗套件）
 note_lockpick,尝试撬开机械锁（难度 1，工具不消耗）
 note_keycard,对应锁型的钥匙卡：开锁成功后会销毁卡片

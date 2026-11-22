@@ -92,6 +92,15 @@ namespace ItemCatalog.Catalog
     /// </summary>
     internal static class LiquidReactions
     {
+        // 规则里的绝对阈值（抄自 ChemicalHelper 的 IL）。
+        // 展示文案不再把这些数字写死在本地化文件里，统一从这里取；
+        // 规则变化（或以后想从游戏常量读）只需要改这一处。
+        internal const int SolventRatioParts = 5;       // 溶剂 : 原料 ≥ 5:1
+        internal const int SolventRatioBase = 1;
+        internal const int AlcoholKillPercent = 40;     // 酒精杀菌：酒精 ≥ 总体积 40%
+        internal const int NoMoreAlcoholPercent = 10;   // nomore：酒精 ≤ 10%
+        internal const int FullReactionTemp = 100;      // 完全反应温度（°C）
+
         private static LiquidReaction[] _all;
 
         /// <summary>全部反应（惰性构建：沸腾页要读游戏的 Liquid.Liquids，必须等系统就绪）。</summary>
@@ -179,31 +188,31 @@ namespace ItemCatalog.Catalog
                 R("coffee_alcohol", new[] { "coffee_mush" }, new[] { 10f },
                   new[] { "caffeine", "plant_matter", "alcohol" }, new[] { 7.5f, 2.5f, 7.5f },
                   "alcohol", false, 7.5f, 50f, 0f,
-                  "react_cond_solvent_ratio", "{0}:{1} ≥ 5:1"),
+                  "react_cond_solvent_ratio", "{0}:{1} ≥ {2}:{3}"),
 
                 // 咖啡菇 + 水 → 咖啡因（每 tick 处理 0.5ml，水最佳量 = 5 × 0.5ml）
                 R("coffee_water", new[] { "coffee_mush" }, new[] { 10f },
                   new[] { "caffeine", "plant_matter", "water" }, new[] { 1.25f, 8.75f, 2.5f },
                   "water", false, 2.5f, 80f, 0f,
-                  "react_cond_solvent_ratio", "水足量（≥5:1）"),
+                  "react_cond_solvent_ratio", "{0}:{1} ≥ {2}:{3}"),
 
                 // 梦帽菇 + 酒精 → 梦帽提取物（比例按整份菇算，最佳量 = 5 × 10ml）
                 R("dream_alcohol", new[] { "dream_cap_mush" }, new[] { 10f },
                   new[] { "dream_cap_extract", "plant_matter", "alcohol" }, new[] { 5f, 5f, 50f },
                   "alcohol", false, 50f, 40f, 0f,
-                  "react_cond_solvent_ratio", "酒精足量（≥5:1）"),
+                  "react_cond_solvent_ratio", "{0}:{1} ≥ {2}:{3}"),
 
                 // 梦魇菇 + 酒精 → 梦魇提取物
                 R("nightmare_alcohol", new[] { "nightmare_cap_mush" }, new[] { 10f },
                   new[] { "nightmare_extract", "plant_matter", "alcohol" }, new[] { 5f, 5f, 50f },
                   "alcohol", false, 50f, 40f, 0f,
-                  "react_cond_solvent_ratio", "酒精足量（≥5:1）"),
+                  "react_cond_solvent_ratio", "{0}:{1} ≥ {2}:{3}"),
 
                 // nomore：梦帽提取物 + 还原剂（脂粘合剂是不限量催化剂，只写中间）
                 R("nomore", new[] { "dream_cap_extract", "reducing_agent" }, new[] { 10f, 10f },
                   new[] { "nomore", "debris" }, new[] { 6f, 4f },
                   "lipobond_agent", true, 0f, 45f, 55f,
-                  "react_cond_nomore_alcohol", "{0} ≤ 10%"),
+                  "react_cond_nomore_alcohol", "{0} ≤ {1}%"),
 
                 // 芬达：甲基醇 + 还原剂 → 10% 芬达（还原剂消耗 75%）
                 R("fanta", new[] { "methylol", "reducing_agent" }, new[] { 10f, 7.5f },
@@ -227,7 +236,7 @@ namespace ItemCatalog.Catalog
                 R("waste_heat", new[] { "organic_waste" }, new[] { 10f },
                   new[] { "physical_contaminant" }, new[] { 3.3f },
                   null, false, 0f, 80f, 0f,
-                  "react_cond_waste_full", "≥100 °C 完全反应"),
+                  "react_cond_waste_full", "≥{0} °C 完全反应"),
 
                 // 酸碱中和：两者等量消耗，没有产物
                 RN("neutralize", new[] { "acid", "base" }, new[] { 10f, 10f },
@@ -242,12 +251,12 @@ namespace ItemCatalog.Catalog
                 // 酒精杀菌：酒精 ≥ 总体积 40%
                 RN("microbe_alcohol", new[] { "microbe" }, new[] { 10f },
                    "alcohol", false, 7f, 0f,
-                   "react_cond_alcohol_ratio", "{0} ≥ 40%"),
+                   "react_cond_alcohol_ratio", "{0} ≥ {1}%"),
 
                 // 加热杀菌：≥70 °C 开始减少，≥100 °C 全灭
                 RN("microbe_heat", new[] { "microbe" }, new[] { 10f },
                    null, false, 0f, 70f,
-                   "react_cond_microbe_heat", "≥100 °C 完全反应"),
+                   "react_cond_microbe_heat", "≥{0} °C 完全反应"),
 
                 // 氯消毒：氯 + 水（水必须存在、不被消耗）→ 杀微生物 + 去除化学污染物
                 RN("chlorine", new[] { "chlorine", "microbe" }, new[] { 10f, 10f },
