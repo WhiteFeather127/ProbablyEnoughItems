@@ -19,8 +19,7 @@
 |---|---|
 | `Data/clients.csv` | 谁（阵营 → 客人）**以及这个客人卖什么**——第 12~16 列 |
 | `Data/uses.csv` | 对物品本身动手的转化——开箱、撕包装、喝掉、涂抹、组合——与机器配方索引分开 |
-| `Data/box_contents.csv` | 箱子真正能开出什么，从 `PreBuiltItemHelper.Fill*` 反汇编得到；只列可能出现的物品，不记概率 |
-| `Data/box_pools.csv` | 开箱要的卡，以及没有内容物表时才用的兜底池 |
+| `Data/box_pools.csv` | 开箱要的卡，以及没有内容物表时才用的兜底池。箱子内容物本身由 `Catalog/BoxProbe` 在加载阶段自动捕获（游戏自己的 `PreBuiltItemHelper.crateFillers`），不再有 CSV |
 
 `Data/goods.csv` 已不再随包分发：它的列并入了 `clients.csv` 第 12~16 列。若文件夹里还残留一份，仍会被解析并与
 新列叠加（见文末），但新数据只写 `clients.csv`。

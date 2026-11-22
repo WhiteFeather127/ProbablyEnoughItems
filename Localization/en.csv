@@ -61,4 +61,3 @@ gun_up_chance,Initial refurbish success chance: {0}%
 cat_gun_mods,Gun mod
 note_neuter,Sterilises a living animal (item is not consumed)
 note_lockpick,Tries to pick a mechanical lock (difficulty 1; tool is not consumed)
-note_keycard,Keycard for its own lock type; destroyed after a successful unlock

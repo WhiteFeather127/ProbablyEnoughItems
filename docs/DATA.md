@@ -22,8 +22,7 @@ restarting the game is enough — no rebuild, no code change.
 |---|---|
 | `Data/clients.csv` | who (faction → customer) **and what each customer sells** — columns 12–16 |
 | `Data/uses.csv` | transformations that act on the item itself — open a box, tear a package, drink a bottle, apply a substance, combine two items — kept separate from the machine recipe index |
-| `Data/box_contents.csv` | what a box can actually contain, extracted from `PreBuiltItemHelper.Fill*`; possible items only, probabilities are not recorded |
-| `Data/box_pools.csv` | cards required to open a box, plus fallback pools for boxes with no contents table |
+| `Data/box_pools.csv` | cards required to open a box, plus fallback pools for boxes with no contents table. Box contents themselves are captured at load time by `Catalog/BoxProbe` (the game's own `PreBuiltItemHelper.crateFillers`) and have no CSV |
 
 `Data/goods.csv` no longer ships. Its columns were folded into `clients.csv` 12–16; a leftover copy is still parsed
 and merged for compatibility (see the end of this page), but new data belongs in `clients.csv`.

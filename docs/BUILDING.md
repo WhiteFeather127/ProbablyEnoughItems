@@ -47,7 +47,7 @@ leave the old files in place. If that happens, use the script instead:
 ├── manifest.xml
 ├── preview.png
 ├── Localization\{en,zh,ru}.csv
-└── Data\{clients,uses,box_contents,box_pools}.csv
+└── Data\{clients,uses,box_pools}.csv
 ```
 
 `preview.png` is the banner shown in the mods menu; once the mod is published to the Workshop, the item's

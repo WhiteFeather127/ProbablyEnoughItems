@@ -147,8 +147,9 @@ namespace ItemCatalog.Catalog
                 var gun = UI.CatalogWindow.CreatePreviewItem(gunId);
                 if (gun == null) return null;
 
-                // 脱离世界的临时网格：足够大、没有准入过滤器，产物不会被拒收而溢出到商店
-                box = new GameGridInventory(20, 20);
+                // 沙盒只需装下枪本身：产物在 EmporiumTryAdd 前被 LoadCapture 截获，
+                // 不会落进网格，所以不需要大容器。
+                box = new GameGridInventory(12, 8);
                 GraphUtils.TryAcceptAll(box, gun, 1);
 
                 if (gun.parentInventory != box)
@@ -157,34 +158,28 @@ namespace ItemCatalog.Catalog
                     return null;
                 }
 
-                // 拆解末尾会播 ratchet：GunSoundPatch 在探测期间跳过 AudioSource 播放
-                UI.GunSoundPatch.BeginSilent();
-                try { GunHelper.DisassembleWeapon(gun); }
-                finally { UI.GunSoundPatch.EndSilent(); }
+                if (!LoadCapture.Begin()) return null;
 
-                var ids = new List<string>();
-                var products = GraphUtils.FindAllChildrenType<GameItem>(box, null, null);
-                if (products != null)
+                string[] ids;
+                try
                 {
-                    for (int i = 0; i < products.Count; i++)
-                    {
-                        var product = products[i];
-                        if (product != null && !string.IsNullOrEmpty(product.identifier))
-                            ids.Add(product.identifier);
-                    }
+                    // 拆解末尾会播 ratchet：GunSoundPatch 在探测期间跳过 AudioSource 播放
+                    UI.GunSoundPatch.BeginSilent();
+                    try { GunHelper.DisassembleWeapon(gun); }
+                    finally { UI.GunSoundPatch.EndSilent(); }
 
-                    for (int i = 0; i < products.Count; i++)
-                    {
-                        var product = products[i];
-                        if (product == null) continue;
-                        try { product.Destroy(); } catch { }
-                    }
+                    ids = LoadCapture.End().ToArray();
+                }
+                finally
+                {
+                    // 异常时也要关捕获窗口，否则后面所有 TryAdd / EmporiumTryAdd 都会被吞掉
+                    if (LoadCapture.Active) LoadCapture.End();
                 }
 
-                if (ModEntry.Log != null && ids.Count > 0)
-                    ModEntry.Log.Log("[gun] " + gunId + " -> " + string.Join("|", ids.ToArray()));
+                if (ModEntry.Log != null && ids.Length > 0)
+                    ModEntry.Log.Log("[gun] " + gunId + " -> " + string.Join("|", ids));
 
-                return ids.ToArray();
+                return ids;
             }
             catch (Exception e)
             {
@@ -195,7 +190,7 @@ namespace ItemCatalog.Catalog
             {
                 UI.GunSoundPatch.EndSilent();
 
-                // 异常中断时可能还有残留产物：一起清掉，别留在临时图里
+                // TryUnloadAll 会把枪上配件放进沙盒；异常中断时也可能有残留，一起清掉
                 if (box != null)
                 {
                     try

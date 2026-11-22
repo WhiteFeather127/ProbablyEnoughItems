@@ -46,7 +46,7 @@ dotnet build -c Release -p:GameDir="<游戏目录>"
 ├── manifest.xml
 ├── preview.png
 ├── Localization\{en,zh,ru}.csv
-└── Data\{clients,uses,box_contents,box_pools}.csv
+└── Data\{clients,uses,box_pools}.csv
 ```
 
 `preview.png` 是模组菜单里的横幅；发布到创意工坊后优先显示物品的 `previewfile` 图，这一份只在离线或没有工坊图时使用。

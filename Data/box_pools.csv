@@ -2,7 +2,7 @@
 #
 # 注意：
 #   · med_box / sec_box / eng_box / service_box / evidence_box 的真实内容物
-#     在 `box_contents.csv`（从 `PreBuiltItemHelper.Fill*` 反汇编），优先级高于这里；
+#     由加载期自动探测得到（Catalog/BoxProbe），这里只负责「开这个箱子要哪张卡」；
 #   · toolbox / expedition_box / luxury_supply_crate 根本不是随机掉落容器，
 #     它们的去处页显示一句说明（见 LootSource.ContainerNoteFor），这里不写 pool。
 #
@@ -19,4 +19,4 @@ med_box,,med_keycard
 sec_box,,sec_keycard
 eng_box,,eng_keycard
 service_box,,ser_keycard
-evidence_box,,
+evidence_box,,sec_keycard

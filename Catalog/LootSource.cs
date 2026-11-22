@@ -57,7 +57,7 @@ namespace ItemCatalog.Catalog
 
         /// <summary>
         /// 反查：哪些箱子里能开出这件东西。两条路：
-        ///   1. `box_contents.csv` 直接列了它的箱子；
+        ///   1. 加载期自动探测出的箱子内容物（<see cref="BoxProbe"/>）；
         ///   2. `box_pools.csv` 指向的池（运行时掉落表）里有它的箱子。
         /// 来源页用它把「箱子」补成 <c>item:&lt;箱子&gt;</c> 站点——
         /// 箱内物品与箱子从两个方向都能找到对方。
@@ -68,7 +68,6 @@ namespace ItemCatalog.Catalog
             if (string.IsNullOrEmpty(itemId)) return boxes;
 
             EnsureBuilt();
-            EnsureBoxContents();
             EnsureBoxPools();
 
             foreach (var pair in _boxContents)
@@ -191,7 +190,6 @@ namespace ItemCatalog.Catalog
             if (string.IsNullOrEmpty(itemId)) return false;
 
             EnsureBoxPools();
-            EnsureBoxContents();
 
             return _boxPools.ContainsKey(itemId)
                    || _boxKeys.ContainsKey(itemId)
@@ -367,21 +365,19 @@ namespace ItemCatalog.Catalog
         }
 
         /// <summary>
-        /// 箱子 → 真实内容物（`Data/box_contents.csv`）。
-        /// 数据是从 `PreBuiltItemHelper.Fill*` 反汇编来的，就是箱子生成时
-        /// 真正往内容窗口里塞的东西，比任何按名猜的池子靠谱。
+        /// 箱子 → 真实内容物。
+        ///
+        /// 唯一数据源：加载期的自动探测（<see cref="BoxProbe"/>：让游戏自己的
+        /// `PreBuiltItemHelper.crateFillers` 跑一遍，钩 `TryAdd` 截获）。
+        /// 不再维护手工 CSV——探测会跟着游戏版本自动更新。
         /// </summary>
         private static readonly Dictionary<string, List<LootItemRef>> _boxContents =
             new Dictionary<string, List<LootItemRef>>(StringComparer.Ordinal);
-
-        private static bool _boxContentsLoaded;
 
         /// <summary>这个箱子的内容物；没登记返回 null。</summary>
         internal static List<LootItemRef> ContentsFor(string boxId)
         {
             if (string.IsNullOrEmpty(boxId)) return null;
-
-            EnsureBoxContents();
 
             List<LootItemRef> items;
             return _boxContents.TryGetValue(boxId, out items) ? items : null;
@@ -530,53 +526,38 @@ namespace ItemCatalog.Catalog
             return null;
         }
 
-        private static void EnsureBoxContents()
+        /// <summary>
+        /// 加载期自动探测的结果（唯一数据源）。重复调用只做去重合并，
+        /// `ContentsFor` / `AsBox` / `BoxesForItem` 都是现读 `_boxContents`。
+        /// </summary>
+        internal static void ApplyBoxProbe(Dictionary<string, List<string>> results)
         {
-            if (_boxContentsLoaded) return;
-            _boxContentsLoaded = true;
+            if (results == null || results.Count == 0) return;
 
-            string text = null;
-            try { text = ModHelper.ReadModFileText(ModEntry.MOD_ID, "Data/box_contents.csv"); }
-            catch (Exception e) { Warn("box_contents: " + e.Message); }
-
-            if (string.IsNullOrEmpty(text)) return;
-
-            var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
-
-            for (int i = 0; i < lines.Length; i++)
+            foreach (var pair in results)
             {
-                string line = lines[i].Trim();
-                if (line.Length == 0 || line[0] == '#') continue;
+                List<LootItemRef> list;
+                if (!_boxContents.TryGetValue(pair.Key, out list))
+                    _boxContents[pair.Key] = list = new List<LootItemRef>();
 
-                string[] cols;
-                try { cols = SourceIndex.ParseCsvRow(line); }
-                catch { continue; }
+                var ids = pair.Value;
+                if (ids == null) continue;
 
-                if (cols.Length < 2) continue;
-
-                string box = cols[0].Trim();
-                if (box.Length == 0 || string.Equals(box, "box", StringComparison.OrdinalIgnoreCase)) continue;
-
-                var list = new List<LootItemRef>();
-                var ids = cols[1].Split('|');
-
-                for (int k = 0; k < ids.Length; k++)
+                for (int i = 0; i < ids.Count; i++)
                 {
-                    string id = ExpandPlaceholder(ids[k].Trim());
-                    if (id.Length == 0) continue;
+                    string id = ExpandPlaceholder(ids[i]);
+                    if (string.IsNullOrEmpty(id)) continue;
 
                     bool exists = false;
-                    for (int m = 0; m < list.Count; m++)
-                        if (string.Equals(list[m].Id, id, StringComparison.Ordinal)) { exists = true; break; }
+                    for (int k = 0; k < list.Count; k++)
+                        if (string.Equals(list[k].Id, id, StringComparison.Ordinal)) { exists = true; break; }
 
                     if (!exists) list.Add(new LootItemRef { Id = id, Weight = 1f });
                 }
-
-                if (list.Count > 0) _boxContents[box] = list;
             }
 
             if (ModEntry.Log != null)
-                ModEntry.Log.Log("[loot] box->contents rows=" + _boxContents.Count);
+                ModEntry.Log.Log("[loot] box auto: " + _boxContents.Count + " boxes");
         }
 
         /// <summary>读 `Data/box_pools.csv`：箱子物品 id → 掉落池 id。</summary>

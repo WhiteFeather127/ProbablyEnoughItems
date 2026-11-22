@@ -41,6 +41,9 @@ namespace ItemCatalog
             ModHook.OnCreateTooltipLate += AppendItemId;
             ModHook.OnCreateTooltipLate += AppendLiquidInfo;
 
+            // 箱子内容探测要等掉落表就绪（packedFoodTable 展开需要 LootRegistry）
+            ModHook.OnLootTablesLoaded += OnLootTablesLoaded;
+
             // 模组真正把物品塞进目录的时刻（比 OnGameLoadedLate 更贴切）：
             // 一有目录初始化就增量补入图鉴，别等到玩家点开图鉴才发现「多了东西」。
             ModHook.OnModItemDirectoryInit += OnModDirectoryInit;
@@ -56,6 +59,9 @@ namespace ItemCatalog
 
             // 拆枪探测要跳过 DisassembleWeapon 末尾的 ratchet 音效（Silent 标志）
             UI.GunSoundPatch.Install(MOD_ID);
+
+            // 加载期捕获钩子：箱子内容与拆枪产物都靠它截获（只在探测窗口内生效）
+            Catalog.LoadCapture.Install(MOD_ID);
 
             try
             {
@@ -87,6 +93,7 @@ namespace ItemCatalog
             ModHook.OnGameLoadedLate -= OnGameLoaded;
             ModHook.OnCreateTooltipLate -= AppendItemId;
             ModHook.OnCreateTooltipLate -= AppendLiquidInfo;
+            ModHook.OnLootTablesLoaded -= OnLootTablesLoaded;
             ModHook.OnModItemDirectoryInit -= OnModDirectoryInit;
 
             try { ModHelper.RemoveDebugFunctions(MOD_ID); }
@@ -210,6 +217,23 @@ namespace ItemCatalog
             catch (Exception e)
             {
                 if (Log != null) Log.Warning("catalog warmup failed: " + e.Message);
+            }
+
+            // 箱子内容自动探测：掉落表已就绪就立刻跑；没就绪内部直接返回，等 OnLootTablesLoaded
+            try { Catalog.BoxProbe.ScanIfNeeded(); }
+            catch (Exception e)
+            {
+                if (Log != null) Log.Warning("[boxprobe] trigger failed: " + e.Message);
+            }
+        }
+
+        /// <summary>掉落表刚加载完：箱子内容探测需要的 registry 齐了。</summary>
+        private static void OnLootTablesLoaded()
+        {
+            try { Catalog.BoxProbe.ScanIfNeeded(); }
+            catch (Exception e)
+            {
+                if (Log != null) Log.Warning("[boxprobe] trigger failed: " + e.Message);
             }
         }
     }

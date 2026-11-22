@@ -61,4 +61,3 @@ gun_up_chance,初始翻修成功率：{0}%
 cat_gun_mods,枪械模组
 note_neuter,给活体动物绝育（不消耗物品）
 note_lockpick,尝试撬开机械锁（难度 1，工具不消耗）
-note_keycard,对应锁型的钥匙卡：开锁成功后会销毁卡片

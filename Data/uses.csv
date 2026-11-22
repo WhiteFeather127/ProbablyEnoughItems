@@ -48,9 +48,9 @@ uses,scratcher_stack,open,scratcher,
 # 每把枪的产出是 GunHelper.DisassembleWeapon 里写死的 if/else，
 # 照抄在 Catalog/GunDisassembly.cs（表里没有的枪拆完不掉东西）。
 
-# 螺丝刀拆报废机器 → 螺母（MachineBrokenHelper::OnScrewdriverUsed，
-#   数量 = BROKEN_MACHINE_SCREW_COUNT，同时按比例降低机器价值）
-uses,screwdriver+tag:BROKEN_MACHINE_TAG,apply,nuts_metal,
+# 报废机器（BROKEN_MACHINE_TAG）不登记：
+#   `ruined_machine_small` 这类 id 不在目录注册表里（图鉴里没有物品），
+#   标签目标展开后是空的，整行会渲染成「螺丝刀 → 螺母」这种误导性配方。
 
 # 螺丝刀拆坏掉的系统模块 → 电子件 + 塑料 + 垃圾（同一回调的第三个分支，
 #   检查的是 id 而不是标签）
@@ -153,10 +153,8 @@ uses,heavy_handmade_pistol_frame+gun_part,combine,heavy_handmade_pistol,
 # （一把枪 × 每个可翻新品相一页，概率见详情窗口），避免和使用页重复。
 
 # ---- 报废机器（MachineBrokenHelper）----
-# 焊枪焊废铁（数量 = BROKEN_MACHINE_WELD_COUNT）
-uses,welder+tag:BROKEN_MACHINE_TAG,apply,scrap_metal,
-# 剪线钳拆电线（数量 = BROKEN_MACHINE_WIRE_COUNT）
-uses,wire_cutter+tag:BROKEN_MACHINE_TAG,apply,wire,
+# 不登记：`ruined_machine_small` 这类 id 不在目录注册表里（图鉴里没有物品），
+# 标签目标展开后是空的，整行会渲染成「焊枪 → 废金属」「剪线钳 → 电线」这种误导性配方。
 # 剪线钳给活体动物绝育（加 ANIMAL_NEUTERED_TAG，不消耗）
 uses,wire_cutter+tag:ANIMAL_ITEM_TAG,apply,,note_neuter
 
@@ -218,12 +216,7 @@ uses,water_ration_small+tag:LIQUID_CONTAINER_TAG,apply,,
 # ---- 开锁（SecuredContainerHelper / LockHelper）----
 # 撬锁器：机械锁，难度 1，不消耗
 uses,lockpicks+tag:LOCKED_CONTAINER_TAG,apply,,note_lockpick
-# 钥匙卡：对应锁型的锁容器，开成功后销毁卡片
-uses,sec_keycard+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
-uses,sci_card+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
-uses,command_keycard+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
-uses,med_card+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
-uses,eng_card+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
-uses,ser_card+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
-uses,sup_card+tag:LOCKED_CONTAINER_TAG,apply,,note_keycard
+# 钥匙卡开锁不在这里登记：它只对「对应锁型」成立，写 `tag:LOCKED_CONTAINER_TAG`
+# 会让每张卡都出现在每个锁容器上（图鉴里表现为多余的「卡 + 箱子」页）。
+# 每个箱子的卡已经由 `box_pools.csv` 的 key 列给出，开启关系里会画出来。
 

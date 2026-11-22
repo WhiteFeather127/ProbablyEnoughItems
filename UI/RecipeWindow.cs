@@ -373,6 +373,10 @@ namespace ItemCatalog.UI
         {
             if (entry == null) return;
 
+            // 工具箱 / 远征箱 / 奢华补给箱不是随机掉落容器，也没有其它使用关系：
+            // 右键不该弹一个「暂未收录」的空白页（`cat_none`）。
+            if (asUse && LootSource.IsNonLootContainer(entry.Id)) return;
+
             var openPerf = System.Diagnostics.Stopwatch.StartNew();
 
             _entry = entry;
