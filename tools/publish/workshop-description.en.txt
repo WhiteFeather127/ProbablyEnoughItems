@@ -104,7 +104,7 @@ It gathers all 27 item directories in the game, along with entries injected by o
 
 [h2]Taking items[/h2]
 [list]
-[*][b]Cheat mode[/b]: enable it in the top-right corner; clicking a cell then puts one item into your inventory
+[*][b]Cheat mode[/b]: enable it in the top-right corner, then drag an item out of a cell to take one copy (the sample stays in the cell)
 [*]While it is on, dropping an item onto the panel deletes it — a red highlight appears under the item while dragging
 [*]With it off a click only opens the details, and nothing can be taken
 [/list]
