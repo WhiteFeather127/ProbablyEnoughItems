@@ -373,24 +373,20 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 捕鼠夹：放食物后周期产出加工奶酪（并捕鼠，老鼠是活体不是配方产物）。
-        /// 依据 RatTrap/<>c__DisplayClass1_0::&lt;CreateMouseTrap&gt;b__3。
+        /// 捕鼠夹：每页左右两块捕鼠夹面板，中间箭头表示「周期结束后」。
+        /// 左边是起始状态（有奶酪 / 没奶酪），右边是抓到之后（槽里一只鼠）。
+        /// 依据 RatTrap.CreateMouseTrap 的槽过滤与 onCycleEndSlotItemFunc。
+        /// 两个变体不写概率：只有加工奶酪能当诱饵，空夹子也会自己抓到。
         /// </summary>
         private static readonly RecipeGroup[] MouseTrapGroups =
         {
             new RecipeGroup
             {
-                TitleKey = "mach_trap_output", TitleFallback = "捕鼠夹产出",
+                TitleKey = "mach_trap_output", TitleFallback = "捕鼠夹",
                 Variants = new[]
                 {
-                    new Recipe(new[] { "cheese" },
-                               null,
-                               new[] { "processed_cheese" },
-                               "mach_note_trap", "放上奶酪作诱饵，周期结束后得到加工奶酪"),
-                    new Recipe(new[] { "FOOD" },
-                               null,
-                               new[] { "processed_cheese" },
-                               "mach_note_trap_food", "任何食物都能当诱饵")
+                    new Recipe(new[] { "processed_cheese" }, null, new[] { "rat" }, null, null),
+                    new Recipe(null, null, new[] { "rat" }, null, null)
                 }
             }
         };

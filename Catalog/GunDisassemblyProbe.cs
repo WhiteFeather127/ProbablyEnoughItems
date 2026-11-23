@@ -25,7 +25,7 @@ namespace ItemCatalog.Catalog
         private const string CacheFile = "gun_disassembly.txt";
 
         /// <summary>缓存格式版本：探测方式（拆枪流程 / 记录哪些产物）变了就 +1。</summary>
-        private const string CacheVersion = "1";
+        private const string CacheVersion = "2";
 
         private static readonly string[] Empty = new string[0];
 

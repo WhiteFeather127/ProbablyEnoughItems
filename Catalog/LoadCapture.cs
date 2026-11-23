@@ -32,6 +32,9 @@ namespace ItemCatalog.Catalog
         private static bool _active;
         private static HashSet<string> _ids;
 
+        /// <summary>按捕获顺序记录的 id（保留重复，拆枪产物的数量靠它）。</summary>
+        private static List<string> _sequence;
+
         private static int _captured;
         private static int _destroyed;
 
@@ -103,19 +106,39 @@ namespace ItemCatalog.Catalog
             if (_active) return false;
 
             _ids = new HashSet<string>(StringComparer.Ordinal);
+            _sequence = new List<string>();
             _captured = 0;
             _destroyed = 0;
             _active = true;
             return true;
         }
 
-        /// <summary>关窗口并返回捕获到的 id（按首次出现顺序去重）。</summary>
+        /// <summary>
+        /// 关窗口并返回捕获到的 id：**按捕获顺序、保留重复**。
+        /// 拆枪产物同一件可能掉多个（数量），去重会丢数量信息。
+        /// </summary>
         internal static List<string> End()
+        {
+            _active = false;
+
+            var list = _sequence == null ? new List<string>() : new List<string>(_sequence);
+            _ids = null;
+            _sequence = null;
+
+            if (_captured != _destroyed)
+                Warn("captured " + _captured + " but destroyed " + _destroyed);
+
+            return list;
+        }
+
+        /// <summary>关窗口并返回去重后的 id（按首次出现顺序）：箱子内容这类只要种类。</summary>
+        internal static List<string> EndDistinct()
         {
             _active = false;
 
             var list = _ids == null ? new List<string>() : new List<string>(_ids);
             _ids = null;
+            _sequence = null;
 
             if (_captured != _destroyed)
                 Warn("captured " + _captured + " but destroyed " + _destroyed);
@@ -162,7 +185,11 @@ namespace ItemCatalog.Catalog
                 _captured++;
 
                 string id = item.identifier;
-                if (!string.IsNullOrEmpty(id) && _ids != null) _ids.Add(id);
+                if (!string.IsNullOrEmpty(id))
+                {
+                    if (_ids != null) _ids.Add(id);
+                    if (_sequence != null) _sequence.Add(id);
+                }
 
                 try
                 {

@@ -234,7 +234,7 @@ namespace ItemCatalog.Catalog
                     try { filler(crate, 1f); }
                     catch (Exception e) { Warn(crateId + " run " + runs + ": " + e.Message); }
 
-                    var ids = LoadCapture.End();
+                    var ids = LoadCapture.EndDistinct();
                     runs++;
 
                     for (int i = 0; i < ids.Count; i++) Add(ids[i], set, ref unknown);

@@ -373,6 +373,7 @@ namespace ItemCatalog.UI
             _asUse = asUse;
             _category = 0;
             _page = 0;
+            _scrollCategory = -1;   // 换物品：新窗口从顶部开始
 
             if (_window == null || !_window.IsAlive) Create();
             else
@@ -492,7 +493,7 @@ namespace ItemCatalog.UI
             StopPortrait();
             _cellAnims.Clear();
             _tagStrips.Clear();
-            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
+            DestroyMachinePanels();
             _machinePageHighlight = null;
             _gunModSlots = null;
             _gunModPinned = null;
@@ -512,6 +513,9 @@ namespace ItemCatalog.UI
         {
             if (!IsOpen) return;
 
+            // 机器页的样本推迟到布局完成后的这一帧才填（只填一次）
+            RunDeferredMachineFill();
+
             // 打开后补提一次到最前（点击那一帧图鉴可能又把自己提到前面）
             if (_raiseAt > 0f && Time.unscaledTime >= _raiseAt)
             {
@@ -522,7 +526,34 @@ namespace ItemCatalog.UI
             // 机器页的物品悬停每帧命中：配方每秒轮播，旧物品销毁后新物品不会再发 PointerEnter
             if (_vanillaMachine != null)
             {
-                try { _vanillaMachine.TickHover(); } catch { }
+                try
+                {
+                    if (_trapAfter != null)
+                    {
+                        // 捕鼠夹页有两块面板，共用一个提示框：
+                        // 只让鼠标所在的那块接管，另一块忘掉旧命中；离开两块才收起。
+                        if (_vanillaMachine.PointerOverPanel())
+                        {
+                            _trapAfter.ResetHover();
+                            _vanillaMachine.TickHover();
+                        }
+                        else if (_trapAfter.PointerOverPanel())
+                        {
+                            _vanillaMachine.ResetHover();
+                            _trapAfter.TickHover();
+                        }
+                        else
+                        {
+                            _vanillaMachine.HideHover();
+                            _trapAfter.HideHover();
+                        }
+                    }
+                    else
+                    {
+                        _vanillaMachine.TickHover();
+                    }
+                }
+                catch { }
             }
 
             if (Time.unscaledTime < _portraitNextAt) return;   // 立绘与货单图标共用同一个 1 秒节拍
@@ -996,7 +1027,8 @@ namespace ItemCatalog.UI
 
             // 左右键按方向取记录：来源 = 当前物品是产物的一侧，用途 = 它是投入的一侧。
             // 同一条记录的内容仍按原样画（配方同时有材料与产物、使用同时有来源与产物），
-            // 所以从来源查能看到用途侧，从用途查也能看到来源侧。
+            // 但**机器页只跟方向走**：来源只列「哪台机器产出它」，用途只列「它怎么用/用它做什么」；
+            // 机器自己的配方页只放在用途方向。
             if (_asUse)
             {
                 // ===== 用途方向 =====
@@ -1023,13 +1055,7 @@ namespace ItemCatalog.UI
                                   SourceIndex.WantedBy(_entry.Id, _entry.Item));
                 AddSourceCategory(CatLocation, SourceIndex.For(_entry.Id));
 
-                // 只有真有配方组可画时才建机器页：contentWindow 是 MachineryPanelRow
-                // 的物品远不止机器（枪、储物舱、动物笼、远征箱…），没有配方组时整页空白。
-                if (MachineGroupCount() > 0)
-                {
-                    _categories.Add(new Category { Kind = CatMachine });
-                }
-
+                // 机器自己的「怎么用」页只属于用途方向：查机器的来源时不该看到配方页。
                 AddMachineRecipeCategories();
                 AddCraftCategory();
                 AddUseCategory(UseIndex.Producing(_entry.Id));
@@ -1264,6 +1290,7 @@ namespace ItemCatalog.UI
             _scrollHost = null;  // 窗口重建：旧滚动区已随旧窗口销毁
             _scrollRoot = null;
             _scrollbarWidth = 0f;
+            _scrollCategory = -1;
 
             // 窗口是新的：旧的固定区 / 可变区宿主都已随旧窗口销毁
             _chromeHost = null;
@@ -1299,7 +1326,7 @@ namespace ItemCatalog.UI
         private static void OnWindowClosed()
         {
             _highlights.Clear();
-            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
+            DestroyMachinePanels();
             _window = null;
             _bodyHost = null;
             _chromeHost = null;
@@ -1552,8 +1579,7 @@ namespace ItemCatalog.UI
             // 离开机器页时把原版面板一起销毁，别留一个挂在已销毁容器上的对象
             if (_vanillaMachine != null && (category == null || category.Kind != CatMachine))
             {
-                try { _vanillaMachine.Destroy(); } catch { }
-                _vanillaMachine = null;
+                DestroyMachinePanels();
             }
 
             // 机器页的面板是借用的工厂窗口：必须先还回窗口，再清容器，
@@ -1561,6 +1587,12 @@ namespace ItemCatalog.UI
             if (_vanillaMachine != null)
             {
                 try { _vanillaMachine.RestoreContent(); } catch { }
+            }
+
+            // 捕鼠夹页的右侧面板同样是借来的窗口
+            if (_trapAfter != null)
+            {
+                try { _trapAfter.RestoreContent(); } catch { }
             }
 
             // 正文统一放进可滚动区域：内容超过可用高度时出现原版滚动条。
@@ -1594,6 +1626,7 @@ namespace ItemCatalog.UI
                 _scrollHost = null;
                 _scrollRoot = null;
                 _scrollbarWidth = 0f;
+                _scrollCategory = -1;   // 滚动区是新建的，从顶部开始
 
                 var scrollBuilder = new CustomUIBuilder(manager, _window, _contentHost);
                 scrollBuilder.BeginScrollFlexible(0f);
@@ -1631,11 +1664,15 @@ namespace ItemCatalog.UI
                 CustomUIBuilder.RebuildLayout(_bodyHost);
                 LimitScrollHeight();
 
-                // 复用滚动区时位置会留着上一页的：翻页后回到顶部
-                if (reuseScroll && _scrollHost != null)
+                // 只有换大类才回到顶部；同一大类里翻页保留上一页的滚动位置
+                if (_scrollCategory != _category)
                 {
-                    var scroll = _scrollHost.GetComponentInParent<UnityEngine.UI.ScrollRect>(true);
-                    if (scroll != null) scroll.verticalNormalizedPosition = 1f;
+                    _scrollCategory = _category;
+                    if (reuseScroll && _scrollHost != null)
+                    {
+                        var scroll = _scrollHost.GetComponentInParent<UnityEngine.UI.ScrollRect>(true);
+                        if (scroll != null) scroll.verticalNormalizedPosition = 1f;
+                    }
                 }
             }
             catch { }
@@ -1676,6 +1713,9 @@ namespace ItemCatalog.UI
         private static RectTransform _scrollHost;   // ScrollRect.content
         private static RectTransform _scrollRoot;   // ScrollView 元素本体（带 LayoutElement）
         private static float _scrollbarWidth;       // 竖向滚动条占掉的宽度（内容排版要扣掉）
+
+        /// <summary>上一次渲染内容时所在的大类；只在这个值变化时才把滚动位置归顶。</summary>
+        private static int _scrollCategory = -1;
 
         /// <summary>
         /// 把整窗拖动的手柄挂到本页 ScrollRect 的 viewport 上。
@@ -3242,7 +3282,7 @@ namespace ItemCatalog.UI
         /// 把对应的机器配方组加进来。只收录有原版面板外壳的机器
         /// （熔炉、搅拌机）；新增机器时把 id 加进 <see cref="KnownMachines"/>。
         /// </summary>
-        private static readonly string[] KnownMachines = { "furnace", "blender", "chem_finisher", "evaporator", "hydroponic", "plant_dna_manipulator", "desequencer", "printer", "animal_cage" };
+        private static readonly string[] KnownMachines = { "furnace", "blender", "chem_finisher", "evaporator", "hydroponic", "plant_dna_manipulator", "desequencer", "printer", "animal_cage", "mouse_trap" };
 
         private const string DnaMachineId = "plant_dna_manipulator";
 
@@ -3270,10 +3310,14 @@ namespace ItemCatalog.UI
             // 先按机器聚合命中的组，再按 KnownMachines 顺序输出，保证分类顺序稳定
             var hits = new Dictionary<string, List<MachinePanels.RecipeGroup>>(StringComparer.Ordinal);
 
-            CollectMachineHits(_machineIndex.BySource(_entry.Id), hits);
-
-            if (!_asUse)
+            if (_asUse)
             {
+                // 用途方向：这台机器会用到这件东西（投入 / 模块 / 芯片）
+                CollectMachineHits(_machineIndex.BySource(_entry.Id), hits);
+            }
+            else
+            {
+                // 来源方向：这件东西是哪台机器产出的（产物 / 投入物品里的液体）
                 CollectMachineHits(_machineIndex.ByProduct(_entry.Id), hits);
 
                 string liquidId = QueryLiquidId();
@@ -4913,7 +4957,7 @@ namespace ItemCatalog.UI
 
             long tHeader = mtPerf.ElapsedMilliseconds;
 
-            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
+            DestroyMachinePanels();
             _vanillaMachine = new VanillaMachinePanel();
 
             if (buildShell == null || !buildShell(_vanillaMachine))
@@ -4977,51 +5021,22 @@ namespace ItemCatalog.UI
 
             long tScale = mtPerf.ElapsedMilliseconds;
 
-            if (fill != null) fill(_vanillaMachine);
-
-            long tFill = mtPerf.ElapsedMilliseconds;
-
-            // 放入样本后再量一次宽度：空槽和装满的槽宽度不同（水培的水 / 种子槽、
-            // 模块网格等都会随内容变宽），预填前算出的列数会偏多或偏少——
-            // 换行与页面宽度必须以**放进物品后的实际宽度**为准。
-            float filledW = _vanillaMachine.FitWidth(_bodyHost, defaultW);
-            if (Mathf.Abs(filledW - panelW) > 0.5f)
-            {
-                panelW = filledW;
-                _pageWidthOverride = panelW > defaultW + 1f ? panelW + 40f + _scrollbarWidth * 2f : 0f;
-
-                if (host != null)
-                {
-                    var widthLe = EnsureLayoutElement(host);
-                    widthLe.preferredWidth = panelW;
-                    widthLe.flexibleWidth = 1f;
-                }
-
-                if (ModEntry.Log != null)
-                    ModEntry.Log.Log("[machine-page] refit after fill " + subjectId
-                                     + " panelW=" + panelW.ToString("F1")
-                                     + " override=" + _pageWidthOverride.ToString("F1"));
-            }
-
-            // 填完后再按实际内容校正一次高度与居中（物品会改变面板行尺寸）
-            float filledH = _vanillaMachine.MatchGameCanvasScale(host);
-            if (filledH > 10f && host != null)
-            {
-                var heightLe = EnsureLayoutElement(host);
-                heightLe.minHeight = filledH;
-                heightLe.preferredHeight = filledH;
-                heightLe.flexibleHeight = 0f;
-            }
-
-            long tRefit = mtPerf.ElapsedMilliseconds;
+            // 填样本推迟到下一帧：借来的机器窗口刚挂进画布，格子内部 rect 要等布局跑完
+            // 才是真实尺寸；当场填会把物品按 0 尺寸摆放（图标看不见）。
+            // 由 TickPortrait → RunDeferredMachineFill 只补这一次填装
+            // （宽度 refit、高度校正、绿底也都在那一次里做完，不再当场填一遍）。
+            _machinePageHighlight = highlight;
+            _machineHost = host;
+            _deferredFill = fill;
+            _deferredHost = host;
 
             if (ModEntry.Log != null)
             {
                 ModEntry.Log.Log("[machine-page] " + subjectId
                                  + " panelH=" + panelH + " visualH=" + visualH
-                                 + " filledH=" + filledH
                                  + " panelW=" + panelW.ToString("F1")
-                                 + " rect=" + (rect == null ? "null" : rect.rect.size.ToString()));
+                                 + " rect=" + (rect == null ? "null" : rect.rect.size.ToString())
+                                 + " fill=deferred");
 
                 if (mtPerf.ElapsedMilliseconds >= 30)
                 {
@@ -5031,19 +5046,92 @@ namespace ItemCatalog.UI
                                      + " shell=" + (tShell - tHeader)
                                      + " fit=" + (tFit - tShell)
                                      + " attach=" + (tAttach - tFit)
-                                     + " scale=" + (tScale - tAttach)
-                                     + " fill=" + (tFill - tScale)
-                                     + " refit=" + (tRefit - tFill)
-                                     + " highlight=" + (mtPerf.ElapsedMilliseconds - tRefit) + "]");
+                                     + " scale=" + (tScale - tAttach) + "]");
                 }
             }
 
-            // 每次填完都会清掉旧绿底（ClearSamples → ClearMatchHighlights），
-            // 所以高亮回调要在 fill 之后跑；轮播时由 RefreshMachinePageHighlights 再跑一次。
-            _machinePageHighlight = highlight;
-            RefreshMachinePageHighlights();
-
             return true;
+        }
+
+        /// <summary>机器页推迟到下一帧的填装回调（null = 没有待填的页）。</summary>
+        private static Action<VanillaMachinePanel> _deferredFill;
+
+        /// <summary>推迟填装对应的占位容器（填完要按实际内容重算宽高）。</summary>
+        private static RectTransform _deferredHost;
+
+        /// <summary>当前机器页的占位容器：轮播后面板尺寸变了也要按它重新测量。</summary>
+        private static RectTransform _machineHost;
+
+        /// <summary>
+        /// 布局跑完后补这一次填装。模板里不当场填，是因为借来的窗口格子 rect
+        /// 要等布局才是真实尺寸，早填会把图标摆到格子外。
+        /// </summary>
+        private static void RunDeferredMachineFill()
+        {
+            var fill = _deferredFill;
+            if (fill == null) return;
+
+            _deferredFill = null;
+            _deferredHost = null;
+
+            if (_vanillaMachine == null || !_vanillaMachine.IsAlive) return;
+
+            try
+            {
+                if (_machineHost != null) CustomUIBuilder.RebuildLayout(_machineHost);
+
+                fill(_vanillaMachine);
+
+                RefitMachinePage();
+            }
+            catch (Exception e) { Warn("deferred fill: " + e.Message); }
+        }
+
+        /// <summary>
+        /// 按面板当前内容重算页面宽度与占位高度。
+        /// 填装会改变面板尺寸，轮播后显隐也会变（例如熔炉配方带爆燃模块时多出模块面板）——
+        /// 不重算的话新出现的那块面板会被挤出窗口可视区，看起来像「永远只有两块」。
+        /// </summary>
+        private static void RefitMachinePage()
+        {
+            if (_vanillaMachine == null || !_vanillaMachine.IsAlive) return;
+
+            try
+            {
+                var host = _machineHost;
+                if (host != null) CustomUIBuilder.RebuildLayout(host);
+
+                // 放入样本后再量宽度：空槽和装满的槽宽度不同（水培的水 / 种子槽、
+                // 模块网格都会随内容变宽），换行与页面宽度必须以**放进物品后的实际宽度**为准。
+                float defaultW = WinWidth - 40f - _scrollbarWidth * 2f;
+                float filledW = _vanillaMachine.FitWidth(_bodyHost, defaultW);
+                _pageWidthOverride = filledW > defaultW + 1f ? filledW + 40f + _scrollbarWidth * 2f : 0f;
+
+                if (host != null)
+                {
+                    var widthLe = EnsureLayoutElement(host);
+                    widthLe.preferredWidth = filledW;
+                    widthLe.flexibleWidth = 1f;
+                }
+
+                // 物品 / 面板的增减都会改变行尺寸：按实际内容再校正一次高度与居中
+                float filledH = _vanillaMachine.MatchGameCanvasScale(host);
+                if (filledH > 10f && host != null)
+                {
+                    var heightLe = EnsureLayoutElement(host);
+                    heightLe.minHeight = filledH;
+                    heightLe.preferredHeight = filledH;
+                    heightLe.flexibleHeight = 0f;
+                }
+
+                CustomUIBuilder.RebuildLayout(_bodyHost);
+                ApplyContentHeight();
+
+                // 填装会清掉旧绿底（ClearSamples → ClearMatchHighlights），必须补回来
+                RefreshMachinePageHighlights();
+                FinalizeLayoutAndSyncHighlights(_bodyHost);
+            }
+            catch (Exception e) { Warn("machine refit: " + e.Message); }
         }
 
         /// <summary>当前机器页 / 配件页的高亮回调（填完面板后必须重跑，否则绿底被清掉）。</summary>
@@ -5117,15 +5205,22 @@ namespace ItemCatalog.UI
             var recipe = variants[Carousel.Current.Position("machine", variants.Length)];
             if (recipe == null) return;
 
+            _machineQualityLabel = null;
+            _machineQualityRow = null;
+
+            // 捕鼠夹：一页两块面板（起始状态 → 抓到之后），不走单面板模板
+            if (string.Equals(machineId, "mouse_trap", StringComparison.Ordinal))
+            {
+                RenderMouseTrapPair(builder, machineId, group, recipe);
+                return;
+            }
+
             // 面板下方还要留的高度：搅拌机 / 化学制剂成型机 / 蒸发器的成分，水培机的变化说明
             float below = 0f;
             if (HasMachineComposition(machineId))
                 below = MachineCompositionHeight(recipe);
             else if (string.Equals(machineId, "hydroponic", StringComparison.Ordinal))
                 below = HydroExtraHeight(recipe);
-
-            _machineQualityLabel = null;
-            _machineQualityRow = null;
 
             bool built = RenderMachinePageTemplate(
                 builder,
@@ -5155,6 +5250,9 @@ namespace ItemCatalog.UI
                 below,
                 delegate (VanillaMachinePanel panel)
                 {
+                    // 先按整组变体登记「会有内容的角色」：轮播集合里只要有一条配方用到模块，
+                    // 模块面板从一开始就常驻显示，轮到没模块的那条也不收起。
+                    panel.ExpectRoles(MachineRolesForVariants(machineId, variants));
                     FillMachineRecipe(machineId, recipe, group.Purity);
                     if (string.Equals(machineId, "plant_dna_manipulator", StringComparison.Ordinal))
                         panel.FillDnaBlankDisk();
@@ -5232,6 +5330,111 @@ namespace ItemCatalog.UI
                 }
             }
 
+        }
+
+        // ---------------------------------------------------------------- 捕鼠夹（双面板）
+
+        /// <summary>捕鼠夹右侧那块「抓到之后」的面板（左边仍是 _vanillaMachine）。</summary>
+        private static VanillaMachinePanel _trapAfter;
+
+        /// <summary>
+        /// 捕鼠夹页：一行两块原版捕鼠夹面板，中间箭头。
+        /// 左边 = 起始状态（有奶酪 / 空夹子），右边 = 一个周期后（槽里一只鼠）。
+        /// 两块都是独立演示实例，随页面销毁。
+        /// </summary>
+        private static void RenderMouseTrapPair(CustomUIBuilder builder, string machineId,
+                                                MachinePanels.RecipeGroup group, MachinePanels.Recipe recipe)
+        {
+            builder.BeginRow(6f, UnityEngine.TextAnchor.MiddleCenter);
+            builder.AddLabel(MachineRecipeTitle(group, recipe), "mach_group");
+            AppendHeaderSubject(builder, machineId, null, 3180);
+            builder.End();
+
+            DestroyMachinePanels();
+
+            _vanillaMachine = new VanillaMachinePanel();
+            _trapAfter = new VanillaMachinePanel();
+
+            string bait = recipe != null && recipe.Inputs != null && recipe.Inputs.Length > 0
+                ? recipe.Inputs[0] : null;
+            string caught = recipe != null && recipe.Outputs != null && recipe.Outputs.Length > 0
+                ? recipe.Outputs[0] : null;
+
+            builder.BeginRow(12f, UnityEngine.TextAnchor.MiddleCenter);
+            BuildTrapPanel(builder, _vanillaMachine, bait);
+
+            builder.AddLabel("→", "trap_arrow");
+            if (builder.Last != null && builder.Last.text != null)
+                builder.Last.text.fontSize = 20f;
+
+            BuildTrapPanel(builder, _trapAfter, caught);
+            builder.End();
+
+            _machinePageHighlight = delegate (VanillaMachinePanel panel)
+            {
+                string id = _entry == null ? null : _entry.Id;
+                if (_vanillaMachine != null) _vanillaMachine.HighlightItem(id);
+                if (_trapAfter != null) _trapAfter.HighlightItem(id);
+            };
+
+            RefreshMachinePageHighlights();
+        }
+
+        /// <summary>造一块捕鼠夹面板并挂进当前行：占位高度 / Canvas 比例补偿和机器页模板一致。</summary>
+        private static void BuildTrapPanel(CustomUIBuilder builder, VanillaMachinePanel panel, string itemId)
+        {
+            if (panel == null) return;
+            if (!panel.BuildTrapWindow()) return;
+
+            builder.BeginColumn(2f, UnityEngine.TextAnchor.MiddleCenter);
+            var host = builder.CurrentContainer;
+            builder.End();
+
+            var size = panel.ScaledSize(_bodyHost);
+            if (host != null)
+            {
+                var le = EnsureLayoutElement(host);
+                le.preferredWidth = Mathf.Max(1f, size.x);
+                le.flexibleWidth = 0f;
+                le.minHeight = Mathf.Max(1f, size.y);
+                le.preferredHeight = Mathf.Max(1f, size.y);
+                le.flexibleHeight = 0f;
+            }
+
+            var rect = panel.AttachContentTo(host);
+            if (rect != null) CustomUIBuilder.RebuildLayout(rect);
+
+            panel.FillTrap(itemId);
+
+            float visualH = panel.MatchGameCanvasScale(host);
+            if (visualH > 10f && host != null)
+            {
+                var le = EnsureLayoutElement(host);
+                le.minHeight = visualH;
+                le.preferredHeight = visualH;
+                le.flexibleHeight = 0f;
+            }
+        }
+
+        /// <summary>销毁机器页的所有面板实例（单面板与捕鼠夹双面板一起）。</summary>
+        private static void DestroyMachinePanels()
+        {
+            // 面板没了，待填的样本回调也要一起作废（否则下一帧会填到已销毁的窗口上）
+            _deferredFill = null;
+            _deferredHost = null;
+            _machineHost = null;
+
+            if (_vanillaMachine != null)
+            {
+                try { _vanillaMachine.Destroy(); } catch { }
+                _vanillaMachine = null;
+            }
+
+            if (_trapAfter != null)
+            {
+                try { _trapAfter.Destroy(); } catch { }
+                _trapAfter = null;
+            }
         }
 
 
@@ -5390,7 +5593,7 @@ namespace ItemCatalog.UI
                 builder.End();
             }
 
-            if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
+            DestroyMachinePanels();
             _vanillaMachine = new VanillaMachinePanel();
 
             if (!_vanillaMachine.BuildReactionShell(ReactionConditionLines(reaction), QueryLiquidId()))
@@ -5665,7 +5868,68 @@ namespace ItemCatalog.UI
                 return;
             }
 
+            // 捕鼠夹：左面板放诱饵（或空），右面板放捕获到的鼠
+            if (string.Equals(machineId, "mouse_trap", StringComparison.Ordinal))
+            {
+                string bait = recipe.Inputs != null && recipe.Inputs.Length > 0 ? recipe.Inputs[0] : null;
+                string caught = recipe.Outputs != null && recipe.Outputs.Length > 0 ? recipe.Outputs[0] : null;
+
+                _vanillaMachine.FillTrap(bait);
+                if (_trapAfter != null) _trapAfter.FillTrap(caught);
+                return;
+            }
+
             FillVanillaMachine(recipe, purity);
+        }
+
+        /// <summary>
+        /// 一整组轮播变体实际会填到哪些面板角色（镜像 Fill / FillAnimalCage 的标记规则）。
+        /// 用来让面板「整组里只要出现过内容就一直显示」，不随当前这条空配方收起。
+        /// </summary>
+        private static List<string> MachineRolesForVariants(string machineId, MachinePanels.Recipe[] variants)
+        {
+            var roles = new List<string>();
+            if (variants == null) return roles;
+
+            bool cage = string.Equals(machineId, MachinePanels.AnimalCageId, StringComparison.Ordinal);
+
+            for (int i = 0; i < variants.Length; i++)
+            {
+                var recipe = variants[i];
+                if (recipe == null) continue;
+
+                if (cage)
+                {
+                    if (!string.IsNullOrEmpty(recipe.CageAnimal)) roles.Add("cage");
+                    if (!string.IsNullOrEmpty(recipe.CageDispenser)) roles.Add("dispenser");
+                    if (!string.IsNullOrEmpty(recipe.CageButcher)) roles.Add("butcher");
+                    continue;
+                }
+
+                if (recipe.Modules != null && recipe.Modules.Length > 0) roles.Add("module");
+                if (!string.IsNullOrEmpty(recipe.Chip)) roles.Add("chip");
+
+                if (recipe.Inputs != null && recipe.Inputs.Length > 0)
+                {
+                    roles.Add("input");
+                    roles.Add("seed");
+                }
+
+                if (recipe.Outputs != null && recipe.Outputs.Length > 0)
+                {
+                    roles.Add("output");
+                    roles.Add("eject");
+                }
+
+                if (!string.IsNullOrEmpty(recipe.Container))
+                {
+                    roles.Add("container");
+                    roles.Add("water");
+                    if (!string.IsNullOrEmpty(recipe.ContainerLiquid)) roles.Add("distillate");
+                }
+            }
+
+            return roles;
         }
 
         /// <summary>每秒推进机器配方的轮播索引：配方组间独立，模块数多个时也单独轮。</summary>
@@ -5722,7 +5986,11 @@ namespace ItemCatalog.UI
                     : category.MachineId;
 
                 FillMachineRecipe(machineId, recipe, group.Purity);
-                // 高亮回调由机器页模板统一保存：重填会清掉旧绿底，统一补回来
+
+                // 面板集合由 ExpectRoles 在首次填装时按整组变体登记好，
+                // 轮播只换格子里的物品、不改变面板尺寸——这里不能重排页面：
+                // MatchGameCanvasScale 自带一次像素级居中平移，每秒调会一点点累积，
+                // 表现就是面板越来越靠下。只补绿底。
                 RefreshMachinePageHighlights();
             }
             catch (Exception e) { Warn("machine roll: " + e.Message); }

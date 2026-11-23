@@ -64,6 +64,9 @@ namespace ItemCatalog.UI
         /// <summary>动物笼的自动屠宰槽（原版只收 AUTO_BUTCHER_TAG）。</summary>
         private GameSlotInventory _butcherSlot;
 
+        /// <summary>捕鼠夹的诱饵 / 捕获槽（原版 role = "trap"）。</summary>
+        private GameSlotInventory _trapSlot;
+
         /// <summary>成分反应页的产物槽（反应页不是机器，单独一个槽）。</summary>
         private GameSlotInventory _productSlot;
 
@@ -571,6 +574,59 @@ namespace ItemCatalog.UI
                 Warn("build gun mod shell: " + e.Message);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 捕鼠夹面板：借用它自己的原版窗口（只有一个 role = "trap" 的槽），
+        /// 借不到时手写一个同样的单槽壳。
+        /// </summary>
+        internal bool BuildTrapWindow()
+        {
+            if (AdoptFrom("mouse_trap")) return true;
+            return BuildTrapShell();
+        }
+
+        private bool BuildTrapShell()
+        {
+            try
+            {
+                _trapSlot = new GameSlotInventory();
+                _trapSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+
+                // 底图照原版：奶酪
+                try { _trapSlot.SetBackgroundFadeSprite("Items/items_food", "cheese", 0.5f, 0.5f); }
+                catch { }
+
+                var panels = new[] { MachineHelper.Panel(null, _trapSlot, "trap", true) };
+
+                var row = new MachineryPanelRow(panels);
+                row.SetColumns(1);
+
+                _window = new PixelWindow(false, null, WindowStyle.Machinery);
+                _window.Attach(row);
+                _window.Validate();
+                return _window != null;
+            }
+            catch (Exception e)
+            {
+                Warn("build trap shell: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 捕鼠夹装填：槽里放诱饵（加工奶酪）或捕获物（鼠）；<paramref name="itemId"/> 为空 = 空夹子。
+        /// 不调用 <see cref="ApplyAutoVisibility"/>：空槽本身就是要展示的状态。
+        /// </summary>
+        internal void FillTrap(string itemId)
+        {
+            DetachSamples(true);
+
+            if (_trapSlot == null || string.IsNullOrEmpty(itemId)) return;
+
+            _filling = true;
+            try { Accept(_trapSlot, itemId); }
+            finally { _filling = false; }
         }
 
         /// <summary>
@@ -1145,28 +1201,14 @@ namespace ItemCatalog.UI
                 float usedW = (useMeasuredW ? measuredW : boxW) + padW * 2f;
                 float usedH = (useMeasuredH ? measuredH : boxH) + padH * 2f;
 
-                // ② 再把面板整体平移，让内容包围盒中心与容器中心重合
-                //    （面板行有 padding，内容在 rect 里并不居中）。
+                // ② 只把 rect 收到「实测内容 + 一圈边框」。
+                //    不再做「内容包围盒中心对齐容器中心」的平移：面板行的 padding 不对称，
+                //    那次平移会在首次显示时就整体偏下，而且每调一次都会按当时的测量再挪一点，
+                //    反复调用（轮播 / 重新测量）会累积成明显的下移。
+                //    rect 的 anchor / pivot 都是正中心、anchoredPosition 为 0，本身就居中了。
                 if (useMeasuredW || useMeasuredH)
                 {
                     _attachedRect.sizeDelta = new Vector2(usedW, usedH);
-
-                    float minX, maxX, minY, maxY;
-                    if (MeasuredBounds(out minX, out maxX, out minY, out maxY))
-                    {
-                        var c = new Vector3[4];
-                        _attachedRect.GetWorldCorners(c);
-                        float rectCenterX = (c[0].x + c[3].x) * 0.5f;
-                        float rectCenterY = (c[0].y + c[1].y) * 0.5f;
-                        float dx = rectCenterX - (minX + maxX) * 0.5f;
-                        float dy = rectCenterY - (minY + maxY) * 0.5f;
-
-                        if (Mathf.Abs(dx) > 0.5f || Mathf.Abs(dy) > 0.5f)
-                        {
-                            var pos = _attachedRect.position;
-                            _attachedRect.position = new Vector3(pos.x + dx, pos.y + dy, pos.z);
-                        }
-                    }
                 }
 
                 float scaledHeight = usedH * ratio;
@@ -1197,18 +1239,34 @@ namespace ItemCatalog.UI
                            string chip = null)
         {
             ClearSamples();
+            BeginFill();
+
+            if (ModEntry.Log != null && _diagFills < 60)
+            {
+                _diagFills++;
+                ModEntry.Log.Log("[fill] in=" + Join(inputs) + " mod=" + Join(modules)
+                                 + " out=" + Join(outputs) + " chip=" + chip
+                                 + " container=" + container);
+            }
 
             _filling = true;
             try
             {
                 if (modules != null)
+                {
                     for (int i = 0; i < modules.Length; i++) Accept(_moduleGrid, modules[i]);
+                    if (modules.Length > 0) MarkFilled("module");
+                }
 
                 // 解序列器的芯片槽（加密模块）：单独一格，不进模块网格
                 if (!string.IsNullOrEmpty(chip) && _chipSlot != null)
-                    Accept(_chipSlot, chip);
-                if (inputs != null)
                 {
+                    Accept(_chipSlot, chip);
+                    MarkFilled("chip");
+                }
+                if (inputs != null && inputs.Length > 0)
+                {
+                    MarkFilled("input", "seed");
                     // 单格投入优先：DNA 种子槽 / 解序列器权限卡 / 借用窗口里的单格 input
                     GameInventory inputTarget = _seedSlot != null
                         ? (GameInventory)_seedSlot
@@ -1229,8 +1287,9 @@ namespace ItemCatalog.UI
                         else Accept(inputTarget, inputs[i]);
                     }
                 }
-                if (outputs != null)
+                if (outputs != null && outputs.Length > 0)
                 {
+                    MarkFilled("output", "eject");
                     // 单格产出优先：解序列器单槽 / 借用窗口里的单格 output
                     GameInventory outputTarget = _desqOutputSlot != null
                         ? (GameInventory)_desqOutputSlot
@@ -1254,6 +1313,8 @@ namespace ItemCatalog.UI
                 // 搅拌机把投入的液体成分灌进去；化学制剂成型机与蒸发器按配方灌入指定液体。
                 if (!string.IsNullOrEmpty(container) && _containerSlot != null)
                 {
+                    MarkFilled("container", "water");
+
                     var liquidContainer = CatalogWindow.CreatePreviewItem(container);
                     if (liquidContainer == null)
                     {
@@ -1289,6 +1350,7 @@ namespace ItemCatalog.UI
                     {
                         FillContainerPreview(distillate, containerLiquid, containerVolume);
                         Accept(_distillateSlot, distillate);
+                        MarkFilled("distillate");
                     }
                 }
             }
@@ -1305,6 +1367,14 @@ namespace ItemCatalog.UI
         internal void FillAnimalCage(string animal, string dispenser, string butcher)
         {
             ClearSamples();
+            BeginFill();
+
+            if (ModEntry.Log != null && _diagFills < 60)
+            {
+                _diagFills++;
+                ModEntry.Log.Log("[fill] cage animal=" + animal + " dispenser=" + dispenser
+                                 + " butcher=" + butcher);
+            }
 
             _filling = true;
             try
@@ -1313,10 +1383,20 @@ namespace ItemCatalog.UI
                 {
                     Accept(_cageGrid, CreateAnimalSample(animal, "MALE"));
                     Accept(_cageGrid, CreateAnimalSample(animal, "FEMALE"));
+                    MarkFilled("cage");
                 }
 
-                if (!string.IsNullOrEmpty(dispenser)) Accept(_dispenserSlot, dispenser);
-                if (!string.IsNullOrEmpty(butcher)) Accept(_butcherSlot, butcher);
+                if (!string.IsNullOrEmpty(dispenser))
+                {
+                    Accept(_dispenserSlot, dispenser);
+                    MarkFilled("dispenser");
+                }
+
+                if (!string.IsNullOrEmpty(butcher))
+                {
+                    Accept(_butcherSlot, butcher);
+                    MarkFilled("butcher");
+                }
             }
             finally { _filling = false; }
 
@@ -1328,6 +1408,78 @@ namespace ItemCatalog.UI
         /// <summary>从我们手里藏掉的面板（填完之后没有样本的那些）；Destroy 时还原。</summary>
         private readonly List<MachineryPanel> _autoHidden = new List<MachineryPanel>();
 
+        /// <summary>诊断日志计数：同一面板实例最多打 60 行，避免刷爆日志。</summary>
+        private int _diagFills;
+
+        private static string Join(string[] ids)
+        {
+            if (ids == null) return "-";
+            if (ids.Length == 0) return "[]";
+            return string.Join(",", ids);
+        }
+
+        /// <summary>诊断用：面板行里每个面板的角色与当前显隐。</summary>
+        private static string PanelSummary(MachineryPanelRow row)
+        {
+            if (row == null || row.Panels == null) return "-";
+
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < row.Panels.Count; i++)
+            {
+                var p = row.Panels[i];
+                if (p == null) continue;
+
+                if (sb.Length > 0) sb.Append(' ');
+                sb.Append(string.IsNullOrEmpty(p.role) ? "?" : p.role)
+                  .Append(p.isHidden ? ":hidden" : ":shown");
+            }
+            return sb.Length == 0 ? "-" : sb.ToString();
+        }
+
+        /// <summary>本次填装实际写入了面板的角色。</summary>
+        private readonly HashSet<string> _filledRoles = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>本面板实例上曾经填过的角色：轮播里出现过内容，轮到空的那条也要继续显示。</summary>
+        private readonly HashSet<string> _everFilledRoles = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>开始一轮填装：清掉「本次填了什么」（「曾经填过」保留）。</summary>
+        private void BeginFill()
+        {
+            _filledRoles.Clear();
+        }
+
+        /// <summary>
+        /// 预先声明「这页轮播集合里会出现的角色」：只要集合中某条配方有内容，
+        /// 对应面板就常驻显示——哪怕当前轮到的那条是空的。
+        /// 由调用方在首次填装前按整组变体算好传进来。
+        /// </summary>
+        internal void ExpectRoles(IEnumerable<string> roles)
+        {
+            if (roles == null) return;
+
+            foreach (var role in roles)
+                if (!string.IsNullOrEmpty(role)) _everFilledRoles.Add(role);
+        }
+
+        /// <summary>标记本轮确实往这些角色对应的面板里放了样本。</summary>
+        private void MarkFilled(params string[] roles)
+        {
+            if (roles == null) return;
+            for (int i = 0; i < roles.Length; i++)
+            {
+                if (string.IsNullOrEmpty(roles[i])) continue;
+
+                _filledRoles.Add(roles[i]);
+                _everFilledRoles.Add(roles[i]);
+            }
+        }
+
+        private bool WasFilled(string role)
+        {
+            return !string.IsNullOrEmpty(role)
+                   && (_filledRoles.Contains(role) || _everFilledRoles.Contains(role));
+        }
+
         /// <summary>当前窗口的面板行（借用窗口与手写壳都从 childElement 取）。</summary>
         private MachineryPanelRow CurrentRow()
         {
@@ -1336,9 +1488,9 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 面板显隐不再按机器手写白名单：填完样本后，**面板里一件样本都没有就隐藏**。
-        /// 电池 / 纸条 / 本配方用不到的槽自然消失；将来新机器也不用再维护角色清单。
-        /// 角色为空的纯控件面板（控制按钮等）照旧隐藏。
+        /// 面板显隐：填装时**标记过角色**的面板才显示，其余隐藏。
+        /// 电池 / 纸条 / 本配方用不到的槽自然消失；轮播里出现过内容的槽即使本轮为空也保留。
+        /// 只按角色记录，不遍历面板内部（网格里嵌按钮的面板遍历会触发原生崩溃）。
         /// </summary>
         internal void ApplyAutoVisibility()
         {
@@ -1346,6 +1498,8 @@ namespace ItemCatalog.UI
             if (row == null) return;
 
             var panels = row.Panels;
+            var summary = new System.Text.StringBuilder();
+
             for (int i = 0; i < panels.Count; i++)
             {
                 var panel = panels[i];
@@ -1354,35 +1508,64 @@ namespace ItemCatalog.UI
                 bool control = string.IsNullOrEmpty(panel.role)
                                || string.Equals(panel.role, "control", StringComparison.Ordinal);
 
-                if (control || CountPanelItems(panel) == 0) HideAuto(panel);
-                else ShowAuto(panel);
+                bool show;
+                if (control) { HideAuto(panel); show = false; }
+                else if (WasFilled(panel.role)) { ShowAuto(panel); show = true; }
+                else { HideAuto(panel); show = false; }
+
+                if (summary.Length > 0) summary.Append(' ');
+                summary.Append(string.IsNullOrEmpty(panel.role) ? "?" : panel.role)
+                       .Append('=').Append(show ? "show" : "hide")
+                       .Append("(items=").Append(RoleItemCount(panel.role)).Append(')');
             }
+
+            if (ModEntry.Log != null && _diagFills <= 60)
+                ModEntry.Log.Log("[vis] filled=[" + string.Join(",", _filledRoles) + "] " + summary);
         }
 
-        /// <summary>面板里现有的样本数（只统计真正的 inventory，嵌套容器由 CollectStorage 展开）。</summary>
-        private static int CountPanelItems(MachineryPanel panel)
+        /// <summary>诊断用：某个角色对应的 inventory 里现在有几件样本。</summary>
+        private int RoleItemCount(string role)
         {
-            var nodes = new List<GraphNodeStorage>();
-            try { panel.CollectStorage(nodes); }
-            catch { return 0; }
-
-            int count = 0;
-            for (int i = 0; i < nodes.Count; i++)
+            GameInventory inv = null;
+            switch (role)
             {
-                var inv = nodes[i] as GameInventory;
-                if (inv == null) continue;
-
-                var items = inv.childItems;
-                if (items != null) count += items.Count;
+                case "module": inv = _moduleGrid; break;
+                case "input":
+                    inv = _seedSlot;
+                    if (inv == null) inv = _desqInputSlot;
+                    if (inv == null) inv = _inputSlot;
+                    if (inv == null) inv = _inputGrid;
+                    break;
+                case "output":
+                case "eject":
+                    inv = _desqOutputSlot;
+                    if (inv == null) inv = _outputSlot;
+                    if (inv == null) inv = _outputGrid;
+                    break;
+                case "chip": inv = _chipSlot; break;
+                case "container":
+                case "water": inv = _containerSlot; break;
+                case "distillate": inv = _distillateSlot; break;
+                case "cage": inv = _cageGrid; break;
+                case "dispenser": inv = _dispenserSlot; break;
+                case "butcher": inv = _butcherSlot; break;
+                case "trap": inv = _trapSlot; break;
             }
 
-            return count;
+            try
+            {
+                if (inv != null && inv.childItems != null) return inv.childItems.Count;
+            }
+            catch { }
+
+            return 0;
         }
 
         private void HideAuto(MachineryPanel panel)
         {
             if (panel.isHidden) return;
 
+            if (ModEntry.Log != null) ModEntry.Log.Log("[vis] hide " + panel.role);
             panel.SetHidden(true);
             if (!_autoHidden.Contains(panel)) _autoHidden.Add(panel);
         }
@@ -1854,6 +2037,43 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
+        /// 指针是否落在面板宿主矩形内（捕鼠夹页有两块面板，用它决定由哪一块接管悬停）。
+        /// </summary>
+        internal bool PointerOverPanel()
+        {
+            if (_attachedRect == null) return false;
+
+            try
+            {
+                Vector2 mouse = Input.mousePosition;
+                Camera cam = null;
+                var canvas = _attachedRect.GetComponentInParent<Canvas>();
+                if (canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay)
+                    cam = canvas.worldCamera;
+
+                return PointerInsideViewport(mouse, cam) &&
+                       RectTransformUtility.RectangleContainsScreenPoint(_attachedRect, mouse, cam);
+            }
+            catch { return false; }
+        }
+
+        /// <summary>忘掉「鼠标下是哪件」但不收提示框：另一块面板接管时用。</summary>
+        internal void ResetHover()
+        {
+            _hoverElement = null;
+        }
+
+        /// <summary>鼠标离开所有面板时收起提示框（只在本面板显示过时才收）。</summary>
+        internal void HideHover()
+        {
+            if (!_tooltipShown) return;
+
+            _hoverElement = null;
+            _tooltipShown = false;
+            HideItemTooltip();
+        }
+
+        /// <summary>
         /// 每帧检查鼠标下的样本物品。
         /// 不能只靠 EventTrigger：配方每秒轮播，鼠标不动时旧物品被销毁、
         /// 新物品不会补发 PointerEnter，提示框就会消失或停在旧物品上。
@@ -2276,6 +2496,7 @@ namespace ItemCatalog.UI
                 _cageGrid = ContentOf<GameGridInventory>(row, "cage");
                 _dispenserSlot = AdoptSlot(row, "dispenser");
                 _butcherSlot = AdoptSlot(row, "butcher");
+                _trapSlot = ContentOf<GameSlotInventory>(row, "trap");
 
                 // 枪械改装窗口也走同一条借用路径：角色就是原版的槽位键
                 MapGunSlots(row);
@@ -2338,6 +2559,7 @@ namespace ItemCatalog.UI
                 RelaxFilters(_cageGrid);
                 RelaxFilters(_dispenserSlot, true);
                 RelaxFilters(_butcherSlot, true);
+                RelaxFilters(_trapSlot, true);
 
                 // 枪械槽有「是不是合法改装」过滤 + 音效 / 统计回调，演示实例只要外观
                 if (_gunSlots != null)
@@ -2360,6 +2582,8 @@ namespace ItemCatalog.UI
                                      + " dispenser=" + Name(_dispenserSlot)
                                      + " butcher=" + Name(_butcherSlot)
                                      + " gunSlots=" + (_gunSlots == null ? 0 : _gunSlots.Length));
+
+                    ModEntry.Log.Log("[adopt] panels " + PanelSummary(row));
                 }
 
                 // AttachContentTo 会把内容搬进图鉴页面，先把原挂载点与布局记下来
@@ -2661,6 +2885,7 @@ namespace ItemCatalog.UI
                 _cageGrid = null;
                 _dispenserSlot = null;
                 _butcherSlot = null;
+                _trapSlot = null;
                 _productSlot = null;
                 _outputDiskSlot = null;
                 _seedSlot = null;

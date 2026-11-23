@@ -324,9 +324,14 @@ namespace ItemCatalog.Catalog
                 try { soluble = item.IsTag("SOLUBLE_TAG"); }
                 catch { soluble = false; }
 
-                // 有液体成分标签的物品都算（容器、能装液体的日用品）。
-                // 不按物品类型筛——家居用品里也有能装液体的。
-                bool filled = !soluble && LiquidManager.Parts(item).Count > 0;
+                // 可搅拌投入（BLENDABLE_TAG，游戏里只有搅拌机按钮会消耗）本身也带
+                // CURRENT_PART_* 成分标签，但必须走搅拌机才变成液体——那是机器配方，
+                // 不属于「使用」。其余带液体成分的物品（能直接溶解 / 倒进容器的）保留。
+                bool blendable;
+                try { blendable = item.IsTag("BLENDABLE_TAG"); }
+                catch { blendable = false; }
+
+                bool filled = !soluble && !blendable && LiquidManager.Parts(item).Count > 0;
 
                 if (!soluble && !filled) continue;
 
