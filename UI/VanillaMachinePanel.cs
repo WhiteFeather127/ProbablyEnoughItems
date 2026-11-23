@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿using System;
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -55,6 +55,15 @@ namespace ItemCatalog.UI
         /// <summary>蒸发器的馏出槽：蒸馏出来的液体会装进这里的容器。</summary>
         private GameSlotInventory _distillateSlot;
 
+        /// <summary>动物笼的笼内网格（原版 10×3，带 CAGE_TAG）。</summary>
+        private GameGridInventory _cageGrid;
+
+        /// <summary>动物笼的喂食器槽（原版只收 FEED_DISPENSER_TAG）。</summary>
+        private GameSlotInventory _dispenserSlot;
+
+        /// <summary>动物笼的自动屠宰槽（原版只收 AUTO_BUTCHER_TAG）。</summary>
+        private GameSlotInventory _butcherSlot;
+
         /// <summary>成分反应页的产物槽（反应页不是机器，单独一个槽）。</summary>
         private GameSlotInventory _productSlot;
 
@@ -92,6 +101,12 @@ namespace ItemCatalog.UI
         private readonly List<HookSnapshot> _borrowedHooks = new List<HookSnapshot>();
 
         /// <summary>
+        /// 借用窗口里被临时藏掉的原版按钮（动物笼的「搅拌」「现在屠宰」这类）：
+        /// 它们在预览里点了会真的执行机器动作，不能留；Destroy 时还原。
+        /// </summary>
+        private readonly List<MachineryButton> _hiddenButtons = new List<MachineryButton>();
+
+        /// <summary>
         /// 借用窗口里格子的回调快照：真实机器会在 onSlotAddItemFunc 里播放入格音效
         /// （电池是 battery_insert，模块仓是模块音效），预览填样本时必须临时摘掉。
         /// </summary>
@@ -100,7 +115,9 @@ namespace ItemCatalog.UI
             internal GameInventory Inv;
             internal Func<GameItem, GameInventory, bool> May;
             internal Action<GameItem, GameInventory, SlotMarker> Add;
+            internal Action<GameItem, GameInventory, SlotMarker> AddEnd;
             internal Action<GameItem, GameInventory, SlotMarker> Remove;
+            internal Action<GameItem, GameInventory, SlotMarker> RemoveEnd;
         }
         private RectTransform _adoptedRect;
         private bool _loggedAdopt;
@@ -212,6 +229,56 @@ namespace ItemCatalog.UI
             catch (Exception e)
             {
                 Warn("build shell: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 造动物笼的原版窗口外壳（不含物品）。照 AnimalCage.CreateCageWindow 的 IL：
+        /// 笼内网格（10×3，CAGE_TAG）+ 喂食器槽 + 自动屠宰槽。
+        /// 原版两个单槽下面还各有一个按钮（搅拌 / 现在屠宰），预览里点了会真的执行机器动作，
+        /// 所以手写壳不造按钮，只保留槽本身。
+        /// </summary>
+        internal bool BuildAnimalCageShell()
+        {
+            try
+            {
+                _cageGrid = new GameGridInventory(10, 3);
+                _cageGrid.EnableTag("CAGE_TAG");
+                _dispenserSlot = new GameSlotInventory();
+                _butcherSlot = new GameSlotInventory();
+
+                _cageGrid.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _dispenserSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+                _butcherSlot.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
+
+                // 槽底图照原版：喂食器 = animal_feeder，自动屠宰 = gibber
+                try { _dispenserSlot.SetBackgroundFadeSprite("Items/items_husbandry", "animal_feeder", 0.5f, 0.5f); }
+                catch { }
+                try { _butcherSlot.SetBackgroundFadeSprite("Items/items_tool2", "gibber", 0.5f, 0.5f); }
+                catch { }
+
+                var panels = new[]
+                {
+                    MachineHelper.Panel(MechLabel("husbandry_cage_inv_label", "笼内"), _cageGrid, "cage", true),
+                    MachineHelper.Panel(MechLabel("mech_ras_label_dispenser", "喂食器"), _dispenserSlot, "dispenser", true),
+                    MachineHelper.Panel(MechLabel("mech_auto_butcher_label_slot", "自动屠宰"), _butcherSlot, "butcher", true)
+                };
+
+                var row = new MachineryPanelRow(panels);
+                row.SetColumns(1);   // 笼子占满一行，两个单槽竖排在下面
+
+                _window = new PixelWindow(false, null, WindowStyle.Machinery);
+                _window.Attach(row);
+                _window.Validate();
+                if (ModEntry.Log != null)
+                    ModEntry.Log.Log("[vanilla-machine] animal_cage shell size="
+                                     + _window.widthPixels + "x" + _window.heightPixels);
+                return _window != null;
+            }
+            catch (Exception e)
+            {
+                Warn("build animal_cage shell: " + e.Message);
                 return false;
             }
         }
@@ -474,7 +541,7 @@ namespace ItemCatalog.UI
         {
             try
             {
-                int count = GunMods.SlotCount;
+                int count = GunMods.LegacySlotCount;
                 _gunSlots = new GameSlotInventory[count];
 
                 var panels = new MachineryPanel[count];
@@ -484,7 +551,7 @@ namespace ItemCatalog.UI
                     _gunSlots[i] = new GameSlotInventory();
                     _gunSlots[i].mayInventoryAddItemFunc = AllowOnlyWhileFilling;
 
-                    panels[i] = MachineHelper.Panel(GunMods.SlotTitle(i), _gunSlots[i],
+                    panels[i] = MachineHelper.Panel(GunMods.LegacySlotTitle(i), _gunSlots[i],
                                                     "gunmod" + i, true);
                 }
 
@@ -506,24 +573,124 @@ namespace ItemCatalog.UI
             }
         }
 
-        /// <summary>按槽位顺序把配件 id 填进枪械改装面板（空字符串 = 该槽留空）。</summary>
+        /// <summary>
+        /// 枪械配件页外壳与机器页共用同一条借用路径：
+        /// <see cref="AdoptFrom"/> 现建演示实例 → <see cref="Adopt"/> 借窗口 + 认格子，
+        /// 枪械槽由 <see cref="MapGunSlots"/> 在 Adopt 里一并认好。
+        /// 借不到（不是模组化枪 / 窗口解析失败）才退回手写 8 槽。
+        /// </summary>
+        internal bool BuildGunWindow(string gunId)
+        {
+            if (!string.IsNullOrEmpty(gunId) && AdoptFrom(gunId)) return true;
+            return BuildGunModShell();
+        }
+
+        /// <summary>
+        /// 现建一份演示实例并借用它的原版窗口（机器 / 枪械共用）。
+        /// 实例随面板一起销毁，绝不动图鉴条目里那份。
+        /// </summary>
+        internal bool AdoptFrom(string itemId)
+        {
+            if (string.IsNullOrEmpty(itemId)) return false;
+
+            var demo = CatalogWindow.CreatePreviewItem(itemId);
+            if (demo == null) return false;
+
+            // AdoptOwned 失败时自己会把演示实例销毁
+            return AdoptOwned(demo, null);
+        }
+
+        /// <summary>
+        /// 从借用的窗口里按**面板顺序**认枪械槽（与 <see cref="GunMods.SlotsFor"/> 的探测顺序一致）。
+        /// 只有模组化的枪才认：机器窗口里的电池 / 纸条槽不算改装槽。
+        /// </summary>
+        private void MapGunSlots(MachineryPanelRow row)
+        {
+            if (!GunMods.IsModdable(_ownedItem)) return;
+
+            var slots = new List<GameSlotInventory>();
+            var panels = row.Panels;
+
+            for (int i = 0; i < panels.Count; i++)
+            {
+                var slot = SlotOf(panels[i]);
+                if (slot != null) slots.Add(slot);
+            }
+
+            _gunSlots = slots.Count > 0 ? slots.ToArray() : null;
+        }
+
+        /// <summary>按槽位顺序把配件 id 填进枪械改装面板（空字符串 / 枪上没有的槽跳过）。</summary>
         internal void FillGunMods(string[] slotIds)
         {
-            ClearSamples();
+            if (slotIds == null || _gunSlots == null) return;
+
+            // 每秒轮播只换位置，不重建实例：先摘下来（保留），下一秒从池里复用。
+            // 直接 ClearSamples 每次都重建 8 件物品，实测每秒 20ms+，会明显掉帧。
+            DetachSamples(false);
 
             _filling = true;
             try
             {
-                if (slotIds == null || _gunSlots == null) return;
-
                 int count = Mathf.Min(slotIds.Length, _gunSlots.Length);
                 for (int i = 0; i < count; i++)
                 {
+                    // 这把枪的窗口里没有这个槽（或没认出来）——跳过，不另开空格子
+                    if (_gunSlots[i] == null) continue;
                     if (string.IsNullOrEmpty(slotIds[i])) continue;
-                    Accept(_gunSlots[i], slotIds[i]);
+
+                    var sample = TakeModSample(slotIds[i]);
+                    if (sample != null) Accept(_gunSlots[i], sample);
                 }
             }
             finally { _filling = false; }
+        }
+
+        /// <summary>枪械配件页的样本池（id → 实例列表）：轮播时复用，销毁面板时统一清理。</summary>
+        private readonly Dictionary<string, List<GameItem>> _modSamples =
+            new Dictionary<string, List<GameItem>>(StringComparer.Ordinal);
+
+        /// <summary>取一件可用的配件样本：池里有空闲的就复用，否则现建一件放进池。</summary>
+        private GameItem TakeModSample(string id)
+        {
+            List<GameItem> pool;
+            if (!_modSamples.TryGetValue(id, out pool) || pool == null)
+            {
+                pool = new List<GameItem>();
+                _modSamples[id] = pool;
+            }
+
+            for (int i = 0; i < pool.Count; i++)
+            {
+                var cached = pool[i];
+                if (cached != null && cached.parentInventory == null) return cached;
+            }
+
+            GameItem item = null;
+            try { item = CatalogWindow.CreatePreviewItem(id); }
+            catch (Exception e) { Warn("create mod '" + id + "': " + e.Message); }
+
+            if (item != null) pool.Add(item);
+            return item;
+        }
+
+        private void DestroyModSamples()
+        {
+            foreach (var pair in _modSamples)
+            {
+                var pool = pair.Value;
+                if (pool == null) continue;
+
+                for (int i = 0; i < pool.Count; i++)
+                {
+                    var item = pool[i];
+                    if (item == null) continue;
+                    try { if (item.parentInventory != null) item.parentInventory.Expel(item); } catch { }
+                    try { item.Destroy(); } catch { }
+                }
+            }
+
+            _modSamples.Clear();
         }
 
         /// <summary>
@@ -1126,6 +1293,138 @@ namespace ItemCatalog.UI
                 }
             }
             finally { _filling = false; }
+
+            // 一条配方填完再决定面板显隐：本配方用不到的槽（模块 / 芯片 / 电池…）自动隐藏
+            ApplyAutoVisibility();
+        }
+
+        /// <summary>
+        /// 动物笼页装填：笼内放同一物种的一雄一雌，喂食器槽放饲料分配器，自动屠宰槽放自动屠宰机。
+        /// 性别是预览时直接写 ANIMAL_SEXE_TAG 再让游戏重算外观（工厂本身是随机性别）。
+        /// </summary>
+        internal void FillAnimalCage(string animal, string dispenser, string butcher)
+        {
+            ClearSamples();
+
+            _filling = true;
+            try
+            {
+                if (!string.IsNullOrEmpty(animal))
+                {
+                    Accept(_cageGrid, CreateAnimalSample(animal, "MALE"));
+                    Accept(_cageGrid, CreateAnimalSample(animal, "FEMALE"));
+                }
+
+                if (!string.IsNullOrEmpty(dispenser)) Accept(_dispenserSlot, dispenser);
+                if (!string.IsNullOrEmpty(butcher)) Accept(_butcherSlot, butcher);
+            }
+            finally { _filling = false; }
+
+            ApplyAutoVisibility();
+        }
+
+        // ---------------------------------------------------------------- 面板显隐
+
+        /// <summary>从我们手里藏掉的面板（填完之后没有样本的那些）；Destroy 时还原。</summary>
+        private readonly List<MachineryPanel> _autoHidden = new List<MachineryPanel>();
+
+        /// <summary>当前窗口的面板行（借用窗口与手写壳都从 childElement 取）。</summary>
+        private MachineryPanelRow CurrentRow()
+        {
+            if (_borrowedRow != null) return _borrowedRow;
+            return _window == null ? null : _window.childElement as MachineryPanelRow;
+        }
+
+        /// <summary>
+        /// 面板显隐不再按机器手写白名单：填完样本后，**面板里一件样本都没有就隐藏**。
+        /// 电池 / 纸条 / 本配方用不到的槽自然消失；将来新机器也不用再维护角色清单。
+        /// 角色为空的纯控件面板（控制按钮等）照旧隐藏。
+        /// </summary>
+        internal void ApplyAutoVisibility()
+        {
+            var row = CurrentRow();
+            if (row == null) return;
+
+            var panels = row.Panels;
+            for (int i = 0; i < panels.Count; i++)
+            {
+                var panel = panels[i];
+                if (panel == null) continue;
+
+                bool control = string.IsNullOrEmpty(panel.role)
+                               || string.Equals(panel.role, "control", StringComparison.Ordinal);
+
+                if (control || CountPanelItems(panel) == 0) HideAuto(panel);
+                else ShowAuto(panel);
+            }
+        }
+
+        /// <summary>面板里现有的样本数（只统计真正的 inventory，嵌套容器由 CollectStorage 展开）。</summary>
+        private static int CountPanelItems(MachineryPanel panel)
+        {
+            var nodes = new List<GraphNodeStorage>();
+            try { panel.CollectStorage(nodes); }
+            catch { return 0; }
+
+            int count = 0;
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                var inv = nodes[i] as GameInventory;
+                if (inv == null) continue;
+
+                var items = inv.childItems;
+                if (items != null) count += items.Count;
+            }
+
+            return count;
+        }
+
+        private void HideAuto(MachineryPanel panel)
+        {
+            if (panel.isHidden) return;
+
+            panel.SetHidden(true);
+            if (!_autoHidden.Contains(panel)) _autoHidden.Add(panel);
+        }
+
+        private void ShowAuto(MachineryPanel panel)
+        {
+            // 只还原我们自己藏掉的；借用窗口里被 Adopt 隐藏的是另一份列表
+            if (!_autoHidden.Remove(panel)) return;
+
+            panel.SetHidden(false);
+        }
+
+        /// <summary>把所有自动隐藏的面板恢复（销毁 / 归还窗口前调用）。</summary>
+        private void ShowAllAutoHidden()
+        {
+            for (int i = 0; i < _autoHidden.Count; i++)
+            {
+                if (_autoHidden[i] == null) continue;
+                try { _autoHidden[i].SetHidden(false); } catch { }
+            }
+            _autoHidden.Clear();
+        }
+
+        /// <summary>造一只指定性别的动物样本；写完性别让游戏自己重算外观（精灵路径带 m/f 后缀）。</summary>
+        private static GameItem CreateAnimalSample(string id, string sex)
+        {
+            GameItem item = null;
+            try { item = CatalogWindow.CreatePreviewItem(id); }
+            catch (Exception e) { Warn("create animal '" + id + "': " + e.Message); }
+            if (item == null) return null;
+
+            try
+            {
+                item.ModifyTag("ANIMAL_SEXE_TAG", delegate (TagState state)
+                {
+                    state.Enable().SetString(sex);
+                }, false);
+                HusbandryHelper.TryChangeSprite(item);
+            }
+            catch (Exception e) { Warn("animal sex '" + id + "/" + sex + "': " + e.Message); }
+
+            return item;
         }
 
         /// <summary>
@@ -1504,6 +1803,15 @@ namespace ItemCatalog.UI
 
         private void ClearSamples()
         {
+            DetachSamples(true);
+        }
+
+        /// <summary>
+        /// 把当前样本从格子里摘出来并清掉视图登记。
+        /// <paramref name="destroy"/> = false 时保留实例（枪械页每秒轮播复用，不再重建）。
+        /// </summary>
+        private void DetachSamples(bool destroy)
+        {
             ClearMatchHighlights();
 
             // 轮播换物品时不要结束提示框：否则每秒都会闪一下。
@@ -1516,7 +1824,7 @@ namespace ItemCatalog.UI
                 var it = _samples[i];
                 if (it == null) continue;
                 try { if (it.parentInventory != null) it.parentInventory.Expel(it); } catch { }
-                try { it.Destroy(); } catch { }
+                if (destroy) try { it.Destroy(); } catch { }
             }
             _samples.Clear();
             _outputElements.Clear();
@@ -1837,7 +2145,9 @@ namespace ItemCatalog.UI
             if (inv == null || string.IsNullOrEmpty(id)) return;
 
             GameItem item = null;
-            try { item = DirectoryMaster.Item(id, false); }   // isOwned=false：不写玩家存档
+            // 预览实例必须走隔离随机流：鼠这类工厂内会掷随机值的样本
+            // 直接 DirectoryMaster.Item 会推进游戏自己的 RNG / uniqueId。
+            try { item = CatalogWindow.CreatePreviewItem(id); }
             catch (Exception e) { Warn("create '" + id + "': " + e.Message); }
 
             if (item != null) Accept(inv, item, purity);
@@ -1879,7 +2189,8 @@ namespace ItemCatalog.UI
                 int moved = GraphUtils.TryAccept(inv, item);
                 if (moved > 0)
                 {
-                    _samples.Add(item);
+                    // 枪械页的样本跨秒复用：同一实例可能多次进来，登记去重
+                    if (!_samples.Contains(item)) _samples.Add(item);
 
                     var element = item as GameItemElement;
                     if (element != null && inv == _outputGrid) _outputElements.Add(element);
@@ -1931,8 +2242,9 @@ namespace ItemCatalog.UI
         /// <summary>
         /// 借用工厂造好的机器窗口（含模组对原版面板的修改，如枪匠改打印机输出网格）。
         ///
-        /// <paramref name="roles"/> 是「只保留哪些面板」的白名单（沿用各机器手写壳的取法）；
-        /// 传 null 表示保留所有有角色的面板，仅隐藏电池 / 纸条 / 控制按钮。
+        /// <paramref name="roles"/> 是「只保留哪些面板」的白名单；机器页传 null——
+        /// 面板去留交给 <see cref="ApplyAutoVisibility"/> 按「填完有没有样本物品」决定。
+        /// 传 null 时只隐藏没有角色 / 控制按钮这类纯控件面板。
         /// 隐藏用原版 <c>SetHidden</c>，不动 panels 列表，<c>GetStorage</c> 索引不变。
         /// </summary>
         internal bool Adopt(PixelWindow window, string[] roles)
@@ -1961,6 +2273,12 @@ namespace ItemCatalog.UI
                                  ?? ContentOf<GameSlotInventory>(row, "water");
                 _distillateSlot = ContentOf<GameSlotInventory>(row, "distillate");
                 _seedSlot = ContentOf<GameSlotInventory>(row, "seed");
+                _cageGrid = ContentOf<GameGridInventory>(row, "cage");
+                _dispenserSlot = AdoptSlot(row, "dispenser");
+                _butcherSlot = AdoptSlot(row, "butcher");
+
+                // 枪械改装窗口也走同一条借用路径：角色就是原版的槽位键
+                MapGunSlots(row);
             }
             catch (Exception e)
             {
@@ -2017,6 +2335,13 @@ namespace ItemCatalog.UI
                 RelaxFilters(_containerSlot);
                 RelaxFilters(_distillateSlot);
                 RelaxFilters(_seedSlot);
+                RelaxFilters(_cageGrid);
+                RelaxFilters(_dispenserSlot, true);
+                RelaxFilters(_butcherSlot, true);
+
+                // 枪械槽有「是不是合法改装」过滤 + 音效 / 统计回调，演示实例只要外观
+                if (_gunSlots != null)
+                    for (int i = 0; i < _gunSlots.Length; i++) RelaxFilters(_gunSlots[i], true);
 
                 // 工厂窗口可能被模组改过形状（枪匠 PrinterOutputPatch 就是改完再 Validate）
                 window.Validate();
@@ -2030,7 +2355,11 @@ namespace ItemCatalog.UI
                                      + " chip=" + Name(_chipSlot)
                                      + " container=" + Name(_containerSlot)
                                      + " distillate=" + Name(_distillateSlot)
-                                     + " seed=" + Name(_seedSlot));
+                                     + " seed=" + Name(_seedSlot)
+                                     + " cage=" + Name(_cageGrid)
+                                     + " dispenser=" + Name(_dispenserSlot)
+                                     + " butcher=" + Name(_butcherSlot)
+                                     + " gunSlots=" + (_gunSlots == null ? 0 : _gunSlots.Length));
                 }
 
                 // AttachContentTo 会把内容搬进图鉴页面，先把原挂载点与布局记下来
@@ -2069,11 +2398,96 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
+        /// 取面板里的单槽。原版有两种写法，这里都认：
+        ///   · <c>panel.content</c> 直接是 inventory（再包一层 MachineryIntake）；
+        ///   · <c>panel.content</c> 是 <see cref="GridPixelElement"/>（动物笼的「槽 + 按钮」、
+        ///     枪械改装的 1×1 槽），槽在它的子元素里。
+        /// 顺手把面板里的原版按钮藏掉：动物笼的「搅拌」「现在屠宰」会真的执行机器动作，
+        /// 预览里不能点。隐藏状态在 <see cref="RestoreAdopted"/> 里还原。
+        /// </summary>
+        private GameSlotInventory AdoptSlot(MachineryPanelRow row, string role)
+        {
+            var panel = row.GetPanel(role);
+            if (panel == null) return null;
+
+            var slot = SlotOf(panel);
+            HidePanelButtons(panel);
+            return slot;
+        }
+
+        /// <summary>
+        /// 取面板里的单槽（不处理按钮）。<c>panel.content</c> 直接是 inventory，
+        /// 或包一层 <see cref="MachineryIntake"/>；也可能是 <see cref="GridPixelElement"/>，
+        /// 槽在它的子元素里（动物笼「槽 + 按钮」、枪械 1×1 改装槽）。
+        /// 枪械页与枪械槽探测（<see cref="GunMods"/>）共用这一份取法。
+        /// </summary>
+        internal static GameSlotInventory SlotOf(MachineryPanel panel)
+        {
+            if (panel == null) return null;
+
+            var grid = panel.content as GridPixelElement;
+            if (grid == null)
+            {
+                var intake = panel.content as MachineryIntake;
+                return (intake != null ? intake.content : panel.content) as GameSlotInventory;
+            }
+
+            for (int y = 0; y < grid.gridHeight; y++)
+            {
+                for (int x = 0; x < grid.gridWidth; x++)
+                {
+                    PixelElement element = null;
+                    try { element = grid.GetElement(x, y); } catch { }
+                    if (element == null) continue;
+
+                    var intake = element as MachineryIntake;
+                    var slot = intake != null
+                        ? intake.content as GameSlotInventory
+                        : element as GameSlotInventory;
+                    if (slot != null) return slot;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>把面板里的原版按钮藏掉并清回调（动物笼的搅拌 / 现在屠宰会真的执行机器动作）。</summary>
+        private void HidePanelButtons(MachineryPanel panel)
+        {
+            var grid = panel == null ? null : panel.content as GridPixelElement;
+            if (grid == null) return;
+
+            for (int y = 0; y < grid.gridHeight; y++)
+            {
+                for (int x = 0; x < grid.gridWidth; x++)
+                {
+                    PixelElement element = null;
+                    try { element = grid.GetElement(x, y); } catch { }
+
+                    var button = element as MachineryButton;
+                    if (button == null) continue;
+
+                    // 回调也清掉：即使别处的刷新逻辑把它重新显示出来，点下去也不会有动作
+                    try { button.SetCallback(null); } catch { }
+
+                    if (!button.isHidden)
+                    {
+                        button.SetHidden(true);
+                        _hiddenButtons.Add(button);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// 临时放开真实机器格子的入格过滤，并摘掉入格/出格回调：
         /// 那些回调会播放入格音效（battery_insert / 模块音效），预览时不该出声。
+        /// <paramref name="dropEndCallbacks"/> 再加摘 End 回调：动物笼的喂食器 / 自动屠宰槽
+        /// 会在入格后刷新按钮可见性（我们把「搅拌 / 现在屠宰」藏了，不能让它重新显示）；
+        /// 其他机器的 End 回调要留着（容器槽靠它刷新水位 / 底图）。
         /// Destroy 时全部还原。
         /// </summary>
-        private void RelaxFilters(GameInventory inv)
+        private void RelaxFilters(GameInventory inv, bool dropEndCallbacks = false)
         {
             if (inv == null) return;
 
@@ -2082,12 +2496,20 @@ namespace ItemCatalog.UI
                 Inv = inv,
                 May = inv.mayInventoryAddItemFunc,
                 Add = inv.onSlotAddItemFunc,
-                Remove = inv.onSlotRemoveItemFunc
+                AddEnd = inv.onSlotAddItemEndFunc,
+                Remove = inv.onSlotRemoveItemFunc,
+                RemoveEnd = inv.onSlotRemoveItemEndFunc
             });
 
             inv.mayInventoryAddItemFunc = AllowOnlyWhileFilling;
             inv.onSlotAddItemFunc = null;
             inv.onSlotRemoveItemFunc = null;
+
+            if (dropEndCallbacks)
+            {
+                inv.onSlotAddItemEndFunc = null;
+                inv.onSlotRemoveItemEndFunc = null;
+            }
         }
 
         /// <summary>
@@ -2180,7 +2602,9 @@ namespace ItemCatalog.UI
 
                 h.Inv.mayInventoryAddItemFunc = h.May;
                 h.Inv.onSlotAddItemFunc = h.Add;
+                h.Inv.onSlotAddItemEndFunc = h.AddEnd;
                 h.Inv.onSlotRemoveItemFunc = h.Remove;
+                h.Inv.onSlotRemoveItemEndFunc = h.RemoveEnd;
             }
             _borrowedHooks.Clear();
 
@@ -2188,6 +2612,14 @@ namespace ItemCatalog.UI
             for (int i = 0; i < _hiddenByAdopt.Count; i++)
                 if (_hiddenByAdopt[i] != null) _hiddenByAdopt[i].SetHidden(false);
             _hiddenByAdopt.Clear();
+
+            // 填样本时按「有没有物品」自动藏掉的面板也要还原
+            ShowAllAutoHidden();
+
+            // 预览里藏掉的机器按钮（搅拌 / 现在屠宰）也要还原
+            for (int i = 0; i < _hiddenButtons.Count; i++)
+                if (_hiddenButtons[i] != null) _hiddenButtons[i].SetHidden(false);
+            _hiddenButtons.Clear();
 
             if (_adoptedRect == null) return;
 
@@ -2212,7 +2644,11 @@ namespace ItemCatalog.UI
         {
             try
             {
-                ClearSamples();
+                // 枪械页的样本实例放在复用池里：先摘下来，再统一由池销毁，
+                // 避免 ClearSamples 与池各销毁一次。
+                DetachSamples(false);
+                DestroyModSamples();
+
                 _tooltipShown = false;
                 HideItemTooltip();
                 _moduleGrid = null;
@@ -2222,6 +2658,9 @@ namespace ItemCatalog.UI
                 _outputSlot = null;
                 _containerSlot = null;
                 _distillateSlot = null;
+                _cageGrid = null;
+                _dispenserSlot = null;
+                _butcherSlot = null;
                 _productSlot = null;
                 _outputDiskSlot = null;
                 _seedSlot = null;
@@ -2229,6 +2668,7 @@ namespace ItemCatalog.UI
                 _desqInputSlot = null;
                 _desqOutputSlot = null;
                 _gunSlots = null;
+                ShowAllAutoHidden();   // 手写壳同样先还原，再把窗口整个销毁
                 if (_borrowed) RestoreAdopted();
                 else if (_window != null && _window.rectTransform != null)
                     UnityEngine.Object.Destroy(_window.rectTransform.gameObject);

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿using System;
+﻿﻿﻿﻿﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 
 using ItemCatalog.Catalog;
@@ -72,6 +72,15 @@ namespace ItemCatalog.UI
 
             /// <summary>单独的芯片槽里的物品 id（解序列器：加密模块）；null = 没有该槽。</summary>
             internal string Chip;
+
+            /// <summary>动物笼：这一条配方展示的动物 id（同类一雄一雌各一只）。</summary>
+            internal string CageAnimal;
+
+            /// <summary>动物笼：喂食器槽展示的物品 id（多个候选时随配方轮播）。</summary>
+            internal string CageDispenser;
+
+            /// <summary>动物笼：自动屠宰槽展示的物品 id（多个候选时随配方轮播）。</summary>
+            internal string CageButcher;
 
             /// <summary>
             /// 达成这一条配方还需要的模块品质加成（百分比）。
@@ -385,6 +394,101 @@ namespace ItemCatalog.UI
                 }
             }
         };
+
+        /// <summary>动物笼（animal_cage）：机器 id，同时用作页面分支的判定。</summary>
+        internal const string AnimalCageId = "animal_cage";
+
+        private static RecipeGroup[] _animalCageGroups;
+        private static int _animalCageGeneration = -1;
+
+        /// <summary>
+        /// 动物笼：一个物种一条配方（一类算一页），笼内一雄一雌；
+        /// 能放进笼子的东西不维护 id 清单，按标签扫目录：
+        ///   · ANIMAL_ITEM_TAG —— 动物；同类一雄一雌 = 一条配方，一类动物一页；
+        ///   · FEED_DISPENSER_TAG / AUTO_BUTCHER_TAG —— 能插两个槽的机器。
+        /// 喂食器 / 自动屠宰各有多个候选时，在这一页内轮播（变体数取两者候选数的最大值，
+        /// 第 v 条取 dispenser[v % M]、butcher[v % N]），每个槽互不牵连。
+        /// 动物同时算产出（笼里繁殖同种动物），屠宰产物不写。
+        /// 依据 AnimalCage.CreateCageWindow、HusbandryHelper.CheckMate/GiveBirth、
+        /// MachineFeedDispenser.SetupHostSlot 与 MachineAutoButcher.SetupHostSlot。
+        /// </summary>
+        private static RecipeGroup[] AnimalCageRecipes()
+        {
+            if (_animalCageGroups != null && _animalCageGeneration == CatalogDataBuilder.Generation)
+                return _animalCageGroups;
+
+            var animals = new List<string>();
+            var dispensers = new List<string>();
+            var butchers = new List<string>();
+
+            var items = CatalogDataBuilder.Visible;
+            if (items != null)
+            {
+                for (int i = 0; i < items.Count; i++)
+                {
+                    var entry = items[i];
+                    var item = entry == null ? null : entry.Item;
+                    if (item == null || string.IsNullOrEmpty(entry.Id)) continue;
+
+                    if (SafeTag(item, "ANIMAL_ITEM_TAG")) animals.Add(entry.Id);
+                    else if (SafeTag(item, "FEED_DISPENSER_TAG")) dispensers.Add(entry.Id);
+                    else if (SafeTag(item, "AUTO_BUTCHER_TAG")) butchers.Add(entry.Id);
+                }
+            }
+
+            // 目录还没建好时先不缓存，等下一次调用重试
+            if (animals.Count == 0)
+            {
+                _animalCageGeneration = -1;
+                return new RecipeGroup[0];
+            }
+
+            _animalCageGeneration = CatalogDataBuilder.Generation;
+
+            // 喂食器 / 屠宰机各自独立轮播：变体数取两者候选数的最大值
+            int variantCount = Math.Max(1, Math.Max(dispensers.Count, butchers.Count));
+
+            var groups = new List<RecipeGroup>(animals.Count);
+            for (int a = 0; a < animals.Count; a++)
+            {
+                string animal = animals[a];
+                var variants = new Recipe[variantCount];
+
+                for (int v = 0; v < variantCount; v++)
+                {
+                    string dispenser = dispensers.Count > 0 ? dispensers[v % dispensers.Count] : null;
+                    string butcher = butchers.Count > 0 ? butchers[v % butchers.Count] : null;
+
+                    // 投入：同类一雄一雌（填充时按性别各造一只）；
+                    // 两个槽的机器也登记成投入，查它们时能反查到这一页
+                    var inputs = new List<string> { animal, animal };
+                    if (!string.IsNullOrEmpty(dispenser)) inputs.Add(dispenser);
+                    if (!string.IsNullOrEmpty(butcher)) inputs.Add(butcher);
+
+                    var recipe = new Recipe(inputs.ToArray(), null, new[] { animal }, null, null);
+                    recipe.CageAnimal = animal;
+                    recipe.CageDispenser = dispenser;
+                    recipe.CageButcher = butcher;
+                    variants[v] = recipe;
+                }
+
+                groups.Add(new RecipeGroup
+                {
+                    TitleItemId = animal,
+                    TitleKey = "mach_cage_husbandry", TitleFallback = "饲养",
+                    Variants = variants
+                });
+            }
+
+            _animalCageGroups = groups.ToArray();
+            return _animalCageGroups;
+        }
+
+        private static bool SafeTag(GameItem item, string tag)
+        {
+            try { return item.IsTag(tag); }
+            catch { return false; }
+        }
 
         /// <summary>
         /// 当前生效的熔炉配方组。手写表是精选展示；运行期探测发现矿石/废金属 id
@@ -918,6 +1022,10 @@ namespace ItemCatalog.UI
             // 3D 打印机：一种打印芯片一页，数据全部从芯片标签读取
             if (string.Equals(machineId, "printer", StringComparison.Ordinal))
                 return PrinterRecipes();
+
+            // 动物笼：只有一页，能放进笼子的东西按标签扫目录（动物 / 喂食器 / 自动屠宰机）
+            if (string.Equals(machineId, AnimalCageId, StringComparison.Ordinal))
+                return AnimalCageRecipes();
 
             RecipeGroup[] groups;
             return Recipes.TryGetValue(machineId, out groups) ? groups : null;

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿using System;
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 
@@ -105,8 +105,8 @@ namespace ItemCatalog.UI
         private static int _lastColumnsUsed = -1;
 
         // ---- 客人立绘轮播：同一来源的多张精灵按顺序每秒换一张 ----
+        // 落点存在 Carousel.Current 的 "portrait" 键里，这里只留本页的数据与视图。
         private static List<Sprite> _portraitSprites;
-        private static int _portraitIndex;
         private static float _portraitNextAt;
 
         /// <summary>下一次把窗口提到最前的时间点（0 = 不需要）。</summary>
@@ -294,21 +294,11 @@ namespace ItemCatalog.UI
         private sealed class CellAnimation
         {
             internal List<Sprite> Sprites;
-            internal int Index;
             internal UnityEngine.UI.Image Image;
         }
 
         private static readonly Dictionary<string, CellAnimation> _cellAnims =
             new Dictionary<string, CellAnimation>(StringComparer.Ordinal);
-
-        /// <summary>
-        /// 用途页每个标签格轮播到第几件（tag → 索引）。
-        /// 和 `_cellAnims` 不是一回事：那个只换格子里的一张精灵，
-        /// 这里换的是**整个物品**，所以要配合重建正文才能让
-        /// 图标 / 悬停提示 / 点击目标 / 绿底一起变。
-        /// </summary>
-        private static readonly Dictionary<string, int> _tagRollIndex =
-            new Dictionary<string, int>(StringComparer.Ordinal);
 
         /// <summary>
         /// 本次渲染画出来的「标签格条」。每条自带一个容器元素，
@@ -319,7 +309,6 @@ namespace ItemCatalog.UI
 
         /// <summary>机器页当前嵌入的原版机器窗口（真 GameGridInventory + 样本物品）。</summary>
         private static VanillaMachinePanel _vanillaMachine;
-        private static int _vanillaVariant;   // 当前档内轮播到第几条配方
 
         // 机器页自适应高度用的实测值（布局跑完才有，只增不减）
         private static RectTransform _machineTopRow;    // 机器页顶部行（配方名 + 品质需求 + 机器图标）
@@ -502,14 +491,12 @@ namespace ItemCatalog.UI
             _dirLabel = null;
             StopPortrait();
             _cellAnims.Clear();
-            _tagRollIndex.Clear();   // 换物品后标签轮播从头开始
             _tagStrips.Clear();
             if (_vanillaMachine != null) { _vanillaMachine.Destroy(); _vanillaMachine = null; }
             _machinePageHighlight = null;
-            _vanillaVariant = 0;
             _gunModSlots = null;
             _gunModPinned = null;
-            _gunModRoll = 0;
+            Carousel.Current.Clear();   // 全部轮播游标（立绘 / 标签格 / 机器 / 枪械槽 / 预构建）一起清零
             _tagStripSeq = 0;
             SourceSeed = null;
             SourceWater = null;
@@ -546,15 +533,15 @@ namespace ItemCatalog.UI
             var sprites = _portraitSprites;
             if (sprites != null && sprites.Count > 1 && _portraitImage != null)
             {
-                _portraitIndex = (_portraitIndex + 1) % sprites.Count;
+                int index = Carousel.Current.Advance("portrait", sprites.Count);
                 try
                 {
-                    _portraitImage.sprite = sprites[_portraitIndex];
+                    _portraitImage.sprite = sprites[index];
 
                     if (_portraitSwitches < 3 && ModEntry.Log != null)
                     {
                         _portraitSwitches++;
-                        ModEntry.Log.Log("[portrait] switch " + _portraitIndex + "/" + sprites.Count);
+                        ModEntry.Log.Log("[portrait] switch " + index + "/" + sprites.Count);
                     }
                 }
                 catch { /* 窗口正在销毁 */ }
@@ -587,8 +574,8 @@ namespace ItemCatalog.UI
                 if (anim == null || anim.Image == null) continue;
                 if (anim.Sprites == null || anim.Sprites.Count <= 1) continue;
 
-                anim.Index = (anim.Index + 1) % anim.Sprites.Count;
-                try { anim.Image.sprite = anim.Sprites[anim.Index]; }
+                int index = Carousel.Current.Advance("cell:" + pair.Key, anim.Sprites.Count);
+                try { anim.Image.sprite = anim.Sprites[index]; }
                 catch { }
             }
 
@@ -605,6 +592,12 @@ namespace ItemCatalog.UI
                              + " gun=" + (t3 - t2)
                              + " anim=" + (t4 - t3)
                              + " total=" + t4 + "ms");
+        }
+
+        /// <summary>标签格轮播游标的键（同一条标签在多页共用同一个游标）。</summary>
+        private static string TagKey(string tag)
+        {
+            return "tag:" + tag;
         }
 
         /// <summary>
@@ -636,9 +629,7 @@ namespace ItemCatalog.UI
                         int count = WaterContainerIds().Count;
                         if (count <= 1) continue;
 
-                        int waterIndex;
-                        if (!_tagRollIndex.TryGetValue(tag, out waterIndex)) waterIndex = 0;
-                        _tagRollIndex[tag] = (waterIndex + 1) % count;
+                        Carousel.Current.Advance(TagKey(tag), count);
                         stripMoved = true;
                         continue;
                     }
@@ -647,9 +638,7 @@ namespace ItemCatalog.UI
                     if (ids.Count <= 1) continue;
                     if (string.Equals(tag, strip.CurrentId, StringComparison.Ordinal)) continue;
 
-                    int index;
-                    if (!_tagRollIndex.TryGetValue(tag, out index)) index = 0;
-                    _tagRollIndex[tag] = (index + 1) % ids.Count;
+                    Carousel.Current.Advance(TagKey(tag), ids.Count);
                     stripMoved = true;
                 }
 
@@ -713,8 +702,7 @@ namespace ItemCatalog.UI
 
             var containers = WaterContainerIds();
 
-            int roll;
-            if (!_tagRollIndex.TryGetValue(tag, out roll)) roll = 0;
+            int roll = Carousel.Current.Position(TagKey(tag), containers.Count);
 
             bool queryingWater = TagMatchesQueriedLiquid(tag);
 
@@ -881,9 +869,7 @@ namespace ItemCatalog.UI
                 }
                 else
                 {
-                    int index;
-                    if (!_tagRollIndex.TryGetValue(tag, out index)) index = 0;
-                    index = ((index % ids.Count) + ids.Count) % ids.Count;
+                    int index = Carousel.Current.Position(TagKey(tag), ids.Count);
                     showId = ids[index];
                 }
 
@@ -996,9 +982,9 @@ namespace ItemCatalog.UI
         private static void StopPortrait()
         {
             _portraitSprites = null;
-            _portraitIndex = 0;
             _portraitImage = null;
             _portraitNextAt = 0f;
+            Carousel.Current.Remove("portrait");
         }
 
         // ---------------------------------------------------------------- 大类
@@ -2584,7 +2570,7 @@ namespace ItemCatalog.UI
                 int portraitStart = portraits.Count > 1
                     ? (source.SourceId == null ? 0 : (source.SourceId.GetHashCode() & 0x7FFFFFFF) % portraits.Count)
                     : 0;
-                _portraitIndex = portraitStart;
+                Carousel.Current.Set("portrait", portraitStart);
 
                 float w, h;
                 CatalogWindow.FitIcon(portraits[portraitStart], PortraitMaxSide, out w, out h);
@@ -2898,7 +2884,6 @@ namespace ItemCatalog.UI
                         _cellAnims[elementId] = new CellAnimation
                         {
                             Sprites = cycle,
-                            Index = 0,
                             Image = cell.image
                         };
                     }
@@ -3078,19 +3063,8 @@ namespace ItemCatalog.UI
             var merged = new List<UseInfo>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
 
-            // 箱子/卡的「开启」关系（合成 open 记录，并进「使用」大类）：
-            // 三条路（箱自身 / 卡自身 / 内容物反查）合出来，再按方向筛——
-            // 来源方向只留「当前物品是产物」的，用途方向只留「当前物品是投入」的。
-            var opens = SynthesizeOpenRelations();
-            for (int i = 0; i < opens.Count; i++)
-            {
-                var u = opens[i];
-                if (u == null || !IsUseInDirection(u)) continue;
-                if (!seen.Add(UseSignature(u))) continue;
-                merged.Add(u);
-            }
-
-            // csv 使用记录（调用方已按方向查好：Producing / Using）
+            // 开启配方与 uses.csv 记录都来自 UseIndex 的全局配方表，
+            // 调用方已按方向查好（Producing / Using），这里只做去重合并。
             AppendUseSeed(merged, seen, seed);
 
             if (merged.Count > 0)
@@ -3226,44 +3200,28 @@ namespace ItemCatalog.UI
         private static int _moddableGunIdsGeneration = -1;
 
         /// <summary>
-        /// 使用记录的方向选择：来源方向（左键）= 当前物品是产物；
-        /// 用途方向（右键）= 当前物品是投入。页面内容仍是完整记录，两侧都会画。
+        /// 使用记录的签名（方式 + 来源 + 产物）：同一条关系只留一份。
+        ///
+        /// 来源与产物都**排序后**再拼：同一条配方可能同时出现在来源索引与
+        /// 产物索引里（例如卡既是开启工具，又能从箱子里开出来），
+        /// 不排序就会重复。
         /// </summary>
-        private static bool IsUseInDirection(UseInfo u)
-        {
-            if (u == null || _entry == null) return false;
-
-            if (_asUse)
-            {
-                var s = u.Sources;
-                if (s != null)
-                {
-                    for (int i = 0; i < s.Length; i++)
-                        if (string.Equals(s[i], _entry.Id, StringComparison.Ordinal)) return true;
-                }
-                return false;
-            }
-
-            var p = u.Produces;
-            if (p != null)
-            {
-                for (int i = 0; i < p.Length; i++)
-                    if (string.Equals(p[i], _entry.Id, StringComparison.Ordinal)) return true;
-            }
-            return false;
-        }
-
-        /// <summary>使用记录的签名（方式 + 来源 + 产物）：同一条关系只留一份。</summary>
         private static string UseSignature(UseInfo u)
         {
             var sb = new System.Text.StringBuilder();
             sb.Append(u.Kind ?? "");
             sb.Append('|');
-            var s = u.Sources ?? new string[0];
-            for (int i = 0; i < s.Length; i++) { sb.Append(s[i]); sb.Append(','); }
+
+            var s = new List<string>(u.Sources ?? new string[0]);
+            s.Sort(StringComparer.Ordinal);
+            for (int i = 0; i < s.Count; i++) { sb.Append(s[i]); sb.Append(','); }
+
             sb.Append('>');
-            var p = u.Produces ?? new string[0];
-            for (int i = 0; i < p.Length; i++) { sb.Append(p[i]); sb.Append(','); }
+
+            var p = new List<string>(u.Produces ?? new string[0]);
+            p.Sort(StringComparer.Ordinal);
+            for (int i = 0; i < p.Count; i++) { sb.Append(p[i]); sb.Append(','); }
+
             return sb.ToString();
         }
 
@@ -3280,187 +3238,57 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 合成箱子/卡的「开启」使用记录（并进「使用」大类，不再单独开「开启」类）：
-        ///   他自己是箱子：Sources=[箱, 需要的卡]，Produces=[内容物并集]；
-        ///   他自己是卡：能开的每个箱一条，Sources=[卡, 箱]，Produces=[内容物]；
-        ///   他是箱内容物：装着它的每个箱一条（BoxesForItem）——来源方向可查。
-        /// 「箱子 + 需要的卡 → 可能开出 → 内容物」的渲染就是使用页的样子
-        /// （来源格子在上、产物分界线、产物格子在下），两个方向同一页。
-        /// </summary>
-        private static List<UseInfo> SynthesizeOpenRelations()
-        {
-            var result = new List<UseInfo>();
-            if (_entry == null) return result;
-
-            string self = _entry.Id;
-
-            // 他自己是箱子：每个内容物表一条（来源 = 箱 + 需要的卡）
-            var asBox = LootSource.AsBox(self);
-            for (int i = 0; i < asBox.Count; i++)
-            {
-                var t = asBox[i];
-                if (t == null || t.Items == null || t.Items.Count == 0) continue;
-
-                var src = new List<string>(2) { self };
-                string keyId = LootKeyFor(self, _entry);
-                if (!string.IsNullOrEmpty(keyId)) src.Add(keyId);
-
-                result.Add(new UseInfo { Sources = src.ToArray(), Kind = "open", Produces = LootIds(t) });
-            }
-
-            // 他自己是卡：能开哪些箱（每个箱一条，来源 = 卡 + 箱）
-            var asKey = LootSource.ForKey(_entry.Item);
-            if (asKey.Count == 0) asKey = LootSource.BoxesForKeyId(self);
-            for (int i = 0; i < asKey.Count; i++)
-            {
-                var t = asKey[i];
-                if (t == null || t.Items == null || t.Items.Count == 0) continue;
-
-                string boxId = LootSource.BoxForPool(t.TableId) ?? t.TableId;
-                result.Add(new UseInfo { Sources = new[] { self, boxId }, Kind = "open", Produces = LootIds(t) });
-            }
-
-            // 箱内容物反查：装着它的箱子（open 记录的来源方向）
-            var boxes = LootSource.BoxesForItem(self);
-            for (int b = 0; b < boxes.Count; b++)
-            {
-                string boxId = boxes[b];
-                var boxEntry = RecipeIndex.FindEntry(boxId);
-                var boxTables = LootSource.AsBox(boxId);
-                if (boxTables == null || boxTables.Count == 0) continue;
-
-                var products = new List<string>();
-                for (int i = 0; i < boxTables.Count; i++)
-                {
-                    var ids = LootIds(boxTables[i]);
-                    for (int k = 0; k < ids.Length; k++)
-                        if (!products.Contains(ids[k])) products.Add(ids[k]);
-                }
-
-                var src = new List<string>(2) { boxId };
-                string keyId = LootKeyFor(boxId, boxEntry);
-                if (!string.IsNullOrEmpty(keyId)) src.Add(keyId);
-
-                result.Add(new UseInfo { Sources = src.ToArray(), Kind = "open", Produces = products.ToArray() });
-            }
-
-            return result;
-        }
-
-        /// <summary>一张掉落表的全部物品 id（去重，按池内记录的原样）。</summary>
-        private static string[] LootIds(LootTableInfo t)
-        {
-            if (t == null || t.Items == null) return new string[0];
-
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            var ids = new List<string>();
-            for (int i = 0; i < t.Items.Count; i++)
-            {
-                var it = t.Items[i];
-                if (it == null || string.IsNullOrEmpty(it.Id)) continue;
-                if (!seen.Add(it.Id)) continue;
-                ids.Add(it.Id);
-            }
-            return ids.ToArray();
-        }
-
-        /// <summary>
         /// 静态机器配方的正反查：当前物品是投入 / 模块（用途方向）或产出（来源方向）时，
         /// 把对应的机器配方组加进来。只收录有原版面板外壳的机器
         /// （熔炉、搅拌机）；新增机器时把 id 加进 <see cref="KnownMachines"/>。
         /// </summary>
-        private static readonly string[] KnownMachines = { "furnace", "blender", "chem_finisher", "evaporator", "hydroponic", "plant_dna_manipulator", "desequencer", "printer" };
+        private static readonly string[] KnownMachines = { "furnace", "blender", "chem_finisher", "evaporator", "hydroponic", "plant_dna_manipulator", "desequencer", "printer", "animal_cage" };
+
+        private const string DnaMachineId = "plant_dna_manipulator";
+
+        /// <summary>机器配方反查索引的一项：某台机器的某个配方组。</summary>
+        private sealed class MachineHit
+        {
+            internal string MachineId;
+            internal MachinePanels.RecipeGroup Group;
+        }
+
+        // 机器配方和 uses.csv / 开启配方共用同一套 RelationIndex：
+        // sources = 投入 / 模块 / 芯片，products = 产物 / 投入物品里含的液体
+        private static RelationIndex<MachineHit> _machineIndex;
+        private static int _machineIndexGeneration = -1;
 
         private static void AddMachineRecipeCategories()
         {
             if (_entry == null) return;
 
+            AddDnaMachineCategory();
+
+            EnsureMachineIndex();
+            if (_machineIndex == null) return;
+
+            // 先按机器聚合命中的组，再按 KnownMachines 顺序输出，保证分类顺序稳定
+            var hits = new Dictionary<string, List<MachinePanels.RecipeGroup>>(StringComparer.Ordinal);
+
+            CollectMachineHits(_machineIndex.BySource(_entry.Id), hits);
+
+            if (!_asUse)
+            {
+                CollectMachineHits(_machineIndex.ByProduct(_entry.Id), hits);
+
+                string liquidId = QueryLiquidId();
+                if (!string.IsNullOrEmpty(liquidId))
+                    CollectMachineHits(_machineIndex.ByProduct(liquidId), hits);
+            }
+
             for (int m = 0; m < KnownMachines.Length; m++)
             {
                 string machineId = KnownMachines[m];
+                if (string.Equals(machineId, DnaMachineId, StringComparison.Ordinal)) continue;
                 if (string.Equals(_entry.Id, machineId, StringComparison.Ordinal)) continue;
 
-                // DNA 编辑器：页序与 DnaManager 的特质顺序一致。
-                //   来源方向：已写入的盘（dna:*）直接指向它自己那一页；
-                //   用途方向：种子 / 空白盘都是提取的投入，按页匹配（空白盘每一页都要）。
-                // 空白盘不能当「产出」匹配（所有写入盘共用本体 id），所以来源方向仍然跳过它。
-                if (string.Equals(machineId, "plant_dna_manipulator", StringComparison.Ordinal))
-                {
-                    var dnaGroups = MachinePanels.RecipesFor(machineId);
-                    if (dnaGroups == null || dnaGroups.Length == 0) continue;
-
-                    if (_asUse)
-                    {
-                        bool blankDisk = string.Equals(_entry.Id, DnaManager.DiskId, StringComparison.Ordinal);
-                        var matchedUse = new List<MachinePanels.RecipeGroup>();
-
-                        for (int g = 0; g < dnaGroups.Length; g++)
-                        {
-                            var group = dnaGroups[g];
-                            var recipe = group != null && group.Variants != null && group.Variants.Length > 0
-                                ? group.Variants[0] : null;
-                            if (recipe == null) continue;
-
-                            if (blankDisk || ContainsId(recipe.Inputs, _entry.Id))
-                                matchedUse.Add(group);
-                        }
-
-                        if (matchedUse.Count > 0)
-                        {
-                            _categories.Add(new Category
-                            {
-                                Kind = CatMachineRecipe,
-                                MachineId = machineId,
-                                MachineGroups = matchedUse
-                            });
-                        }
-
-                        continue;
-                    }
-
-                    var dnaTrait = DnaManager.TraitForEntry(_entry.Id);
-                    if (dnaTrait == null) continue;
-
-                    int page = DnaManager.IndexOf(dnaTrait);
-                    if (page >= 0 && page < dnaGroups.Length)
-                    {
-                        _categories.Add(new Category
-                        {
-                            Kind = CatMachineRecipe,
-                            MachineId = machineId,
-                            MachineGroups = new List<MachinePanels.RecipeGroup> { dnaGroups[page] }
-                        });
-                    }
-
-                    continue;
-                }
-
-                var groups = MachinePanels.RecipesFor(machineId);
-                if (groups == null || groups.Length == 0) continue;
-
-                var matched = new List<MachinePanels.RecipeGroup>();
-                for (int g = 0; g < groups.Length; g++)
-                {
-                    var group = groups[g];
-                    if (group == null || group.Variants == null) continue;
-
-                    bool hit = false;
-                    for (int v = 0; v < group.Variants.Length && !hit; v++)
-                    {
-                        var recipe = group.Variants[v];
-                        if (recipe == null) continue;
-
-                        hit = _asUse
-                            ? ContainsId(recipe.Inputs, _entry.Id) || ContainsId(recipe.Modules, _entry.Id)
-                              || string.Equals(recipe.Chip, _entry.Id, StringComparison.Ordinal)
-                            : ContainsId(recipe.Outputs, _entry.Id) ||
-                              InputProducesLiquid(recipe, QueryLiquidId());
-                    }
-
-                    if (hit) matched.Add(group);
-                }
-
-                if (matched.Count == 0) continue;
+                List<MachinePanels.RecipeGroup> matched;
+                if (!hits.TryGetValue(machineId, out matched) || matched == null || matched.Count == 0) continue;
 
                 _categories.Add(new Category
                 {
@@ -3468,6 +3296,193 @@ namespace ItemCatalog.UI
                     MachineId = machineId,
                     MachineGroups = matched
                 });
+            }
+        }
+
+        /// <summary>
+        /// DNA 编辑器：页序与 DnaManager 的特质顺序一致。
+        ///   来源方向：已写入的盘（dna:*）直接指向它自己那一页；
+        ///   用途方向：种子 / 空白盘都是提取的投入，按页匹配（空白盘每一页都要）。
+        /// 空白盘不能当「产出」匹配（所有写入盘共用本体 id），所以来源方向仍然跳过它。
+        /// </summary>
+        private static void AddDnaMachineCategory()
+        {
+            if (_entry == null) return;
+            if (string.Equals(_entry.Id, DnaMachineId, StringComparison.Ordinal)) return;
+
+            var dnaGroups = MachinePanels.RecipesFor(DnaMachineId);
+            if (dnaGroups == null || dnaGroups.Length == 0) return;
+
+            if (_asUse)
+            {
+                bool blankDisk = string.Equals(_entry.Id, DnaManager.DiskId, StringComparison.Ordinal);
+                var matchedUse = new List<MachinePanels.RecipeGroup>();
+
+                for (int g = 0; g < dnaGroups.Length; g++)
+                {
+                    var group = dnaGroups[g];
+                    var recipe = group != null && group.Variants != null && group.Variants.Length > 0
+                        ? group.Variants[0] : null;
+                    if (recipe == null) continue;
+
+                    if (blankDisk || ContainsId(recipe.Inputs, _entry.Id))
+                        matchedUse.Add(group);
+                }
+
+                if (matchedUse.Count > 0)
+                {
+                    _categories.Add(new Category
+                    {
+                        Kind = CatMachineRecipe,
+                        MachineId = DnaMachineId,
+                        MachineGroups = matchedUse
+                    });
+                }
+
+                return;
+            }
+
+            var dnaTrait = DnaManager.TraitForEntry(_entry.Id);
+            if (dnaTrait == null) return;
+
+            int page = DnaManager.IndexOf(dnaTrait);
+            if (page >= 0 && page < dnaGroups.Length)
+            {
+                _categories.Add(new Category
+                {
+                    Kind = CatMachineRecipe,
+                    MachineId = DnaMachineId,
+                    MachineGroups = new List<MachinePanels.RecipeGroup> { dnaGroups[page] }
+                });
+            }
+        }
+
+        /// <summary>
+        /// 建机器配方反查索引：每个配方组的投入 / 模块 / 芯片作为 sources、
+        /// 产物与投入物品里的液体作为 products，统一交给 <see cref="RelationIndex{T}"/>。
+        /// 只在目录 generation 变化时重建，打开详情页只是字典直查。
+        /// </summary>
+        private static void EnsureMachineIndex()
+        {
+            if (_machineIndex != null && _machineIndexGeneration == CatalogDataBuilder.Generation) return;
+
+            var index = new RelationIndex<MachineHit>();
+
+            int groups = 0;
+
+            try { LiquidManager.TagItems(); }
+            catch { }
+
+            for (int m = 0; m < KnownMachines.Length; m++)
+            {
+                string machineId = KnownMachines[m];
+                if (string.Equals(machineId, DnaMachineId, StringComparison.Ordinal)) continue;
+
+                var list = MachinePanels.RecipesFor(machineId);
+                if (list == null || list.Length == 0) continue;
+
+                for (int g = 0; g < list.Length; g++)
+                {
+                    var group = list[g];
+                    if (group == null || group.Variants == null) continue;
+
+                    groups++;
+
+                    var sources = new HashSet<string>(StringComparer.Ordinal);
+                    var products = new HashSet<string>(StringComparer.Ordinal);
+
+                    for (int v = 0; v < group.Variants.Length; v++)
+                    {
+                        var recipe = group.Variants[v];
+                        if (recipe == null) continue;
+
+                        // 用途方向：投入 / 模块 / 芯片
+                        AddIds(sources, recipe.Inputs);
+                        AddIds(sources, recipe.Modules);
+                        AddId(sources, recipe.Chip);
+
+                        // 来源方向：产物 + 投入物品里含的液体
+                        AddIds(products, recipe.Outputs);
+                        CollectInputLiquids(recipe.Inputs, products);
+                    }
+
+                    if (sources.Count == 0 && products.Count == 0) continue;
+
+                    index.Add(new MachineHit { MachineId = machineId, Group = group },
+                              sources.Count > 0 ? new List<string>(sources).ToArray() : null,
+                              products.Count > 0 ? new List<string>(products).ToArray() : null);
+                }
+            }
+
+            // 配方还没建好（Warmup 之前）时不缓存，下次查询重试
+            if (groups == 0) return;
+
+            _machineIndex = index;
+            _machineIndexGeneration = CatalogDataBuilder.Generation;
+
+            if (ModEntry.Log != null)
+                ModEntry.Log.Log("[machine] index groups=" + index.Count);
+        }
+
+        private static void AddIds(HashSet<string> set, string[] ids)
+        {
+            if (ids == null) return;
+            for (int i = 0; i < ids.Length; i++) AddId(set, ids[i]);
+        }
+
+        private static void AddId(HashSet<string> set, string id)
+        {
+            if (set == null || string.IsNullOrEmpty(id)) return;
+            set.Add(id);
+        }
+
+        /// <summary>投入物品里可能含的液体（搅拌机把成分倒进容器），按液体条目反查来源用。</summary>
+        private static void CollectInputLiquids(string[] inputs, HashSet<string> products)
+        {
+            if (inputs == null || products == null) return;
+
+            for (int i = 0; i < inputs.Length; i++)
+            {
+                string id = inputs[i];
+                if (string.IsNullOrEmpty(id)) continue;
+
+                // 投入本身就是液体条目（蒸发器 / 化学成型机）
+                if (LiquidCatalog.IsLiquidEntry(id))
+                {
+                    AddId(products, id.Substring(LiquidCatalog.EntryPrefix.Length));
+                    continue;
+                }
+
+                var entry = RecipeIndex.FindEntry(id);
+                var item = entry == null ? null : entry.Item;
+                if (item == null) continue;
+
+                try
+                {
+                    var parts = LiquidManager.Parts(item);
+                    foreach (var pair in parts) AddId(products, pair.Key);
+                }
+                catch { }
+
+                if (!string.IsNullOrEmpty(entry.LiquidTag)) AddId(products, entry.LiquidTag);
+            }
+        }
+
+        private static void CollectMachineHits(List<MachineHit> list,
+                                               Dictionary<string, List<MachinePanels.RecipeGroup>> hits)
+        {
+            if (list == null || hits == null) return;
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                var hit = list[i];
+                if (hit == null || hit.Group == null) continue;
+
+                List<MachinePanels.RecipeGroup> groups;
+                if (!hits.TryGetValue(hit.MachineId, out groups))
+                    hits[hit.MachineId] = groups = new List<MachinePanels.RecipeGroup>();
+
+                if (!groups.Contains(hit.Group)) groups.Add(hit.Group);
             }
         }
 
@@ -4197,7 +4212,6 @@ namespace ItemCatalog.UI
 
         private static List<string>[] _gunModSlots;
         private static string[] _gunModPinned;
-        private static int _gunModRoll;
 
         private static void RenderGunModsBlock(CustomUIBuilder builder, Category category, PageSlice slice)
         {
@@ -4212,7 +4226,7 @@ namespace ItemCatalog.UI
             if (_entry == null || string.IsNullOrEmpty(gunId)) return;
 
             _gunModSlots = BuildGunModSlots(gunId);
-            _gunModPinned = BuildGunModPinned(gunId);
+            _gunModPinned = BuildGunModPinned(gunId, _gunModSlots.Length);
 
             // 直接用机器页模板：左边保留分类名（原版「枪械模组」），右上角只放枪图标
             RenderMachinePageTemplate(
@@ -4221,13 +4235,13 @@ namespace ItemCatalog.UI
                 gunId,
                 null,
                 null,
-                delegate (VanillaMachinePanel panel) { return panel.BuildGunModShell(); },
+                delegate (VanillaMachinePanel panel) { return panel.BuildGunWindow(gunId); },
                 // 量尺寸前先用每个槽位里最大的配件占位：轮播小件时面板不缩
                 delegate (VanillaMachinePanel panel) { FillGunModLargest(); },
                 0f,
                 delegate (VanillaMachinePanel panel)
                 {
-                    _gunModRoll = 0;
+                    Carousel.Current.ResetSlots(_gunModSlots.Length);
                     FillGunModSlots();
                 },
                 delegate (VanillaMachinePanel panel)
@@ -4238,10 +4252,12 @@ namespace ItemCatalog.UI
                 });
         }
 
+        /// <summary>这把枪实际的槽（数量与顺序都来自它自己的原版窗口，见 <see cref="GunMods.SlotsFor"/>）。</summary>
         private static List<string>[] BuildGunModSlots(string gunId)
         {
-            var slots = new List<string>[GunMods.SlotCount];
-            for (int i = 0; i < slots.Length; i++) slots[i] = GunMods.Compatible(gunId, i);
+            int count = GunMods.SlotCountFor(gunId);
+            var slots = new List<string>[count];
+            for (int i = 0; i < count; i++) slots[i] = GunMods.Compatible(gunId, i);
             return slots;
         }
 
@@ -4249,9 +4265,9 @@ namespace ItemCatalog.UI
         /// 从配件反查时，把它固定在自己能装的槽位里（不参与轮播），
         /// 否则轮播到别的配件就看不到这件东西了。
         /// </summary>
-        private static string[] BuildGunModPinned(string gunId)
+        private static string[] BuildGunModPinned(string gunId, int count)
         {
-            var pinned = new string[GunMods.SlotCount];
+            var pinned = new string[count];
             if (!QueryTarget.Active || !GunMods.IsMod(QueryTarget.Item)) return pinned;
 
             for (int i = 0; i < pinned.Length; i++)
@@ -4298,7 +4314,10 @@ namespace ItemCatalog.UI
             return best;
         }
 
-        /// <summary>按当前轮播位置把 8 个槽填上配件；每个槽各自偏移一格，画面不会整排同步。</summary>
+        /// <summary>
+        /// 按当前轮播位置把 8 个槽填上配件。
+        /// 每个槽读自己的游标，互不牵连——不是「第 i 槽偏移 i 格」的整排顺序位移。
+        /// </summary>
         private static void FillGunModSlots()
         {
             if (_vanillaMachine == null || _gunModSlots == null) return;
@@ -4317,14 +4336,14 @@ namespace ItemCatalog.UI
                 var list = _gunModSlots[i];
                 if (list == null || list.Count == 0) continue;
 
-                int index = ((_gunModRoll + i) % list.Count + list.Count) % list.Count;
-                ids[i] = list[index];
+                int cursor = Carousel.Current.Slot(i, list.Count);
+                ids[i] = list[cursor];
             }
 
             _vanillaMachine.FillGunMods(ids);
         }
 
-        /// <summary>每秒推进一次枪械配件槽的轮播。</summary>
+        /// <summary>每秒推进一次枪械配件槽的轮播：每个槽各自前进一步（固定槽不参与）。</summary>
         private static void TickGunMods()
         {
             if (!IsOpen || _vanillaMachine == null || _gunModSlots == null) return;
@@ -4332,7 +4351,19 @@ namespace ItemCatalog.UI
             var category = CurrentCategory();
             if (category == null || category.Kind != CatGunMods) return;
 
-            _gunModRoll++;
+            if (Carousel.Current.SlotCount != _gunModSlots.Length)
+                Carousel.Current.ResizeSlots(_gunModSlots.Length);
+
+            for (int i = 0; i < _gunModSlots.Length; i++)
+            {
+                if (_gunModPinned != null && !string.IsNullOrEmpty(_gunModPinned[i])) continue;
+
+                var list = _gunModSlots[i];
+                if (list == null || list.Count == 0) continue;
+
+                Carousel.Current.AdvanceSlot(i, list.Count);
+            }
+
             FillGunModSlots();
             RefreshMachinePageHighlights();   // 重填会清掉旧绿底，必须补回来
         }
@@ -5028,28 +5059,10 @@ namespace ItemCatalog.UI
         }
 
         /// <summary>
-        /// 各机器只显示哪些面板（沿用原来手写壳的取舍，不把无关框加进来）。
-        /// 返回 null = 这台机器没有既定取舍，保留所有有角色的面板。
-        /// </summary>
-        private static string[] MachineRoles(string machineId)
-        {
-            switch (machineId)
-            {
-                case "furnace": return new[] { "module", "input", "output" };
-                case "blender": return new[] { "input", "container" };
-                case "chem_finisher": return new[] { "container", "output" };
-                case "evaporator": return new[] { "container", "distillate" };
-                case "hydroponic": return new[] { "module", "seed", "water", "output" };
-                case "desequencer": return new[] { "chip", "input", "output" };
-                case "printer": return new[] { "module", "input", "chip", "output" };
-                case "purifier": return new[] { "module", "container" };
-                case "projector": return new[] { "module" };
-                default: return null;
-            }
-        }
-
-        /// <summary>
         /// 机器页外壳：统一借用工厂造好的原版窗口（含模组对面板的修改）。
+        /// **不再按机器手写「显示哪些面板」**：全部面板先保留，
+        /// 填完样本后由 <c>VanillaMachinePanel.ApplyAutoVisibility</c> 按
+        /// 「面板里有没有样本物品」自动隐藏空的那些（电池 / 纸条 / 本配方用不到的槽）。
         /// 借用不到时才退回手写壳——手写壳只作为老版本 / 非标准窗口的兜底。
         /// </summary>
         private static bool BuildMachineShell(VanillaMachinePanel panel, string machineId)
@@ -5060,30 +5073,20 @@ namespace ItemCatalog.UI
             // 按用户要求只显示种子 / 空白盘 / 产出，继续用手写壳。
             if (machineId == "plant_dna_manipulator") return panel.BuildDnaManipulatorShell();
 
-            string[] roles = MachineRoles(machineId);
-
             // 演示用机器必须是**独立实例**：不能借用图鉴条目里的 Item，
             // 否则 Adopt/隐藏面板/放宽过滤器会改到图鉴自己的那份实例，
-            // 关窗或翻页时还会留下挂载状态。每次现建一个，随 VanillaMachinePanel 一起销毁。
+            // 关窗或翻页时还会留下挂载状态。AdoptFrom 负责现建 + 销毁，
+            // 与枪械配件页走同一条借用路径。
             var shellPerf = System.Diagnostics.Stopwatch.StartNew();
-            var demo = UI.CatalogWindow.CreatePreviewItem(machineId);
-            long tCreate = shellPerf.ElapsedMilliseconds;
-
-            bool adopted = demo != null && panel.AdoptOwned(demo, roles);
+            bool adopted = panel.AdoptFrom(machineId);
 
             if (ModEntry.Log != null && shellPerf.ElapsedMilliseconds >= 20)
             {
                 ModEntry.Log.Log("[perf] machine-shell " + machineId
-                                 + " create=" + tCreate
-                                 + " adopt=" + (shellPerf.ElapsedMilliseconds - tCreate)
-                                 + " total=" + shellPerf.ElapsedMilliseconds);
+                                 + " adopt=" + shellPerf.ElapsedMilliseconds);
             }
 
             if (adopted) return true;
-            if (demo != null)
-            {
-                try { demo.Destroy(); } catch { }
-            }
 
             if (ModEntry.Log != null)
                 ModEntry.Log.Log("[machine-page] " + machineId + ": adopt unavailable, using hand-written shell");
@@ -5095,6 +5098,7 @@ namespace ItemCatalog.UI
             if (machineId == "hydroponic") return panel.BuildHydroponicShell();
             if (machineId == "desequencer") return panel.BuildDesequencerShell();
             if (machineId == "printer") return panel.BuildPrinterShell();
+            if (machineId == "animal_cage") return panel.BuildAnimalCageShell();
 
             return false;
         }
@@ -5110,8 +5114,7 @@ namespace ItemCatalog.UI
             var variants = VariantsFor(group, filterVariants);
             if (variants == null || variants.Length == 0) return;
 
-            if (_vanillaVariant >= variants.Length) _vanillaVariant = 0;
-            var recipe = variants[_vanillaVariant];
+            var recipe = variants[Carousel.Current.Position("machine", variants.Length)];
             if (recipe == null) return;
 
             // 面板下方还要留的高度：搅拌机 / 化学制剂成型机 / 蒸发器的成分，水培机的变化说明
@@ -5152,7 +5155,7 @@ namespace ItemCatalog.UI
                 below,
                 delegate (VanillaMachinePanel panel)
                 {
-                    FillVanillaMachine(recipe, group.Purity);
+                    FillMachineRecipe(machineId, recipe, group.Purity);
                     if (string.Equals(machineId, "plant_dna_manipulator", StringComparison.Ordinal))
                         panel.FillDnaBlankDisk();
                 },
@@ -5648,6 +5651,23 @@ namespace ItemCatalog.UI
                                  recipe.OutputItem, recipe.InputItem, recipe.Chip);
         }
 
+        /// <summary>
+        /// 按机器类型填面板：动物笼的笼内 / 喂食器 / 自动屠宰槽走专用装填，
+        /// 其余机器仍是通用的投入 / 模块 / 产出。
+        /// </summary>
+        private static void FillMachineRecipe(string machineId, MachinePanels.Recipe recipe, string purity = null)
+        {
+            if (_vanillaMachine == null || recipe == null) return;
+
+            if (string.Equals(machineId, MachinePanels.AnimalCageId, StringComparison.Ordinal))
+            {
+                _vanillaMachine.FillAnimalCage(recipe.CageAnimal, recipe.CageDispenser, recipe.CageButcher);
+                return;
+            }
+
+            FillVanillaMachine(recipe, purity);
+        }
+
         /// <summary>每秒推进机器配方的轮播索引：配方组间独立，模块数多个时也单独轮。</summary>
         private static void TickMachineRecipes()
         {
@@ -5680,8 +5700,7 @@ namespace ItemCatalog.UI
             var variants = VariantsFor(group, filterVariants);
             if (variants == null || variants.Length <= 1) return;
 
-            _vanillaVariant = (_vanillaVariant + 1) % variants.Length;
-            var recipe = variants[_vanillaVariant];
+            var recipe = variants[Carousel.Current.Advance("machine", variants.Length)];
 
             // 顶部第二行「需要：质量 +X%」跟材料一起换，保持同一条配方的信息同步
             if (_machineQualityLabel != null)
@@ -5698,7 +5717,11 @@ namespace ItemCatalog.UI
 
             try
             {
-                FillVanillaMachine(recipe, group.Purity);
+                string machineId = category.Kind == CatMachine
+                    ? (_entry == null ? null : _entry.Id)
+                    : category.MachineId;
+
+                FillMachineRecipe(machineId, recipe, group.Purity);
                 // 高亮回调由机器页模板统一保存：重填会清掉旧绿底，统一补回来
                 RefreshMachinePageHighlights();
             }

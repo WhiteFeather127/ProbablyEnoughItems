@@ -34,9 +34,12 @@ namespace ItemCatalog.Catalog
     {
         private static bool _built;
 
-        /// <summary>物品 id → 含它的表（同一个物品在每张表里只出现一次）。</summary>
-        private static readonly Dictionary<string, List<LootTableInfo>> _byItem =
-            new Dictionary<string, List<LootTableInfo>>(StringComparer.Ordinal);
+        /// <summary>
+        /// 物品 id → 含它的表（同一个物品在每张表里只出现一次）。
+        /// 与 uses.csv / 机器配方共用 <see cref="RelationIndex{T}"/>：
+        /// 只有产物方向，来源方向传 null。
+        /// </summary>
+        private static RelationIndex<LootTableInfo> _lootIndex = new RelationIndex<LootTableInfo>();
 
         private static LootTableInfo[] _tables = new LootTableInfo[0];
 
@@ -48,9 +51,7 @@ namespace ItemCatalog.Catalog
             if (string.IsNullOrEmpty(itemId)) return Empty;
 
             EnsureBuilt();
-
-            List<LootTableInfo> list;
-            return _byItem.TryGetValue(itemId, out list) && list != null ? list : Empty;
+            return _lootIndex.ByProduct(itemId);
         }
 
         private static readonly List<LootTableInfo> Empty = new List<LootTableInfo>();
@@ -87,8 +88,8 @@ namespace ItemCatalog.Catalog
                 }
             }
 
-            List<LootTableInfo> tables;
-            if (_byItem.TryGetValue(itemId, out tables) && tables != null)
+            var tables = _lootIndex.ByProduct(itemId);
+            if (tables != null && tables.Count > 0)
             {
                 foreach (var pair in _boxPools)
                 {
@@ -204,7 +205,10 @@ namespace ItemCatalog.Catalog
 
         private static bool _boxPoolsLoaded;
 
-        /// <summary>开这个箱子要哪张卡（来自 `box_pools.csv` 第 3 列）；没写返回 null。</summary>
+        /// <summary>
+        /// 开这个箱子要哪张卡：自动探测（<see cref="ApplyBoxKeycards"/>）在前，
+        /// `box_pools.csv` 第 3 列作为手工覆盖。没写返回 null。
+        /// </summary>
         internal static string KeyForBoxId(string boxId)
         {
             if (string.IsNullOrEmpty(boxId)) return null;
@@ -560,6 +564,52 @@ namespace ItemCatalog.Catalog
                 ModEntry.Log.Log("[loot] box auto: " + _boxContents.Count + " boxes");
         }
 
+        /// <summary>
+        /// 自动探测出的「箱子 → 卡」（<see cref="BoxProbe"/> 扫 `LOCKED_CONTAINER_TAG`
+        /// 物品的 `LOCK_ID`，再查游戏的锁→卡字典）。
+        /// `box_pools.csv` 的 key 列是手工覆盖层：这里只补它没写的箱子。
+        /// </summary>
+        internal static void ApplyBoxKeycards(Dictionary<string, string> keycards)
+        {
+            if (keycards == null || keycards.Count == 0) return;
+
+            EnsureBoxPools();
+
+            int added = 0;
+
+            foreach (var pair in keycards)
+            {
+                if (string.IsNullOrEmpty(pair.Key) || string.IsNullOrEmpty(pair.Value)) continue;
+                if (_boxKeys.ContainsKey(pair.Key)) continue;
+
+                _boxKeys[pair.Key] = pair.Value;
+                added++;
+            }
+
+            if (ModEntry.Log != null)
+                ModEntry.Log.Log("[loot] box->key auto: +" + added + " (total " + _boxKeys.Count + ")");
+        }
+
+        /// <summary>
+        /// 所有登记过内容物或开启卡的箱子 id（自动探测 + CSV 覆盖）。
+        /// 开启配方（箱 + 卡 → 内容物）按这份清单建一次全局表。
+        /// </summary>
+        internal static List<string> KnownBoxes()
+        {
+            EnsureBoxPools();
+
+            var list = new List<string>();
+
+            foreach (var pair in _boxContents)
+                if (!list.Contains(pair.Key)) list.Add(pair.Key);
+
+            foreach (var pair in _boxKeys)
+                if (!list.Contains(pair.Key)) list.Add(pair.Key);
+
+            list.Sort(StringComparer.Ordinal);
+            return list;
+        }
+
         /// <summary>读 `Data/box_pools.csv`：箱子物品 id → 掉落池 id。</summary>
         private static void EnsureBoxPools()
         {
@@ -806,8 +856,31 @@ namespace ItemCatalog.Catalog
 
             _tables = tables.ToArray();
 
-            _byItem.Clear();
-            foreach (var pair in map) _byItem[pair.Key] = pair.Value;
+            // 把「物品 → 表」的临时 map 转成统一的 RelationIndex（只建产物方向）
+            var index = new RelationIndex<LootTableInfo>();
+            var perTable = new Dictionary<LootTableInfo, HashSet<string>>();
+
+            foreach (var pair in map)
+            {
+                var list = pair.Value;
+                if (list == null) continue;
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var table = list[i];
+                    if (table == null) continue;
+
+                    HashSet<string> ids;
+                    if (!perTable.TryGetValue(table, out ids))
+                        perTable[table] = ids = new HashSet<string>(StringComparer.Ordinal);
+
+                    ids.Add(pair.Key);
+                }
+            }
+
+            foreach (var pair in perTable) index.Add(pair.Key, null, new List<string>(pair.Value).ToArray());
+
+            _lootIndex = index;
 
             _built = true;
 
@@ -823,7 +896,7 @@ namespace ItemCatalog.Catalog
                                  + " ids=" + string.Join(",", all.ToArray()));
 
                 // 每张池的完整物品清单（真实 id）：对账用——
-                // 「某物品反查不到来源」时直接对照这份清单和 _byItem 的键
+                // 「某物品反查不到来源」时直接对照这份清单和 _lootIndex 的键
                 for (int i = 0; i < _tables.Length; i++)
                 {
                     var t = _tables[i];

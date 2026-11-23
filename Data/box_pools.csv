@@ -9,14 +9,17 @@
 # 列：box,pool,key
 #   box    箱子物品 id
 #   pool   掉落池 id，可写多个（`|` 分隔）。可用值看日志 `[loot] ... ids=…`
-#   key    开这个箱子要的卡物品 id，不需要卡就留空
+#   key    开这个箱子要的卡物品 id。**默认留空**：加载期会自动扫目录里所有
+#          `LOCKED_CONTAINER_TAG` 物品，读它的 `LOCK_ID`，再查游戏自己的
+#          「锁 id → 卡」字典（StoreClientList.lockToKeycard）得到卡 id。
+#          只有自动推导错过时才在这里手写覆盖。
 #
-# 卡的去处靠 `key` 列反查：哪张卡写在这里，它的「开启」页就列出对应箱子 + 内容。
+# 卡的去处靠这张表反查：哪张卡能开哪些箱子，它的「开启」页就列出对应箱子 + 内容。
 # 改完重启游戏生效，不用编译。
 
 box,pool,key
-med_box,,med_keycard
-sec_box,,sec_keycard
-eng_box,,eng_keycard
-service_box,,ser_keycard
-evidence_box,,sec_keycard
+med_box,,
+sec_box,,
+eng_box,,
+service_box,,
+evidence_box,,

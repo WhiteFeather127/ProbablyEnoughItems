@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using UnityEngine;
 
 namespace ItemCatalog.Catalog
 {
@@ -10,7 +9,7 @@ namespace ItemCatalog.Catalog
     ///
     /// 游戏没有拆解数据表：`GunHelper.DisassembleWeapon` 是一串按枪 id 写死的 if/else。
     /// 这里在**隔离的临时容器**里真跑一次这个方法，把掉出来的物品 id 记下来，
-    /// 写进 <c>gun_disassembly.txt</c>（游戏版本 / 模组版本 / 枪 id 集合任一变化就重探）。
+    /// 写进 <c>gun_disassembly.txt</c>（签名 / 格式版本 / 枪 id 集合任一变化就重探）。
     /// 模拟失败（系统没就绪、容器拒收、抛异常）时退回 <see cref="GunDisassembly"/> 的 IL 表。
     ///
     /// 安全约束：
@@ -24,6 +23,9 @@ namespace ItemCatalog.Catalog
     internal static class GunDisassemblyProbe
     {
         private const string CacheFile = "gun_disassembly.txt";
+
+        /// <summary>缓存格式版本：探测方式（拆枪流程 / 记录哪些产物）变了就 +1。</summary>
+        private const string CacheVersion = "1";
 
         private static readonly string[] Empty = new string[0];
 
@@ -221,7 +223,7 @@ namespace ItemCatalog.Catalog
                 string text = ModHelper.ReadModDataFileText(ModEntry.MOD_ID, CacheFile);
                 if (string.IsNullOrEmpty(text)) return false;
 
-                string game = null, mod = null, guns = null;
+                string sig = null, probe = null, guns = null;
                 var map = new Dictionary<string, string[]>(StringComparer.Ordinal);
 
                 var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
@@ -236,14 +238,16 @@ namespace ItemCatalog.Catalog
                     string key = line.Substring(0, eq);
                     string value = line.Substring(eq + 1);
 
-                    if (key == "game") game = value;
-                    else if (key == "mod") mod = value;
+                    if (key == "sig") sig = value;
+                    else if (key == "probe") probe = value;
                     else if (key == "guns") guns = value;
                     else map[key] = Split(value);
                 }
 
-                if (!string.Equals(game, Application.version, StringComparison.Ordinal)) return false;
-                if (!string.Equals(mod, ModVersion(), StringComparison.Ordinal)) return false;
+                // 游戏版本 + 所有启用模组的指纹（与箱子内容 / 枪械槽同一套签名）：
+                // 别的模组改了某把枪的拆解产物、但枪 id 集合没变时，旧缓存必须作废。
+                if (!string.Equals(probe, CacheVersion, StringComparison.Ordinal)) return false;
+                if (!string.Equals(sig, BoxProbe.Signature(), StringComparison.Ordinal)) return false;
                 if (!string.Equals(guns, signature, StringComparison.Ordinal)) return false;
 
                 _outputs = map;
@@ -265,8 +269,8 @@ namespace ItemCatalog.Catalog
             try
             {
                 var sb = new StringBuilder();
-                sb.Append("game=").Append(Application.version).Append('\n');
-                sb.Append("mod=").Append(ModVersion()).Append('\n');
+                sb.Append("sig=").Append(BoxProbe.Signature()).Append('\n');
+                sb.Append("probe=").Append(CacheVersion).Append('\n');
                 sb.Append("guns=").Append(signature).Append('\n');
 
                 foreach (var pair in _outputs)
@@ -301,12 +305,6 @@ namespace ItemCatalog.Catalog
                 if (id.Length > 0) list.Add(id);
             }
             return list.ToArray();
-        }
-
-        private static string ModVersion()
-        {
-            try { return typeof(ModEntry).Assembly.GetName().Version.ToString(); }
-            catch { return "?"; }
         }
 
         private static void Warn(string message)

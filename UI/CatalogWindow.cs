@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿using System;
+﻿﻿﻿﻿﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using ProbablyEnoughItems.Api;
@@ -5144,9 +5144,6 @@ namespace ItemCatalog.UI
             };
 
 
-        private static readonly Dictionary<string, int> _prebuiltCursor =
-            new Dictionary<string, int>(StringComparer.Ordinal);
-
         /// <summary>刮刮乐：只保留一张（奖品随机，不是有限可枚举的状态集）。</summary>
         private static bool IsScratcherEntry(ItemEntry entry)
         {
@@ -5718,11 +5715,11 @@ namespace ItemCatalog.UI
             if (!PrebuiltVariants.TryGetValue(id, out variants) || variants == null || variants.Length == 0)
                 return false;
 
-            int cursor;
-            _prebuiltCursor.TryGetValue(id, out cursor);
-            _prebuiltCursor[id] = cursor + 1;
+            string key = "prebuilt:" + id;
+            int cursor = Carousel.Current.Position(key, variants.Length);
+            Carousel.Current.Advance(key, variants.Length);
 
-            factory = variants[cursor % variants.Length];
+            factory = variants[cursor];
             return factory != null;
         }
 

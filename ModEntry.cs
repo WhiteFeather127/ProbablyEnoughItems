@@ -63,6 +63,9 @@ namespace ItemCatalog
             // 加载期捕获钩子：箱子内容与拆枪产物都靠它截获（只在探测窗口内生效）
             Catalog.LoadCapture.Install(MOD_ID);
 
+            // 枪械槽探测：借用槽的入格判定，记录它问了哪些 tag（同样只在捕获窗口内生效）
+            Catalog.IsTagCapture.Install(MOD_ID);
+
             try
             {
                 ModHelper.AddDebugFunction(MOD_ID, ModHelper.DEBUG_CATEGORY_SPECIAL,

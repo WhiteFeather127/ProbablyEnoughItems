@@ -40,23 +40,21 @@ namespace ItemCatalog.Catalog
     {
         private const string UsesCsvPath = "Data/uses.csv";
 
-        private static List<UseInfo> _all;
-        private static Dictionary<string, List<UseInfo>> _producing;   // 产物 id → 这些「使用」关系
-        private static Dictionary<string, List<UseInfo>> _using;       // 使用源 id → 这些「使用」关系
+        private static RelationIndex<UseInfo> _relations;              // uses.csv + 自动补充的使用关系
         private static Dictionary<string, List<UseInfo>> _tagUsing;    // 标签（不带 tag: 前缀）→ 这些「使用」关系
 
         /// <summary>谁能让我得到这件物品（来源侧）。</summary>
         internal static List<UseInfo> Producing(string itemId)
         {
             EnsureLoaded();
-            return Lookup(_producing, itemId);
+            return WithOpen(_relations.ByProduct(itemId), itemId, true);
         }
 
         /// <summary>这件物品被使用后能得到什么（去处侧），只按 id 精确匹配。</summary>
         internal static List<UseInfo> Using(string itemId)
         {
             EnsureLoaded();
-            return Lookup(_using, itemId);
+            return WithOpen(_relations.BySource(itemId), itemId, false);
         }
 
         /// <summary>
@@ -68,9 +66,9 @@ namespace ItemCatalog.Catalog
         {
             EnsureLoaded();
 
-            var byId = Lookup(_using, itemId);
+            var byId = _relations.BySource(itemId);
             if (item == null || _tagUsing == null || _tagUsing.Count == 0)
-                return byId;
+                return WithOpen(byId, itemId, false);
 
             List<UseInfo> merged = null;
             foreach (var pair in _tagUsing)
@@ -89,26 +87,98 @@ namespace ItemCatalog.Catalog
                 }
             }
 
-            return merged != null && merged.Count > 0 ? merged : byId;
+            return WithOpen(merged != null && merged.Count > 0 ? merged : byId, itemId, false);
         }
 
-        private static List<UseInfo> Lookup(Dictionary<string, List<UseInfo>> map, string key)
+        /// <summary>
+        /// 全局「开启」配方表：箱子（+ 卡）→ 可能开出的内容物，每个箱子一条。
+        ///
+        /// 配方是独立数据，不再从当前查询的物品反推：查箱子时它是「来源」，
+        /// 查卡时它是「来源」（开启工具），查内容物时它是「产物」。
+        /// 待自动探测完成（<see cref="Catalog.LootSource.KnownBoxes"/> 非空）后建一次，
+        /// 之后所有查询都只是在这张表里匹配。
+        /// </summary>
+        private static RelationIndex<UseInfo> OpenRecipes()
         {
-            if (map == null || string.IsNullOrEmpty(key)) return Empty;
+            if (_open != null) return _open;
 
-            List<UseInfo> list;
-            return map.TryGetValue(key, out list) && list != null ? list : Empty;
+            var boxes = LootSource.KnownBoxes();
+            if (boxes.Count == 0) return null;
+
+            var index = new RelationIndex<UseInfo>();
+
+            for (int i = 0; i < boxes.Count; i++)
+            {
+                string boxId = boxes[i];
+
+                var tables = LootSource.AsBox(boxId);
+                if (tables == null || tables.Count == 0) continue;
+
+                var produces = new HashSet<string>(StringComparer.Ordinal);
+                for (int t = 0; t < tables.Count; t++)
+                {
+                    var items = tables[t] == null ? null : tables[t].Items;
+                    if (items == null) continue;
+
+                    for (int k = 0; k < items.Count; k++)
+                    {
+                        var it = items[k];
+                        if (it == null || string.IsNullOrEmpty(it.Id)) continue;
+                        produces.Add(it.Id);
+                    }
+                }
+
+                if (produces.Count == 0) continue;
+
+                var sources = new List<string>(2) { boxId };
+                string keyId = LootSource.KeyForBoxId(boxId);
+                if (!string.IsNullOrEmpty(keyId)) sources.Add(keyId);
+
+                var produceList = new List<string>(produces);
+
+                index.Add(new UseInfo
+                {
+                    Sources = sources.ToArray(),
+                    Kind = "open",
+                    Produces = produceList.ToArray()
+                }, sources.ToArray(), produceList.ToArray());
+            }
+
+            _open = index;
+
+            if (ModEntry.Log != null)
+                ModEntry.Log.Log("[uses] open recipes=" + index.Count);
+
+            return _open;
         }
 
-        private static readonly List<UseInfo> Empty = new List<UseInfo>();
+        private static RelationIndex<UseInfo> _open;   // 箱子/卡的开启配方（全局表）
+
+        /// <summary>在查询结果后面补上全局开启配方里匹配的那几条（字典直查）。</summary>
+        private static List<UseInfo> WithOpen(List<UseInfo> baseList, string itemId, bool asProduct)
+        {
+            if (string.IsNullOrEmpty(itemId)) return baseList;
+
+            var open = OpenRecipes();
+            if (open == null || open.Count == 0) return baseList;
+
+            var hits = asProduct ? open.ByProduct(itemId) : open.BySource(itemId);
+            if (hits == null || hits.Count == 0) return baseList;
+
+            var merged = new List<UseInfo>(baseList);
+            for (int i = 0; i < hits.Count; i++)
+            {
+                if (!merged.Contains(hits[i])) merged.Add(hits[i]);
+            }
+
+            return merged;
+        }
 
         private static void EnsureLoaded()
         {
-            if (_all != null) return;
+            if (_relations != null) return;
 
-            _all = new List<UseInfo>();
-            _producing = new Dictionary<string, List<UseInfo>>(StringComparer.Ordinal);
-            _using = new Dictionary<string, List<UseInfo>>(StringComparer.Ordinal);
+            _relations = new RelationIndex<UseInfo>();
             _tagUsing = new Dictionary<string, List<UseInfo>>(StringComparer.Ordinal);
 
             string text = null;
@@ -171,28 +241,14 @@ namespace ItemCatalog.Catalog
                 // 画出来只会留下没有图标的文字格。
                 if (HasUnusedItem(info)) continue;
 
-                _all.Add(info);
+                _relations.Add(info, ExpandAliases(info.Sources), ExpandAliases(info.Produces));
 
-                for (int k = 0; k < info.Sources.Length; k++)
-                {
-                    Append(_using, info.Sources[k], info);
-                    AppendAlias(_using, info.Sources[k], info);
-                }
                 for (int k = 0; k < info.SourceTags.Length; k++)
-                    Append(_tagUsing, info.SourceTags[k], info);
-
-                if (info.Produces != null)
-                {
-                    for (int k = 0; k < info.Produces.Length; k++)
-                    {
-                        Append(_producing, info.Produces[k], info);
-                        AppendAlias(_producing, info.Produces[k], info);
-                    }
-                }
+                    AppendTag(info.SourceTags[k], info);
             }
 
             if (ModEntry.Log != null)
-                ModEntry.Log.Log("[uses] loaded " + _all.Count + " rows from " + UsesCsvPath);
+                ModEntry.Log.Log("[uses] loaded " + _relations.Count + " rows from " + UsesCsvPath);
 
             // 螺丝刀拆枪：能拆的枪从 ADV_GUN_TAG 自动来（含模组枪），
             // 每把枪的产出查 GunDisassembly（照抄 DisassembleWeapon 的 IL）。
@@ -239,19 +295,7 @@ namespace ItemCatalog.Catalog
                     Note = null
                 };
 
-                _all.Add(info);
-
-                for (int k = 0; k < info.Sources.Length; k++)
-                {
-                    Append(_using, info.Sources[k], info);
-                    AppendAlias(_using, info.Sources[k], info);
-                }
-
-                for (int k = 0; k < info.Produces.Length; k++)
-                {
-                    Append(_producing, info.Produces[k], info);
-                    AppendAlias(_producing, info.Produces[k], info);
-                }
+                _relations.Add(info, ExpandAliases(info.Sources), ExpandAliases(info.Produces));
             }
         }
 
@@ -317,12 +361,9 @@ namespace ItemCatalog.Catalog
                         Note = null
                     };
 
-                    _all.Add(info);
-
                     // 只进液体条目的「来源」索引：物品侧的正反查保持 id 精确匹配
                     // （配方 / uses.csv / 货单），不掺成分推导出来的关系。
-                    Append(_producing, product, info);
-                    AppendAlias(_producing, product, info);
+                    _relations.Add(info, null, ExpandAliases(new[] { product }));
                 }
             }
         }
@@ -363,18 +404,15 @@ namespace ItemCatalog.Catalog
                 Note = null
             };
 
-            _all.Add(info);
-
             // 两个 id 都登记：查滤片能看到微生物，查微生物液体能看到滤片
-            for (int k = 0; k < info.Sources.Length; k++)
-                Append(_using, info.Sources[k], info);
+            _relations.Add(info, ExpandAliases(info.Sources), null);
         }
 
         /// <summary>液体条目的来源里是否已经登记过这件物品（避免和 uses.csv 重复）。</summary>
         private static bool HasProduceSource(string product, string id)
         {
-            List<UseInfo> list;
-            if (_producing == null || !_producing.TryGetValue(product, out list) || list == null) return false;
+            var list = _relations == null ? null : _relations.ByProduct(product);
+            if (list == null) return false;
 
             for (int i = 0; i < list.Count; i++)
             {
@@ -427,28 +465,44 @@ namespace ItemCatalog.Catalog
         /// <summary>
         /// **正反查按真实物品 id**：别名 id（运行时改名瓶 mini_alcohol_bottle、
         /// 满装盒 full_*、占位 random_*、状态变体 _used…）额外以解析出的本体 id
-        /// 再登记一份（统一走 <see cref="LootSource.BaseItemId"/>）——
+        /// 一起登记（统一走 <see cref="LootSource.BaseItemId"/>）——
         /// 否则本体页（迷你瓶的「能从化学品拆包得到」）查不到这条记录。
         /// 多余登记无害：解析不出本体的 id 不会被查询。
         /// </summary>
-        private static void AppendAlias(Dictionary<string, List<UseInfo>> map, string id, UseInfo info)
+        private static string[] ExpandAliases(string[] ids)
         {
-            string baseId = LootSource.BaseItemId(id);
-            if (!string.IsNullOrEmpty(baseId) && baseId != id) Append(map, baseId, info);
-        }
+            if (ids == null || ids.Length == 0) return ids;
 
-        private static void Append(Dictionary<string, List<UseInfo>> map, string key, UseInfo info)
-        {
-            if (map == null || string.IsNullOrEmpty(key)) return;
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var list = new List<string>(ids.Length * 2);
 
-            List<UseInfo> list;
-            if (!map.TryGetValue(key, out list))
+            for (int i = 0; i < ids.Length; i++)
             {
-                list = new List<UseInfo>();
-                map[key] = list;
+                string id = ids[i];
+                if (string.IsNullOrEmpty(id)) continue;
+                if (seen.Add(id)) list.Add(id);
+
+                string baseId = LootSource.BaseItemId(id);
+                if (!string.IsNullOrEmpty(baseId) && baseId != id && seen.Add(baseId))
+                    list.Add(baseId);
             }
 
-            list.Add(info);
+            return list.ToArray();
+        }
+
+        /// <summary>标签来源登记（`tag:XXX` 这类「一整类目标」的关系）。</summary>
+        private static void AppendTag(string tag, UseInfo info)
+        {
+            if (_tagUsing == null || string.IsNullOrEmpty(tag) || info == null) return;
+
+            List<UseInfo> list;
+            if (!_tagUsing.TryGetValue(tag, out list))
+            {
+                list = new List<UseInfo>();
+                _tagUsing[tag] = list;
+            }
+
+            if (!list.Contains(info)) list.Add(info);
         }
 
         private static string Cell(string[] cols, int index)

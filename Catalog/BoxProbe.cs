@@ -67,7 +67,7 @@ namespace ItemCatalog.Catalog
         private const string CacheFile = "box_probe.txt";
 
         /// <summary>缓存格式版本：探测规则变化时 +1，旧缓存自动失效。</summary>
-        private const string CacheVersion = "4";
+        private const string CacheVersion = "5";
 
         private static string _signature;
 
@@ -85,9 +85,11 @@ namespace ItemCatalog.Catalog
             {
                 // 先读缓存：游戏版本 / 模组版本没变就直接用，跳过 5 秒左右的探测
                 Dictionary<string, List<string>> cached;
-                if (TryLoadCache(out cached))
+                Dictionary<string, string> cachedKeys;
+                if (TryLoadCache(out cached, out cachedKeys))
                 {
                     LootSource.ApplyBoxProbe(cached);
+                    LootSource.ApplyBoxKeycards(cachedKeys);
                     _done = true;
                     return;
                 }
@@ -180,9 +182,14 @@ namespace ItemCatalog.Catalog
                 }
 
                 LootSource.ApplyBoxProbe(results);
+
+                // 箱子 → 卡：扫目录里所有 LOCKED_CONTAINER_TAG 物品，按 LOCK_ID 查游戏的卡字典
+                var keycards = CollectKeycards();
+                LootSource.ApplyBoxKeycards(keycards);
+
                 _done = true;
 
-                SaveCache(results);
+                SaveCache(results, keycards);
             }
             finally
             {
@@ -349,12 +356,51 @@ namespace ItemCatalog.Catalog
         }
 
         /// <summary>
+        /// 箱子 → 卡：扫目录里所有带 <c>LOCKED_CONTAINER_TAG</c> 的物品，
+        /// 读它的 `LOCK_ID`，再用游戏的「锁 id → 卡」字典（`StoreClientList.lockToKeycard`，
+        /// <see cref="LockKeys"/> 负责反射读取与兜底）换成卡 id。
+        /// 因此新增锁容器 / 卡不需要改任何表。
+        /// </summary>
+        private static Dictionary<string, string> CollectKeycards()
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            var items = CatalogDataBuilder.Visible;
+            if (items == null) return map;
+
+            for (int i = 0; i < items.Count; i++)
+            {
+                var entry = items[i];
+                var item = entry == null ? null : entry.Item;
+                if (item == null || string.IsNullOrEmpty(entry.Id)) continue;
+
+                bool locked;
+                try { locked = item.IsTag("LOCKED_CONTAINER_TAG"); }
+                catch { locked = false; }
+                if (!locked) continue;
+
+                string key = null;
+                try { key = LockKeys.KeyForBox(item); }
+                catch { }
+
+                if (!string.IsNullOrEmpty(key)) map[entry.Id] = key;
+            }
+
+            if (ModEntry.Log != null)
+                ModEntry.Log.Log("[boxprobe] keycards=" + map.Count);
+
+            return map;
+        }
+
+        /// <summary>
         /// 读缓存：游戏与所有启用模组的哈希都一致才认。五个箱子少任何一个都重探
         /// （缓存是纯文本 `<c>key=value</c>`，产物用 <c>|</c> 分隔，和拆枪缓存同一套路）。
         /// </summary>
-        private static bool TryLoadCache(out Dictionary<string, List<string>> results)
+        private static bool TryLoadCache(out Dictionary<string, List<string>> results,
+                                        out Dictionary<string, string> keycards)
         {
             results = null;
+            keycards = new Dictionary<string, string>(StringComparer.Ordinal);
 
             try
             {
@@ -381,6 +427,13 @@ namespace ItemCatalog.Catalog
                     if (key == "sig") { sig = value; continue; }
                     if (key == "probe") { probe = value; continue; }
 
+                    if (key.StartsWith("boxkey:", StringComparison.Ordinal))
+                    {
+                        string box = key.Substring(7);
+                        if (box.Length > 0 && value.Length > 0) keycards[box] = value;
+                        continue;
+                    }
+
                     map[key] = Split(value);
                 }
 
@@ -393,7 +446,10 @@ namespace ItemCatalog.Catalog
                 results = map;
 
                 if (ModEntry.Log != null)
-                    ModEntry.Log.Log("[boxprobe] cache loaded: " + map.Count + " boxes");
+                {
+                    ModEntry.Log.Log("[boxprobe] cache loaded: " + map.Count + " boxes, "
+                                     + keycards.Count + " keycards");
+                }
 
                 return true;
             }
@@ -404,7 +460,8 @@ namespace ItemCatalog.Catalog
             }
         }
 
-        private static void SaveCache(Dictionary<string, List<string>> results)
+        private static void SaveCache(Dictionary<string, List<string>> results,
+                                      Dictionary<string, string> keycards)
         {
             if (results == null || results.Count == 0) return;
 
@@ -413,6 +470,15 @@ namespace ItemCatalog.Catalog
                 var sb = new StringBuilder();
                 sb.Append("sig=").Append(Signature()).Append('\n');
                 sb.Append("probe=").Append(CacheVersion).Append('\n');
+
+                if (keycards != null)
+                {
+                    foreach (var pair in keycards)
+                    {
+                        if (string.IsNullOrEmpty(pair.Key) || string.IsNullOrEmpty(pair.Value)) continue;
+                        sb.Append("boxkey:").Append(pair.Key).Append('=').Append(pair.Value).Append('\n');
+                    }
+                }
 
                 foreach (var pair in results)
                 {
@@ -454,8 +520,11 @@ namespace ItemCatalog.Catalog
             return list;
         }
 
-        /// <summary>签名只算一次：游戏本体哈希 + 所有启用模组的整包指纹。</summary>
-        private static string Signature()
+        /// <summary>
+        /// 游戏版本 + 所有启用模组指纹：缓存文件在同一套环境下才有效。
+        /// 内部共享给其它探测缓存（枪械槽），保证失效规则一致。
+        /// </summary>
+        internal static string Signature()
         {
             if (_signature != null) return _signature;
 
