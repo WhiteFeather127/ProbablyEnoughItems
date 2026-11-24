@@ -446,7 +446,7 @@ namespace ItemCatalog.UI
                     sigChecked = true;
 
                     if (!line.StartsWith("sig=", StringComparison.Ordinal)) return null;
-                    if (!string.Equals(line.Substring(4), CacheSignature.GameOnly, StringComparison.Ordinal))
+                    if (!string.Equals(line.Substring(4), CacheSignature.Value, StringComparison.Ordinal))
                         return null;
                     continue;
                 }
@@ -506,7 +506,7 @@ namespace ItemCatalog.UI
             {
                 int guns = 0;
                 var text = new System.Text.StringBuilder();
-                text.Append("sig=").Append(CacheSignature.GameOnly).Append('\n');
+                text.Append("sig=").Append(CacheSignature.Value).Append('\n');
 
                 foreach (var pair in _slots)
                 {

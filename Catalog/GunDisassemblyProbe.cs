@@ -241,9 +241,8 @@ namespace ItemCatalog.Catalog
                     else map[key] = Split(value);
                 }
 
-                // 只认游戏本体签名：拆枪产物由游戏自己的拆解逻辑决定，
-                // 换模组 dll 不该让它重探一次（每次十几秒）。
-                if (!string.Equals(sig, CacheSignature.GameOnly, StringComparison.Ordinal)) return false;
+                // 走完整环境签名（游戏 + 所有启用模组）：枪 / 配件 / 拆解产物都可能被别的模组改。
+                if (!string.Equals(sig, CacheSignature.Value, StringComparison.Ordinal)) return false;
                 if (!string.Equals(guns, signature, StringComparison.Ordinal)) return false;
 
                 _outputs = map;
@@ -265,7 +264,7 @@ namespace ItemCatalog.Catalog
             try
             {
                 var sb = new StringBuilder();
-                sb.Append("sig=").Append(CacheSignature.GameOnly).Append('\n');
+                sb.Append("sig=").Append(CacheSignature.Value).Append('\n');
                 sb.Append("guns=").Append(signature).Append('\n');
 
                 foreach (var pair in _outputs)

@@ -73,6 +73,14 @@ namespace ItemCatalog.Catalog
             /// <summary>物品 id → 关系 id（内容哈希）列表。</summary>
             internal readonly Dictionary<string, List<string>> ByItem =
                 new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+            /// <summary>
+            /// 与 <see cref="ByItem"/> 并行的去重集合：登记关系时用它做 O(1) 判重，
+            /// 不再对列表做 <c>Contains</c>（那是 O(桶长)，总成本会退化到 O(Σk²)）。
+            /// 解析缓存时按 ByItem 重建。
+            /// </summary>
+            internal readonly Dictionary<string, HashSet<string>> ByItemSeen =
+                new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         }
 
         private static bool _deferredCatalogLogged;
@@ -237,8 +245,8 @@ namespace ItemCatalog.Catalog
         }
 
         /// <summary>
-        /// 使用关系在关系表里的 parts：dissolve / contain 只挂在液体条目（产物侧）名下，
-        /// 与 UseIndex 原来的登记口径一致；否则容器物品的用途页会多出「装着某种液体」。
+        /// 使用关系在关系表里的 parts：contain 只挂液体条目（产物侧）；
+        /// 其余（含 dissolve）保留投入物品，物品自己的用途页才能反查到这条。
         /// </summary>
         private static List<ItemPart> UseRelationParts(UseInfo use)
         {
@@ -247,11 +255,9 @@ namespace ItemCatalog.Catalog
             var parts = use.Parts;
             if (parts == null) return null;
 
-            if (!string.Equals(use.Kind, "dissolve", StringComparison.Ordinal) &&
-                !string.Equals(use.Kind, "contain", StringComparison.Ordinal))
-            {
-                return parts;
-            }
+            // contain（容器装着液体）：只挂产物侧，否则容器用途页会多出「装着某液体」。
+            // dissolve（药片溶解）：保留投入物品，药片自己的用途页才能反查到这条。
+            if (!string.Equals(use.Kind, "contain", StringComparison.Ordinal)) return parts;
 
             var filtered = new List<ItemPart>();
             for (int i = 0; i < parts.Count; i++)
@@ -266,6 +272,8 @@ namespace ItemCatalog.Catalog
         /// <summary>枪槽探测补上了新的枪：让关系表在下次触发时重建。</summary>
         internal static void InvalidateRelations()
         {
+            _lookupCache.Clear();
+            _lookupCacheGeneration = -1;
             IndexManager.Invalidate(RelationIndexName);
         }
 
@@ -281,10 +289,28 @@ namespace ItemCatalog.Catalog
             return LookupRelation(itemId, true);
         }
 
+        private static readonly Dictionary<string, List<ItemRelationHit>> _lookupCache =
+            new Dictionary<string, List<ItemRelationHit>>(StringComparer.Ordinal);
+        private static int _lookupCacheGeneration = -1;
+
         private static List<ItemRelationHit> LookupRelation(string itemId, bool wantUse)
         {
+            if (string.IsNullOrEmpty(itemId)) return new List<ItemRelationHit>();
+
+            // 同一 generation 内关系表不变：同一物品的来源 / 用途只算一次。
+            // 详情页一次 BuildCategories 会问同一个 id 七八次，缓存后是 O(1)。
+            if (_lookupCacheGeneration != Generation)
+            {
+                _lookupCache.Clear();
+                _lookupCacheGeneration = Generation;
+            }
+
+            string cacheKey = (wantUse ? "u:" : "s:") + itemId;
+            List<ItemRelationHit> cached;
+            if (_lookupCache.TryGetValue(cacheKey, out cached)) return cached;
+
             var data = IndexManager.Get(RelationIndexName, BuildRelationCore);
-            if (data == null || string.IsNullOrEmpty(itemId)) return new List<ItemRelationHit>();
+            if (data == null) return new List<ItemRelationHit>();
 
             List<string> recordIds;
             if (!data.ByItem.TryGetValue(itemId, out recordIds) || recordIds == null)
@@ -319,6 +345,7 @@ namespace ItemCatalog.Catalog
                 }
             }
 
+            _lookupCache[cacheKey] = result;
             return result;
         }
 
@@ -351,15 +378,36 @@ namespace ItemCatalog.Catalog
             }
 
             // 按标签匹配的投入 / 收购（HOUSEHOLD_GOOD 这类）：
-            // 登记时已把成员物品写进 ByItem，这里要同样认标签，
-            // 否则「右键物品 → 用途 / 求购」取到关系后又在这一步被丢掉。
+            // 有 GameItem 时直接问物品自己（IsTag / IsGameItemType 都是 O(1)），
+            // 不要遍历 TagMembers（那是 O(该标签的物品数)，查询会退化）。
             if (part.Tags != null)
             {
-                for (int t = 0; t < part.Tags.Count; t++)
+                ItemEntry entry = null;
+                try { entry = RecipeIndex.FindEntry(itemId); } catch { }
+
+                if (entry != null && entry.Item != null)
                 {
-                    var members = TagMembers(part.Tags[t]);
-                    for (int k = 0; k < members.Count; k++)
-                        if (string.Equals(members[k], itemId, StringComparison.Ordinal)) return true;
+                    for (int t = 0; t < part.Tags.Count; t++)
+                    {
+                        string tag = part.Tags[t];
+                        if (string.IsNullOrEmpty(tag)) continue;
+
+                        try
+                        {
+                            if (entry.Item.IsTag(tag) || entry.Item.IsGameItemType(tag)) return true;
+                        }
+                        catch { }
+                    }
+                }
+                else
+                {
+                    // 目录外 id（预构建键等）没有 GameItem：回退到成员表。
+                    for (int t = 0; t < part.Tags.Count; t++)
+                    {
+                        var members = TagMembers(part.Tags[t]);
+                        for (int k = 0; k < members.Count; k++)
+                            if (string.Equals(members[k], itemId, StringComparison.Ordinal)) return true;
+                    }
                 }
             }
 
@@ -887,6 +935,15 @@ namespace ItemCatalog.Catalog
 
         private static void AddRelationItemOne(RelationIndexData data, string itemId, string recordId)
         {
+            HashSet<string> seen;
+            if (!data.ByItemSeen.TryGetValue(itemId, out seen))
+            {
+                seen = new HashSet<string>(StringComparer.Ordinal);
+                data.ByItemSeen[itemId] = seen;
+            }
+
+            if (!seen.Add(recordId)) return;
+
             List<string> list;
             if (!data.ByItem.TryGetValue(itemId, out list))
             {
@@ -894,7 +951,7 @@ namespace ItemCatalog.Catalog
                 data.ByItem[itemId] = list;
             }
 
-            if (!list.Contains(recordId)) list.Add(recordId);
+            list.Add(recordId);
         }
 
         // ---------------------------------------------------------------- 总缓存格式
@@ -1050,6 +1107,23 @@ namespace ItemCatalog.Catalog
             }
 
             for (int i = 0; i < dead.Count; i++) data.ByItem.Remove(dead[i]);
+
+            // 去重集合按解析出来的列表重建，建表/查询两端共用同一份索引。
+            data.ByItemSeen.Clear();
+            foreach (var pair in data.ByItem)
+            {
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                var list = pair.Value;
+                if (list != null)
+                {
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        if (!string.IsNullOrEmpty(list[i])) seen.Add(list[i]);
+                    }
+                }
+
+                data.ByItemSeen[pair.Key] = seen;
+            }
 
             if (legacy)
             {

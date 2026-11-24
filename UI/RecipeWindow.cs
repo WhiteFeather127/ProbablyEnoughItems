@@ -1,4 +1,4 @@
-﻿﻿﻿﻿using System;
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 
@@ -4037,6 +4037,17 @@ namespace ItemCatalog.UI
             bool hasProduces = use.Produces != null && use.Produces.Length > 0;
             bool hasTags = use.SourceTags != null && use.SourceTags.Length > 0;
 
+            bool dissolve = string.Equals(use.Kind, "dissolve", StringComparison.Ordinal);
+            bool contain = string.Equals(use.Kind, "contain", StringComparison.Ordinal);
+
+            // dissolve：成分按**药片实例**读（药片只含几毫升），产物格显示普通容器。
+            List<LiquidManager.Component> dissolveComponents = null;
+            if (dissolve)
+            {
+                var sourceEntry = sources.Count > 0 ? RecipeIndex.FindEntry(sources[0]) : null;
+                dissolveComponents = LiquidManager.ComponentsActual(sourceEntry == null ? null : sourceEntry.Item);
+            }
+
             // 统一走配方行：`来源 + 标签目标 → 产物`。
             // 标签源（ADV_GUN_TAG / STANDARD_MACHINE_TAG…）在 UsePageCount 里已经一格一页，
             // 这一页只取第 tagPage 件，和具体来源用「+」连在同一行里。
@@ -4057,7 +4068,20 @@ namespace ItemCatalog.UI
             if (hasProduces)
             {
                 for (int i = 0; i < use.Produces.Length; i++)
-                    outputs.Add(Formula(use.Produces[i]));
+                {
+                    string pid = use.Produces[i];
+
+                    // 溶解产物是液体：格子用普通容器，内容物交给液体管理器读取，
+                    // 不要显示 liquid:xxx 的满瓶代表条目。
+                    if (dissolve && LiquidCatalog.IsLiquidEntry(pid) &&
+                        !string.IsNullOrEmpty(LiquidManager.ContainerId))
+                    {
+                        outputs.Add(Formula(LiquidManager.ContainerId));
+                        continue;
+                    }
+
+                    outputs.Add(Formula(pid));
+                }
             }
 
             RenderFormulaRow(builder, inputs, outputs, 600);
@@ -4070,20 +4094,10 @@ namespace ItemCatalog.UI
                     builder.AddLabel(tagLine, "use_source_tags");
             }
 
-            bool dissolve = string.Equals(use.Kind, "dissolve", StringComparison.Ordinal);
-            bool contain = string.Equals(use.Kind, "contain", StringComparison.Ordinal);
-
-            if (dissolve || contain)
+            if (dissolve)
             {
-                // 两个方向共用同一份内容：产物液体的成分说明。
-                // 容器条目（contain）展示容器自身的内容物，化学品（dissolve）展示产物液体。
-                List<LiquidManager.Component> components;
-                if (contain)
-                {
-                    var sourceEntry = sources.Count > 0 ? RecipeIndex.FindEntry(sources[0]) : null;
-                    components = LiquidManager.Components(sourceEntry);
-                }
-                else
+                var components = dissolveComponents;
+                if (components == null || components.Count == 0)
                 {
                     string product = use.Produces != null && use.Produces.Length > 0
                         ? use.Produces[0] : null;
@@ -4091,6 +4105,11 @@ namespace ItemCatalog.UI
                 }
 
                 RenderLiquidComposition(builder, components);
+            }
+            else if (contain)
+            {
+                var sourceEntry = sources.Count > 0 ? RecipeIndex.FindEntry(sources[0]) : null;
+                RenderLiquidComposition(builder, LiquidManager.Components(sourceEntry));
             }
             else if (!string.IsNullOrEmpty(use.Note))
             {

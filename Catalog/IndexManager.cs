@@ -174,7 +174,6 @@ namespace ItemCatalog.Catalog
                 if (string.IsNullOrEmpty(text)) return;
 
                 string signature = null;
-                string generation = null;
                 string current = null;
                 var sections = new Dictionary<string, string>(StringComparer.Ordinal);
                 var body = new StringBuilder();
@@ -187,11 +186,6 @@ namespace ItemCatalog.Catalog
                     if (line.StartsWith("sig=", StringComparison.Ordinal))
                     {
                         signature = line.Substring(4).Trim();
-                        continue;
-                    }
-                    if (line.StartsWith("gen=", StringComparison.Ordinal))
-                    {
-                        generation = line.Substring(4).Trim();
                         continue;
                     }
                     if (line.StartsWith(SectionPrefix, StringComparison.Ordinal) &&
@@ -211,8 +205,6 @@ namespace ItemCatalog.Catalog
                 if (current != null) sections[current] = body.ToString();
 
                 if (!string.Equals(signature, CacheSignature.Value, StringComparison.Ordinal)) return;
-                if (!string.Equals(generation, CatalogDataBuilder.Generation.ToString(), StringComparison.Ordinal))
-                    return;
 
                 _sections.Clear();
                 foreach (var pair in sections) _sections[pair.Key] = pair.Value;
@@ -231,7 +223,6 @@ namespace ItemCatalog.Catalog
         {
             var text = new StringBuilder();
             text.Append("sig=").Append(CacheSignature.Value).Append('\n');
-            text.Append("gen=").Append(CatalogDataBuilder.Generation).Append('\n');
 
             foreach (var pair in _sections)
             {

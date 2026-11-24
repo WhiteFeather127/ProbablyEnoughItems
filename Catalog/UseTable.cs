@@ -465,9 +465,12 @@ namespace ItemCatalog.Catalog
                         Note = null
                     };
 
-                    // 只进液体条目的「来源」索引：物品侧的正反查保持 id 精确匹配
-                    // （配方 / uses.csv / 货单），不掺成分推导出来的关系。
-                    _relations.Add(info, null, ExpandAliases(new[] { product }));
+                    // 可溶物品（药片这类）：双向登记——药片自己的用途页要能看到「溶解出什么」。
+                    // 容器（contain）仍只进液体侧，否则容器用途页会冒出「装着某种液体」。
+                    if (soluble)
+                        _relations.Add(info, ExpandAliases(info.Sources), ExpandAliases(new[] { product }));
+                    else
+                        _relations.Add(info, null, ExpandAliases(new[] { product }));
                 }
             }
         }

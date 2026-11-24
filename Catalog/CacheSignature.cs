@@ -26,7 +26,6 @@ namespace ItemCatalog.Catalog
         private static bool _changed;
         private static bool _firstRun;
         private static string _value;
-        private static string _gameValue;
 
         /// <summary>本次启动的环境签名（内存缓存，只算一次）。</summary>
         internal static string Value
@@ -35,20 +34,6 @@ namespace ItemCatalog.Catalog
             {
                 Ensure();
                 return _value ?? "unknown";
-            }
-        }
-
-        /// <summary>
-        /// 只含游戏本体的签名（版本 + 程序集哈希）。
-        /// 给「探测缓存」用：枪槽 / 拆枪产物的探测结果只取决于游戏本体，
-        /// 换模组 dll 不该让它们重探一次（每次 20s 起步）。
-        /// </summary>
-        internal static string GameOnly
-        {
-            get
-            {
-                Ensure();
-                return _gameValue ?? "unknown";
             }
         }
 
@@ -101,7 +86,6 @@ namespace ItemCatalog.Catalog
             var text = new StringBuilder();
 
             string gamePart = "game=" + Application.version + ":" + GameHash();
-            _gameValue = gamePart;
             text.Append(gamePart);
 
             var mods = new List<string>();

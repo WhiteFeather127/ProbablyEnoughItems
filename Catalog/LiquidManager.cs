@@ -645,6 +645,50 @@ namespace ItemCatalog.Catalog
                               mainOnly, mainName);
         }
 
+        /// <summary>
+        /// 按物品的**实际液体总量**换算成分。
+        /// <see cref="Parts"/> 存的是千分比（0..10000），直接给 <see cref="Components"/>
+        /// 会把「药片里的 5 ml」显示成 10 ml（比例和）。
+        /// 这里用游戏自己的 <c>ChemicalHelper.GetTotalVolume</c>（µL）做总量，
+        /// 按比例分摊到每种液体，供药片溶解这类「只含几毫升」的使用页使用。
+        /// </summary>
+        internal static List<Component> ComponentsActual(GameItem item)
+        {
+            var parts = Parts(item);
+            if (parts.Count == 0) return new List<Component>();
+
+            int total = 0;
+            try { total = ChemicalHelper.GetTotalVolume(item); } catch { }
+            if (total <= 0) return Components(item);
+
+            int sum = 0;
+            foreach (var pair in parts) sum += pair.Value;
+            if (sum <= 0) return Components(item);
+
+            var result = new List<Component>();
+            var liquids = Liquid.Liquids;
+            if (liquids == null) return result;
+
+            for (int i = 0; i < liquids.Count; i++)
+            {
+                var liquid = liquids[i];
+                if (liquid == null || string.IsNullOrEmpty(liquid.identifier)) continue;
+
+                int ratio;
+                if (!parts.TryGetValue(liquid.identifier, out ratio) || ratio <= 0) continue;
+
+                result.Add(new Component
+                {
+                    Id = liquid.identifier,
+                    Name = NameOf(liquid.identifier),
+                    Amount = (int)((long)total * ratio / sum),
+                    Total = total
+                });
+            }
+
+            return result;
+        }
+
         /// <summary>成分检测器风格的总体积行。</summary>
         internal static string TotalText(int total)
         {
