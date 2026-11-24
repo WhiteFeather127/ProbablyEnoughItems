@@ -17,9 +17,10 @@
 
 | 文件 | 内容 |
 |---|---|
-| `Data/clients.csv` | 谁（阵营 → 客人）**以及这个客人卖什么**——第 12~16 列 |
+| `Data/clients.csv` | 谁（阵营 → 客人）**以及这个客人卖什么**——第 12~17 列 |
 | `Data/uses.csv` | 对物品本身动手的转化——开箱、撕包装、喝掉、涂抹、组合——与机器配方索引分开 |
 | `Data/box_pools.csv` | 开箱要的卡，以及没有内容物表时才用的兜底池。箱子内容物本身由 `Catalog/BoxProbe` 在加载阶段自动捕获（游戏自己的 `PreBuiltItemHelper.crateFillers`），不再有 CSV |
+| `Data/loot_pools.csv` | 掉落池 id → 它属于哪个地方，来源页据此按地点归类池子。第二列写 `item:<箱子 id>` 或游戏本地化键（`location_dumping_grounds`） |
 
 `Data/goods.csv` 已不再随包分发：它的列并入了 `clients.csv` 第 12~16 列。若文件夹里还残留一份，仍会被解析并与
 新列叠加（见文末），但新数据只写 `clients.csv`。
@@ -50,6 +51,7 @@ kind,id,name_key,location_id,fallback_key,profession,sprite
 | `exclude` | 14 | 从继承来的清单里剔掉指定 id |
 | `random_items` | 15 | IL 里只在部分情况下出现的 id（受随机数或天数条件保护），单独存放以便界面标成「可能出现」 |
 | `dynamic` | 16 | `commissary` = 商品运行时从存档货架读，本行只提供显示名 |
+| `buys_water` | 17 | 收购 `WATER` 时承认的水质档位（`pure` / `hq` / `base` / `ghost` …，`|` 分隔），抄自客人的 `willAcceptItem` 谓词。留空 = 任意水。`alias` / `unused` 行的这一列是「并入哪一行」的资料字段，整行运行时忽略 |
 
 注意：
 
@@ -75,4 +77,8 @@ kind,id,name_key,location_id,fallback_key,profession,sprite
 
 - **配方与用途**：运行时从游戏读取。
 - **配给站存货**：从存档读取，`clients.csv` 只贡献显示名。
-- **变体展开**（这件物品有多少种状态）：由代码判定，见 [API.zh-CN.md](API.zh-CN.md) §4.1。
+- **教程物品**（`PlayerStore.HandleSkipIntro`）：清单只以字符串字面量写在该方法体里，直接调用会改存档。
+  `Catalog/TutorialProbe.cs` 在玩家真正跳过开场时截获 id，缓存到
+  `ModData/probably_enough_items/tutorial_items.txt`；还没有缓存时回退到 IL 抄录的表。
+  图鉴里作为独立的「教程物品」来源页出现。
+- **变体展开**（这件物品有多少种状态）：由代码判定，且刻意写死在代码里，见 [API.zh-CN.md](API.zh-CN.md) §4.1。

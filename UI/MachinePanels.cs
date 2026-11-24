@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 
 using ItemCatalog.Catalog;
@@ -1025,6 +1025,52 @@ namespace ItemCatalog.UI
 
             RecipeGroup[] groups;
             return Recipes.TryGetValue(machineId, out groups) ? groups : null;
+        }
+
+        /// <summary>所有机器配方（静态表 + 动态机器），给统一关系索引聚合用。</summary>
+        internal static List<KeyValuePair<string, Recipe>> AllRecipes()
+        {
+            var list = new List<KeyValuePair<string, Recipe>>();
+            var seen = new HashSet<Recipe>();
+
+            foreach (var pair in Recipes)
+                CollectRecipes(list, seen, pair.Key, pair.Value);
+
+            for (int i = 0; i < DynamicMachineIds.Length; i++)
+                CollectRecipes(list, seen, DynamicMachineIds[i], RecipesFor(DynamicMachineIds[i]));
+
+            return list;
+        }
+
+        /// <summary>没有固定表、靠标签 / 目录动态生成的机器。</summary>
+        private static readonly string[] DynamicMachineIds =
+        {
+            "hydroponic",
+            "plant_dna_manipulator",
+            "desequencer",
+            "printer",
+            AnimalCageId
+        };
+
+        private static void CollectRecipes(List<KeyValuePair<string, Recipe>> list,
+                                           HashSet<Recipe> seen,
+                                           string machineId,
+                                           RecipeGroup[] groups)
+        {
+            if (string.IsNullOrEmpty(machineId) || groups == null) return;
+
+            for (int g = 0; g < groups.Length; g++)
+            {
+                var group = groups[g];
+                if (group == null || group.Variants == null) continue;
+
+                for (int v = 0; v < group.Variants.Length; v++)
+                {
+                    var recipe = group.Variants[v];
+                    if (recipe == null || !seen.Add(recipe)) continue;
+                    list.Add(new KeyValuePair<string, Recipe>(machineId, recipe));
+                }
+            }
         }
 
         private static RecipeGroup[] _hydroponicGroups;

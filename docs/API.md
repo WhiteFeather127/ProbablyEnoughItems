@@ -6,7 +6,7 @@
 
 Other mods use this API to tell the catalog two things:
 
-1. **how many states this item has** (enumerable states are expanded into cells in order; only non-enumerable ones are randomly sampled);
+1. **how many states this item has** (enumerable states are expanded into separate cells, one fixed variant each);
 2. **which entries outside the registries** should appear in the catalog.
 
 | Item | Value |
@@ -99,7 +99,7 @@ internal sealed class BerryVariants : ProbablyEnoughItems.Api.ICatalogVariantPro
 
     public GameItem CreateVariant(int index)
     {
-        var item = DirectoryMaster.Item("wine_berry");
+        var item = DirectoryMaster.Item("wine_berry");   // fresh instance; never keep or cache it
         ApplyQuality(item, index);      // must be deterministic: same index, equivalent result
         return item;
     }
@@ -139,15 +139,15 @@ What `NotifyItemsChanged` means:
   later idle tick; multiple calls in the same frame collapse into one.
 - the catalog does **not register directories for you**. For the game to rebuild an item from its id (save loading and
   drag-and-drop both rely on it) you must call `DirectoryMaster.AddDirectory` + `Add(id, factory)` yourself.
-- only "new items / more variants" is supported; removing an existing item triggers a full rebuild the next time the
-  catalog opens (slower).
+- only "new items / more variants" is supported; removing an existing entry triggers a full rebuild on the next idle
+  tick (slower).
 
 ### 3.2 `ICatalogVariantProvider`
 
 | Member | Description |
 |---|---|
 | `string ItemId` | Target item id, identical to the registry id |
-| `int VariantCount` | Number of variants; **0 means unknown**, the catalog falls back to its built-in rules |
+| `int VariantCount` | Number of variants; `<= 1` means the provider does not expand this item (the catalog's built-in branches may still apply). The catalog never auto-probes unknown items |
 | `GameItem CreateVariant(int index)` | Build the variant at `index` (`0 <= index < VariantCount`); return `null` if that index is unavailable |
 
 `CreateVariant` must be **deterministic**: the catalog expands states in order, so the same `index` must produce an
@@ -162,8 +162,9 @@ equivalent result every time. Do not roll random numbers in there — that defea
 | `string ModId` | Owning mod id, used for logging only |
 | `List<GameItem> GetExtraItems()` | Items to display; may return `null` or an empty list |
 
-`GetExtraItems` is called when **a snapshot is built** (startup warm-up, and the change detection performed when the
-catalog opens). Keep it cheap: if items must be created, create and cache them during `Init`.
+`GetExtraItems` is called when **a snapshot is built or extended** (startup warm-up, the change detection performed
+when the catalog opens, and the idle-tick merge after `NotifyItemsChanged`). Keep it cheap: if items must be created,
+create and cache them during `Init`.
 
 You own the returned items; the catalog only reads them and never destroys them.
 
@@ -228,24 +229,29 @@ Isolation helpers:
 ### 4.1 Variant expansion: finite sets become multiple cells
 
 Items with `VariantCellCount > 1` are **expanded into N cells** (JEI-style matching stacks), one fixed variant per
-cell, with a `#N` suffix on the display name. Decision order (`CatalogWindow.VariantCellCount`):
+cell. The decision order (`CatalogWindow.VariantCellCount`) is entirely hardcoded — there is no sampling and no
+automatic state discovery:
 
 | Order | Source | Cell count |
 |---|---|---|
 | ① | `ICatalogVariantProvider` | `VariantCount` (**no upper clamp**; keep the number sane yourself) |
-| ② | Built-in special forms | scratch cards 1; cigarettes 5; immunity injectors 5; food stamps 30 (5 denominations × 6 states) |
-| ③ | Modules | footprint shape count × `ModuleEffectCells.Length` |
-| ④ | Berries | `BerryForms.Length` |
-| ⑤ | Hardcoded generator tables | table length (expanded only when > 1) |
-| — | Everything else (continuously random) | 1 cell, re-rolled every second |
+| ② | Crop quality tiers (`CropVariants`) | 2–4 |
+| ③ | Scratch cards | 1 (their prize is random, so they are never expanded) |
+| ④ | Cigarettes (`packet_red_cigarette`) | 5 (genuine + 4 issue variants) |
+| ⑤ | Immunity injectors (`large_purple_injector`) | 6 (genuine + 5 issue variants) |
+| ⑥ | Food stamps (`food_stamp`) | 30 (5 denominations × 6 states) |
+| ⑦ | Modules (`system_module_*` in the built-in generator table) | footprint shape count × `ModuleEffectCells.Length` (11) |
+| ⑧ | Berries (`BERRY_TAG`) | `BerryForms.Length` (6) |
+| ⑨ | Hardcoded generator table (`ribwich`, `node_medium`) | table length (expanded only when > 1) |
+| — | Everything else (continuously random) | 1 fixed cell; it is **not** re-rolled |
 
 So **registering a provider takes over the display of that item**; it is more accurate than the built-in rules and
 wastes fewer cells. Variant instances are created lazily while rendering and cached per cell (startup warm-up does
-not mass-create items).
+not mass-create items). A single-cell entry keeps the one instance it was built with.
 
 ### 4.2 How extra entries are merged
 
-When a snapshot is built:
+When a snapshot is built (or extended):
 
 1. entries are built from the registries (each `ItemDirectory`) first;
 2. then the results of `GetExtraItems()` are merged in, skipping:
@@ -253,17 +259,19 @@ When a snapshot is built:
    - ids supplied by several providers → only the first occurrence is kept;
 3. the merged list is sorted by id, so extra entries naturally land next to their prefix.
 
+Late additions reuse the same rules: only the new ids are created, existing entries are left untouched.
+
 ### 4.3 When data is pulled again
 
 | Moment | Behaviour |
 |---|---|
-| Game finished loading | Pre-built snapshot + icon warm-up |
-| Catalog opened | `HasNewItems()` check: registry ids changed, provider count changed, or the extra-item set changed → full rebuild |
-| While running | One full-page refresh per second; continuously random values re-roll, icons swap on demand |
+| Game finished loading | Snapshot + indexes + variant expansion + first-page icons, all in one pass |
+| Catalog opened | `HasNewItems()` check: registry ids changed, provider count changed, or the extra-item set changed → new items are appended incrementally; a full rebuild only happens when entries disappear |
+| While running | No periodic refresh: the per-frame tick only finishes pending redraws, sliced cell building and overlay retries |
 | `NotifyItemsChanged` called | Incremental merge on the next idle tick, then `CatalogRefreshed` |
 
-Registering late (for example from `OnGameLoadedLate`) is safe: the provider-count change triggers a rebuild the next
-time the catalog opens.
+Registering late (for example from `OnGameLoadedLate`) is safe: the provider-count change triggers an incremental
+append the next time the catalog checks for changes.
 
 ---
 
@@ -276,8 +284,8 @@ time the catalog opens.
 2. **Do not cache `GameItem` references.** Build a fresh item for each variant.
 3. **Do not mutate global state in `CreateVariant`** (RNG, `PlayerStore`, static tables).
 4. **Call on the main thread**; callbacks also run on the main thread, so do not spawn threads.
-5. The catalog re-rolls with an isolated random stream (`UnityEngine.Random.state` is restored afterwards); your
-   implementation should not advance the game's random stream either.
+5. Preview instances are created with an isolated random stream (`UnityEngine.Random.state` is restored afterwards);
+   there is no periodic re-roll, and your implementation should not advance the game's random stream either.
 6. Do not call `DirectoryMaster.Item` and then freely mutate the shared instance — the catalog goes through
    `CreatePreviewItem` (restoring RNG / uniqueId). Third parties should at least "create fresh, do not retain, do not
    mutate globals".
@@ -290,7 +298,7 @@ time the catalog opens.
 |---|---|---|
 | Two `ID: xxx` lines in the tooltip | You bundled `ProbablyEnoughItems.dll` and listed it in `<Assemblies>` | Use the bridge instead; remove that `<Assembly>` and the bundled copy |
 | Log says `unlisted-reference: xxx.dll -> references ProbablyEnoughItems` | Compile-time reference without an `<Assemblies>` entry | Switch to reflection (recommended) or drop the compile-time reference |
-| Registration succeeds but the catalog does not change | `VariantCount` returns 0; id typo; or the catalog already built its snapshot and the provider count did not change | Check the id; register during `Init`, or call `NotifyItemsChanged` |
+| Registration succeeds but the catalog does not change | `VariantCount` returns 0 or 1; id typo; or the catalog already built its snapshot and the provider count did not change | Check the id; register during `Init`, or call `NotifyItemsChanged` |
 | Extra items never appear | That id already exists in a registry (the registry wins) | Use a dedicated id |
 | Missing icon | Wrong `spriteAtlasPath` / `spritePath` | Copy the values from a vanilla item |
 | `GetMethod("RegisterVariantProvider", …)` returns null | Catalog older than v2 | The delegate overload requires `ApiVersion >= 2` |

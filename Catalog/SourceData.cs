@@ -40,6 +40,126 @@ namespace ItemCatalog.Catalog
         /// </summary>
         internal string[] BuysWater;
         internal string[] Items;      // 该来源可能摆出的全部物品 id（固定 + 随机，已去重）
+
+        private List<ItemPart> _parts;
+
+        /// <summary>
+        /// 和其它关系同一套角色视图：他卖的货 → Output；他收购的具体物品 / 标签 → Material。
+        /// 惰性生成，Items / BuysItems 仍是查询用的主数据。
+        /// </summary>
+        internal List<ItemPart> Parts
+        {
+            get
+            {
+                if (_parts != null) return _parts;
+
+                _parts = new List<ItemPart>();
+
+                if (Items != null)
+                {
+                    for (int i = 0; i < Items.Length; i++)
+                    {
+                        string id = Items[i];
+                        if (string.IsNullOrEmpty(id)) continue;
+
+                        _parts.Add(new ItemPart
+                        {
+                            Role = PartRole.Output,
+                            Id = id,
+                            Amount = 1
+                        });
+                    }
+                }
+
+                if (BuysItems != null)
+                {
+                    for (int i = 0; i < BuysItems.Length; i++)
+                    {
+                        string id = BuysItems[i];
+                        if (string.IsNullOrEmpty(id)) continue;
+
+                        _parts.Add(new ItemPart
+                        {
+                            Role = PartRole.Material,
+                            Id = id,
+                            Amount = 1
+                        });
+                    }
+                }
+
+                if (BuysTags != null)
+                {
+                    for (int i = 0; i < BuysTags.Length; i++)
+                    {
+                        string tag = BuysTags[i];
+                        if (string.IsNullOrEmpty(tag)) continue;
+
+                        _parts.Add(new ItemPart
+                        {
+                            Role = PartRole.Material,
+                            Tags = new List<string> { tag },
+                            DisplayName = tag,
+                            Amount = 1
+                        });
+
+                        // 「收 WATER」这类液体标签：液体条目本身也算他收的东西，
+                        // 否则查 water / 杂质时看不到这些客人（和 WantedBy 的液体规则对齐）。
+                        string liquidId = MatchLiquidId(tag);
+                        if (!string.IsNullOrEmpty(liquidId))
+                        {
+                            _parts.Add(new ItemPart
+                            {
+                                Role = PartRole.Material,
+                                Id = LiquidCatalog.EntryPrefix + liquidId,
+                                Amount = 1
+                            });
+                        }
+                    }
+                }
+
+                // 卖水的容器：液体条目本身也是一条来源（查 water / 水里混的杂质时能看到这家店）。
+                var waterLiquids = LiquidManager.WaterLiquids(Water);
+                for (int w = 0; w < waterLiquids.Count; w++)
+                {
+                    string liquidId = waterLiquids[w];
+                    if (string.IsNullOrEmpty(liquidId)) continue;
+
+                    _parts.Add(new ItemPart
+                    {
+                        Role = PartRole.Output,
+                        Id = LiquidCatalog.EntryPrefix + liquidId,
+                        Amount = 1
+                    });
+                }
+
+                return _parts;
+            }
+        }
+
+        /// <summary>标签是不是某种液体（WATER → water）；是就返回液体 id。</summary>
+        private static string MatchLiquidId(string tag)
+        {
+            if (string.IsNullOrEmpty(tag)) return null;
+
+            try
+            {
+                var liquids = Liquid.Liquids;
+                if (liquids == null) return null;
+
+                for (int i = 0; i < liquids.Count; i++)
+                {
+                    var liquid = liquids[i];
+                    if (liquid != null &&
+                        string.Equals(liquid.identifier, tag, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return liquid.identifier;
+                    }
+                }
+            }
+            catch { }
+
+            return null;
+        }
     }
 
     /// <summary>
@@ -93,12 +213,19 @@ namespace ItemCatalog.Catalog
 
         private static int _lastCommissaryCount = -1;
 
+        /// <summary>本索引在 <see cref="IndexManager"/> 里的名字 / 建好后的占位值。</summary>
+        private const string IndexName = "sources";
+        private static readonly object IndexMarker = new object();
+
         // ---------------------------------------------------------------- 建索引
 
         internal static void Build()
         {
-            if (Built) return;
+            IndexManager.Get(IndexName, BuildCore);
+        }
 
+        private static object BuildCore()
+        {
             _byItem.Clear();
             AllSources.Clear();
             ClientTypeCount = 0;
@@ -108,6 +235,11 @@ namespace ItemCatalog.Catalog
             var watch = System.Diagnostics.Stopwatch.StartNew();
 
             AddHardcoded();
+
+            // 教程物品：跳过开场时 HandleSkipIntro 直接塞进背包的固定一批。
+            // 清单只存在于方法体的 IL 里，由 TutorialProbe 截获并缓存（无缓存时用回退表）。
+            try { AddTutorialSource(); }
+            catch (Exception e) { Warn("tutorial: " + e.Message); }
 
             int commissary = 0;
             try { commissary = AddCommissary(); }
@@ -127,6 +259,8 @@ namespace ItemCatalog.Catalog
                     ClientTypeCount, LocationCount, commissary, _byItem.Count, RandomItemCount,
                     watch.ElapsedMilliseconds));
             }
+
+            return IndexMarker;
         }
 
         /// <summary>
@@ -356,6 +490,42 @@ namespace ItemCatalog.Catalog
             return true;
         }
 
+        /// <summary>
+        /// 教程物品：跳过开场时 <c>PlayerStore.HandleSkipIntro</c> 直接塞进背包的那一批。
+        ///
+        /// 这份清单不在任何数据表里——只以 <c>ldstr</c> 形式写在方法体里，游戏也没有
+        /// 可安全调用的读取入口。所以清单来自 <see cref="TutorialProbe"/>
+        /// （真实跳过开场时截获 + 缓存；没捕获过时用 IL 抄录的回退表）。
+        ///
+        /// 归到 <see cref="SourceKind.Location"/>：它没有客人身份，但确实是
+        /// 「从一个固定来源拿到」，来源页上以「教程物品」单独一页出现。
+        /// </summary>
+        private static void AddTutorialSource()
+        {
+            string[] ids = TutorialProbe.Items;
+            if (ids == null || ids.Length == 0) return;
+
+            var source = new SourceInfo
+            {
+                Kind = SourceKind.Location,
+                SourceId = "tutorial_grant",
+                Name = ModEntry.T("src_tutorial"),
+                Items = ids
+            };
+
+            AllSources.Add(source);
+            LocationCount++;
+
+            for (int i = 0; i < ids.Length; i++)
+            {
+                Add(ids[i], source);
+                AddAliasSource(ids[i], source);
+            }
+
+            if (ModEntry.Log != null)
+                ModEntry.Log.Log("[sources] tutorial items=" + ids.Length);
+        }
+
         /// <summary>配给站：读存档里的货架（价格 / 库存 / 补货都有）。</summary>
         /// <returns>加进来的商品数。</returns>
         private static int AddCommissary()
@@ -533,6 +703,7 @@ namespace ItemCatalog.Catalog
         internal static void Invalidate()
         {
             Built = false;
+            IndexManager.Invalidate(IndexName);
         }
 
         // ---------------------------------------------------------------- 日志

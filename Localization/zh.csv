@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿btn_open,图鉴
+﻿﻿btn_open,图鉴
 win_title,物品图鉴
 count,共 {0} 项
 page,{0} / {1}
@@ -16,6 +16,7 @@ src_clients,客人
 src_sold,售出
 src_wanted,求购
 src_locations,地点商店
+src_tutorial,教程物品
 src_client_supplier,补给跑者
 src_client_scavenger,拾荒者
 src_doctor_shop,博士（店铺）

@@ -16,14 +16,14 @@ A JEI-style item catalog for *Probably Stolen*. It lays every item in the game �
 
 ## Features
 
-- **Full catalog**: scans the game's 27 `ItemDirectory` instances plus whatever other mods inject through the API; the `UnusedDirectory` and debug items are hidden by default.
-- **Search**: filters by name or item id as you type.
+- **Full catalog**: scans every `ItemDirectory` the game registers, plus whatever other mods inject through the API; `UnusedDirectory` and debug items are hidden by default. Liquids (one full bottle each) and written DNA disks also get their own entries.
+- **Search**: filters by name, item id, tag or item type as you type.
 - **Native tooltips**: hovering goes through the game's own tooltip chain, with an extra `ID: xxx` line; containers also show their content and impurity ranges.
 - **Sources and uses**: in the detail window, left-click shows *where this item comes from* (customers, shops, loot tables, machines, farming …), right-click shows *what it is used for*.
-- **State expansion**: enumerable states become separate cells — cigarettes 5, immunity injectors 5, food stamps 30 (5 denominations × 6 states), modules "footprint shape × effect", berries 6 forms — while continuously random values stay in one cell and are re-rolled every second.
+- **State expansion**: enumerable states become separate cells instead of cycling — cigarettes 5 (genuine + 4 flaw variants), immunity injectors 6 (genuine + 5 flaws), food stamps 30 (5 denominations × 6 states), crops 2–4 quality tiers, modules "footprint shape × effect" (11 effect cells), berries 6 forms. Continuously random values stay in one fixed cell and are **not** re-rolled.
 - **Source pages**: one page per source, with the faction heading, the customer portrait (multiple looks cycling every second) and every item that source can put on the table; containers reflect the water **that specific customer** fills them with, down to the bottle body.
 - **Cheat mode**: tick it and drag an item straight out of the catalog; drag an item onto the catalog to delete it.
-- **Extension API**: other mods can register variants and extra entries through plain reflection, with zero dependencies.
+- **Extension API**: other mods can register variants and extra entries through plain reflection, with zero dependencies; runtime-added items are picked up via `NotifyItemsChanged`, and `CatalogVariantKit` exposes the same enum tables and isolation helpers the catalog itself uses.
 
 ## Install
 

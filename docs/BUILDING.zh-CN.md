@@ -9,7 +9,8 @@
 - 已安装《Probably Stolen》（游戏目录自动解析：优先 `PROBABLY_STOLEN_DIR` 环境变量，其次 Steam 注册表；也可用 `-p:GameDir=<游戏目录>` 覆盖）
 - .NET SDK ≥ 6
 - 编译期引用全部取自游戏的 `Probably Stolen_Data\Managed`，且不会复制进产物：
-  `Assembly-CSharp`、`UnityEngine`、`UnityEngine.CoreModule`、`Unity.TextMeshPro`、`Newtonsoft.Json`、`0Harmony`
+  `Assembly-CSharp`、csproj 里列出的 Unity 模块（`Core`、`UI`、`TextRendering`、`UIModule`、`InputLegacy`、
+  `ImageConversion`、`Audio`）、`Unity.TextMeshPro`、`Newtonsoft.Json`、`0Harmony`
 
 ## 构建
 
@@ -17,7 +18,8 @@
 # Debug：只编译，不往游戏目录写任何东西
 dotnet build
 
-# Release：编译后把 dll + manifest + Localization\ + Data\ 复制到 <游戏>\Mods\ProbablyEnoughItems
+# Release：编译后把 dll + manifest + preview/button 图 + Localization\ + Data\ 复制到
+# <游戏>\Mods\ProbablyEnoughItems
 dotnet build -c Release
 
 # 游戏装在别处（两种配置都适用）
@@ -35,8 +37,9 @@ dotnet build -c Release -p:GameDir="<游戏目录>"
 .\install.ps1 -GameDir "<游戏目录>" -Configuration Release
 ```
 
-`install.ps1` 发现 dll 不存在时会先编译，然后把 `ProbablyEnoughItems.dll`、`manifest.xml`、
-`Localization\*.csv` 与 `Data\*.csv` 复制到 `<游戏>\Mods\ProbablyEnoughItems\`。
+`install.ps1` 发现 dll 不存在时会先编译，然后把 `ProbablyEnoughItems.dll`、`manifest.xml`、`preview.png`、
+`Localization\*.csv` 与 `Data\*.csv` 复制到 `<游戏>\Mods\ProbablyEnoughItems\`。Release 的 MSBuild 目标
+还会额外复制 `button.png`（图鉴按钮图标）。
 
 ## 安装后的目录
 
@@ -45,11 +48,13 @@ dotnet build -c Release -p:GameDir="<游戏目录>"
 ├── ProbablyEnoughItems.dll
 ├── manifest.xml
 ├── preview.png
+├── button.png
 ├── Localization\{en,zh,ru}.csv
-└── Data\{clients,uses,box_pools}.csv
+└── Data\{clients,uses,box_pools,loot_pools}.csv
 ```
 
 `preview.png` 是模组菜单里的横幅；发布到创意工坊后优先显示物品的 `previewfile` 图，这一份只在离线或没有工坊图时使用。
+`button.png` 是运行时读取的游戏内图鉴按钮图标。
 
 这个目录里不应该有别的东西——尤其不要把 dll 换个名字再放一份，加载器会把它当成另一个模组再加载一次。
 
@@ -75,26 +80,37 @@ dotnet build -c Release -p:GameDir="<游戏目录>"
 
 | 关键字 | 含义 |
 |---|---|
-| `[warmup]` | 图鉴快照已建好、图标预热完成（含耗时） |
-| `[variants]` | 变体展开判定 |
+| `[warmup]` | 图鉴快照已建好、变体已展开、第一页图标预热完成（含耗时） |
+| `[build]` | 收到变更通知后的增量补入或整表重建 |
+| `[cells]` | 多少物品展开成了多少格子 |
+| `[module-cell]` / `[berry-cell]` | 模块 / 浆果变体的单格诊断 |
 | `[sprite]` | 精灵解析异常 |
 | `[panelwatch]` | 物品栏按钮的 Harmony 补丁已安装（或失败） |
 | `[sources]` | `clients.csv` 里有格式错误的行被跳过 |
-| `[probe]` | 运行时来源报告已写出 |
+| `[loot]` | 掉落池 → 物品清单（每池一行，便于核对来源） |
+| `[gun]` | 拆枪探测结果 |
+| `[perf]` | 某帧节拍或提示框重建超过诊断阈值 |
+| `[probe]` | 运行时来源报告；只有手动执行 `F9 → Catalog: Probe Sources` 才会写出 |
 
 正常启动会先出现 `Probably Enough Items initializing...`，游戏加载完成后出现 `Probably Enough Items enabled.`。
 
 ## 卸载
 
-删掉 `Mods\ProbablyEnoughItems\` 后重启。模组不会在自身目录之外留下文件（探针运行时会在游戏数据旁写一份缓存）。
+删掉 `Mods\ProbablyEnoughItems\` 后重启。模组运行不需要自身目录以外的文件；额外写出的只有
+`ModHelper.WriteModDataFileText` 产生的缓存：
+
+- `box_probe.txt` —— 捕获的箱子内容
+- `gun_disassembly.txt` —— 拆枪探测结果
+- `gun_slots.txt` —— 枪械槽 → 接受的 tag
+- `source-probe.txt` —— 只有从 `F9` 手动触发来源探测时才写出
 
 ## 发布到 Steam 创意工坊
 
 游戏内没有上传按钮，工坊物品用 Valve 的 `steamcmd` 发布。`tools/publish/publish.ps1` 会构建一个干净的发布目录
-（安装目标被重定向到 `.publish\stage`，不碰游戏目录）、校验内容，并生成 `.publish\workshop.vdf`：
+（安装目标被重定向到那里，不碰游戏目录）、校验内容，并生成 `workshop.vdf`：
 
 ```powershell
-# 只打包：构建 + staging + vdf
+# 只打包：构建 + staging + vdf（默认输出到 <仓库根>\publish\）
 .\tools\publish\publish.ps1
 
 # 隐藏上传，自测用
@@ -108,9 +124,12 @@ dotnet build -c Release -p:GameDir="<游戏目录>"
 steamcmd 处理非 ASCII 的 `contentfolder` 会失败（`Timeout uploading manifest`）。如果你的仓库目录本身含中文，
 每次发布时用 `-StageDir` 指到一个 ASCII 目录，例如 `-StageDir "$HOME\Documents\ProbablyEnoughItems-publish\stage"`。
 
-App ID 是 `4348910`；`visibility` 0 = 公开、1 = 仅好友、2 = 隐藏。首次上传还需要在 Steam 网页上接受一次创意工坊
-法律协议，且登录的账号必须拥有本游戏。本地 `Mods\ProbablyEnoughItems\` 与工坊物品同 `<ID>` 时本地优先，
-正好用来在发布前验证新版本。
+简介取自 `tools/publish/workshop-description.en.txt`（默认语言），变更说明取自同目录的 `changenote.txt`；
+`-ChangeNote` 会覆盖文件内容。其它语言简介（`workshop-description.zh.txt` / `.ru.txt`）**不会**被 steamcmd
+上传，必须到物品编辑页按语言单独填写。工坊标题默认用清单里的名称，也可以显式传 `-Title "Probably Enough Items"`。
+App ID 是 `4348910`；`visibility` 0 = 公开、1 = 仅好友、2 = 隐藏（脚本默认值）。当前工坊物品 ID 为
+`3839107161`。首次上传还需要在 Steam 网页上接受一次创意工坊法律协议，且登录的账号必须拥有本游戏。
+本地 `Mods\ProbablyEnoughItems\` 与工坊物品同 `<ID>` 时本地优先，正好用来在发布前验证新版本。
 
 ## 排错
 

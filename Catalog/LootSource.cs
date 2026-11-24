@@ -15,6 +15,35 @@ namespace ItemCatalog.Catalog
     {
         internal string TableId;
         internal List<LootItemRef> Items = new List<LootItemRef>();
+
+        private List<ItemPart> _parts;
+
+        /// <summary>和其它来源 / 配方 / 使用同一套角色视图：表里能开出的物品 → Output。</summary>
+        internal List<ItemPart> Parts
+        {
+            get
+            {
+                if (_parts != null) return _parts;
+
+                _parts = new List<ItemPart>();
+                if (Items == null) return _parts;
+
+                for (int i = 0; i < Items.Count; i++)
+                {
+                    var item = Items[i];
+                    if (item == null || string.IsNullOrEmpty(item.Id)) continue;
+
+                    _parts.Add(new ItemPart
+                    {
+                        Role = PartRole.Output,
+                        Id = item.Id,
+                        Amount = 1
+                    });
+                }
+
+                return _parts;
+            }
+        }
     }
 
     /// <summary>
@@ -32,7 +61,9 @@ namespace ItemCatalog.Catalog
     /// </summary>
     internal static class LootSource
     {
-        private static bool _built;
+        /// <summary>本索引在 <see cref="IndexManager"/> 里的名字 / 建好后的占位值。</summary>
+        private const string IndexName = "loot-tables";
+        private static readonly object IndexMarker = new object();
 
         /// <summary>
         /// 物品 id → 含它的表（同一个物品在每张表里只出现一次）。
@@ -695,13 +726,16 @@ namespace ItemCatalog.Catalog
             new Dictionary<string, List<LootTableInfo>>(StringComparer.Ordinal);
 
         /// <summary>
-        /// 惰性建索引。战利品表是读档 / 进场景时才注册的，所以建不出东西时
-        /// **不**记 _built，下次进关再来一次。
+        /// 惰性建索引（交给 <see cref="IndexManager"/>）。战利品表是读档 / 进场景时才注册的，
+        /// 所以建不出东西时返回 null、不缓存，下次进关再来一次。
         /// </summary>
         private static void EnsureBuilt()
         {
-            if (_built) return;
+            IndexManager.Get(IndexName, BuildCore);
+        }
 
+        private static object BuildCore()
+        {
             var tables = new List<LootTableInfo>();
             var map = new Dictionary<string, List<LootTableInfo>>(StringComparer.Ordinal);
             int entries = 0;
@@ -710,7 +744,7 @@ namespace ItemCatalog.Catalog
             try
             {
                 var tableIds = LootRegistry.TableIds;
-                if (tableIds == null) return;
+                if (tableIds == null) return null;
 
                 foreach (var tableId in tableIds)
                 {
@@ -764,7 +798,7 @@ namespace ItemCatalog.Catalog
             catch (Exception e)
             {
                 Warn("scan failed: " + e.Message);
-                return;
+                return null;
             }
 
             // 组：`TableGroup` 是「表 → 表」的集合（POI 常用组），
@@ -827,7 +861,7 @@ namespace ItemCatalog.Catalog
                 Warn("group scan: " + e.Message);
             }
 
-            if (tables.Count == 0) return;   // 表还没加载，下次再说
+            if (tables.Count == 0) return null;   // 表还没加载，下次再说
 
             // ===== 统一性保证：反查索引从正查数据直接推导，映射与显示不能分离 =====
             // AGENTS.md 规则：站点页（正查并集）上出现的**每个**物品 id，必须能从
@@ -882,8 +916,6 @@ namespace ItemCatalog.Catalog
 
             _lootIndex = index;
 
-            _built = true;
-
             if (ModEntry.Log != null)
             {
                 // 全量打出来：只有十几个，方便照着填 box_pools.csv
@@ -914,6 +946,8 @@ namespace ItemCatalog.Catalog
                                      + string.Join(", ", parts.ToArray()));
                 }
             }
+
+            return IndexMarker;
         }
 
         private static void Warn(string message)

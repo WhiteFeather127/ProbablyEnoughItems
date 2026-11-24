@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using ProbablyEnoughItems.Api;
@@ -251,6 +251,7 @@ namespace ItemCatalog.UI
 
                 _window.Show();
                 _window.BringToFront();
+                EnsureRelations();
 
                 // 打开面板属于「界面变了」的事件点：顺手让按钮重新认一次目标
                 try { LauncherButton.Refresh(); } catch { }
@@ -258,8 +259,19 @@ namespace ItemCatalog.UI
             }
 
             Create();
+            EnsureRelations();
 
             try { LauncherButton.Refresh(); } catch { }
+        }
+
+        /// <summary>
+        /// 打开图鉴时把关系总表建好并写进总缓存（同一 generation 只建一次，不追加）。
+        /// 放在这里是因为它依赖配方 / 掉落表 / 枪槽，预热时还没就绪。
+        /// </summary>
+        private static void EnsureRelations()
+        {
+            try { CatalogDataBuilder.BuildRelations(); }
+            catch (Exception e) { Warn("relations: " + e.Message); }
         }
 
         /// <summary>数据重建后按当前布局重新打开。</summary>
@@ -295,19 +307,31 @@ namespace ItemCatalog.UI
             }
 
             long buildMs = watch.ElapsedMilliseconds;
+            long mark = buildMs;
+            long stageBlender, stageFurnace, stageDissect, stageCells, stageRecipes, stageGuns,
+                 stageSources, stageUpgrades;
+
+            // 液体成分标签必须在任何「读配方的液体需求」之前补齐：
+            // 动态机器配方（水培 / 蒸发器展示等）按 generation 缓存，晚补就再也读不到成分。
+            try { LiquidManager.TagItems(); }
+            catch (Exception e) { Warn("warmup: liquid tags failed: " + e.Message); }
+            mark = watch.ElapsedMilliseconds;
 
             // 搅拌机可搅拌清单：手写表优先，BLENDABLE_TAG 自动补齐（后加载的模组物品也能收录）
             try { MachinePanels.DiscoverBlenderInputs(); }
             catch (Exception e) { Warn("warmup: blender discovery failed: " + e.Message); }
+            stageBlender = watch.ElapsedMilliseconds - mark; mark += stageBlender;
 
             // 熔炉：探测当前版本/补丁实际接受的输入与模块，校验档位覆盖
             try { MachinePanels.DiscoverFurnaceRecipes(); }
             catch (Exception e) { Warn("warmup: furnace discovery failed: " + e.Message); }
+            stageFurnace = watch.ElapsedMilliseconds - mark; mark += stageFurnace;
 
             // 拆枪产出：加载时在隔离容器里模拟一次并写缓存（失败回退 IL 表）。
             // 不放到打开图鉴时做——打开图鉴的那一下不该有模拟开销。
             try { ItemCatalog.Catalog.GunDisassemblyProbe.Warmup(); }
             catch (Exception e) { Warn("warmup: gun disassembly probe failed: " + e.Message); }
+            stageDissect = watch.ElapsedMilliseconds - mark; mark += stageDissect;
 
             // 变体来源只有接口提供者与硬编码生成器表，预热阶段不做任何探测。
             var items = CatalogDataBuilder.Visible;
@@ -357,8 +381,7 @@ namespace ItemCatalog.UI
             {
                 Warn("warmup: expand variants failed: " + e.Message);
             }
-
-            watch.Stop();
+            stageCells = watch.ElapsedMilliseconds - mark; mark += stageCells;
 
             if (ModEntry.Log == null) return;
 
@@ -373,10 +396,33 @@ namespace ItemCatalog.UI
             // 配方索引跟物品表一起在加载阶段建好，打开合成表时不用现扫
             try { RecipeIndex.Build(); }
             catch (Exception e) { Warn("warmup: recipe index failed: " + e.Message); }
+            stageRecipes = watch.ElapsedMilliseconds - mark; mark += stageRecipes;
+
+            // 枪械改装槽：和拆枪一样在加载期把可改装枪全探一遍（缓存命中则只读文件）
+            try { GunMods.Warmup(); }
+            catch (Exception e) { Warn("warmup: gun slots failed: " + e.Message); }
+            stageGuns = watch.ElapsedMilliseconds - mark; mark += stageGuns;
 
             // 获取途径索引（配给站 / 博士 / 客人）同样一次建好
             try { SourceIndex.Build(); }
             catch (Exception e) { Warn("warmup: source index failed: " + e.Message); }
+            stageSources = watch.ElapsedMilliseconds - mark; mark += stageSources;
+
+            // 王尔德的人脉网络：升级标题 / 介绍 / 等级读原版 NetworkUpgrade，
+            // 「升级 → 物品」用静态表（见 UpgradeCatalog）
+            try { UpgradeCatalog.Build(); }
+            catch (Exception e) { Warn("warmup: upgrade catalog failed: " + e.Message); }
+            stageUpgrades = watch.ElapsedMilliseconds - mark;
+
+            if (ModEntry.Log != null)
+            {
+                ModEntry.Log.Log(string.Format(
+                    "[warmup] stages build={0} blender={1} furnace={2} dissect={3} cells={4}"
+                    + " recipes={5} guns={6} sources={7} upgrades={8} total={9} (ms)",
+                    buildMs, stageBlender, stageFurnace, stageDissect, stageCells,
+                    stageRecipes, stageGuns, stageSources, stageUpgrades,
+                    watch.ElapsedMilliseconds));
+            }
 
             ModEntry.Log.Log(string.Format(
                 "[verify] dirs={0} total={1} visible={2} hidden={3} failed={4} extra={5} | cells={6} missingItem={7} missingSprite={8} -> {9}",
@@ -2121,7 +2167,18 @@ namespace ItemCatalog.UI
             ItemEntry cached;
             if (_preBuiltEntries.TryGetValue(id, out cached) && cached != null) return cached;
 
-            var item = CreatePreviewItem(id);
+            GameItem item;
+            if (string.Equals(id, PreBuiltItems.MiniAlcoholBottleId, StringComparison.Ordinal))
+            {
+                // 游戏在拆化学用品时运行时改名 + 灌酒的瓶子：照原版工厂生成
+                // （mini_bottle 改名 + 175ml 酒精 + 75ml 水），图鉴才显示装酒的实例。
+                item = CreatePreviewItem(id, delegate { return PreBuildChemHelper.CreateMiniAlcoholBottle(); });
+            }
+            else
+            {
+                item = CreatePreviewItem(id);
+            }
+
             if (item == null) return null;
 
             // 实例上掷出来的那一次耐久不进提示框（每次悬停都不同、也没有信息量）：

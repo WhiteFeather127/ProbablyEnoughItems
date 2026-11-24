@@ -28,6 +28,10 @@ namespace ItemCatalog.Catalog
 
         private static Dictionary<string, string> _byLockId;
 
+        /// <summary>本索引在 <see cref="IndexManager"/> 里的名字 / 建好后的占位值。</summary>
+        private const string IndexName = "lock-keys";
+        private static readonly object IndexMarker = new object();
+
         /// <summary>箱子需要哪张卡；没锁 / 找不到卡返回 null。</summary>
         internal static string KeyForBox(GameItem box)
         {
@@ -96,8 +100,11 @@ namespace ItemCatalog.Catalog
         /// </summary>
         private static void EnsureBuilt()
         {
-            if (_byLockId != null) return;
+            IndexManager.Get(IndexName, BuildCore);
+        }
 
+        private static object BuildCore()
+        {
             var map = new Dictionary<string, string>(StringComparer.Ordinal);
 
             SeedGameLockMap(map);
@@ -130,7 +137,7 @@ namespace ItemCatalog.Catalog
             catch (Exception e)
             {
                 if (ModEntry.Log != null) ModEntry.Log.Log("[lock] scan failed: " + e.Message);
-                return;
+                return null;
             }
 
             // 目录可能还没建完（第一次调用常发生在 Build 之前），
@@ -138,13 +145,15 @@ namespace ItemCatalog.Catalog
             if (map.Count == 0)
             {
                 if (ModEntry.Log != null) ModEntry.Log.Log("[lock] keycards=0 (retry later)");
-                return;
+                return null;
             }
 
             _byLockId = map;
 
             if (ModEntry.Log != null)
                 ModEntry.Log.Log("[lock] keycards=" + map.Count);
+
+            return IndexMarker;
         }
 
         /// <summary>

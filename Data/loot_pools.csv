@@ -1,4 +1,4 @@
-﻿﻿﻿﻿# Probably Enough Items · 掉落池属于哪个地方 / 哪个人
+﻿# Probably Enough Items · 掉落池属于哪个地方 / 哪个人
 #
 # 掉落池本身不是给玩家的东西，玩家遇到的是「在哪儿」：垃圾倾倒场能翻出什么、
 # 小偷身上带什么、拾荒者的货摊上有什么。这张表把池归到那个「地方」上，
@@ -21,7 +21,7 @@
 #        ← ExpeditionLocationList::DumpingGrounds、ExpeditionPoiList::JunkPile /
 #          ScrapPile / FreshScrapPile、ScavHelper::SpawnDumpingGroundLoot
 #   packedFoodTable  ← 拾荒者货单 / FillService
-#   materialTable    ← Eleanor5 剧情分支
+#   materialTable  ← Eleanor5 剧情分支（客人摆货，见文件末尾说明，不映射成地点）
 #
 # householdTable / medicalTable 刻意不映射（2026-11-15）：
 # 它们只在扒手来访的对话结束回调里出现（CreatePettyThief::b__57_0，
@@ -33,9 +33,15 @@ pool,site
 junkTable,location_dumping_grounds
 dumpingGroundTG,location_dumping_grounds
 dumpingGroundFreshTG,location_dumping_grounds
-dumpingGroundMedical,location_dumping_grounds
 POI_dumpingGround,location_dumping_grounds
+# dumpingGroundMedical 不再映射（2026-11-24）：全程序集扫不到任何方法引用
+# （只有注册表里有这张表），旧映射会在垃圾倾倒场页凭空加一批「可能开出」的医疗物品。
+# 如果重开扫描发现新的引用点，再加回来。
 # householdTable / medicalTable 不再映射到扒手：扒手来访摆货（AddDirectSellingItemToTable）
 # 已由「客人」类覆盖，掉落池页与它重复且措辞误导（2026-11-15）
 packedFoodTable,name_scavenger
-materialTable,name_eleanor
+# materialTable 不再映射成地点（2026-11-24）：
+# 它只在 StoreClientUniqueList::<Eleanor5>b__53_0 里被 SpawnFromTable 3 次，
+# 由埃莉诺把货摆上直销桌——这是「客人卖的货」，已写进 clients.csv 的 eleanor5 行。
+# 映射成 name_eleanor 会让图鉴把她显示成「地点」大类，与实际身份不符。
+

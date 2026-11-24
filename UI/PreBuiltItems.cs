@@ -32,10 +32,17 @@ namespace ItemCatalog.UI
         {
             if (string.IsNullOrEmpty(id)) return false;
 
+            // 运行时改名瓶：游戏目录里没有这个 id，但图鉴要用游戏工厂把它做成
+            // 「装了酒精的小瓶」实例（PreBuildChemHelper.CreateMiniAlcoholBottle）。
+            if (string.Equals(id, MiniAlcoholBottleId, StringComparison.Ordinal)) return true;
+
             EnsureIds();
 
             return _ids.ContainsKey(id);
         }
+
+        /// <summary>游戏在拆化学用品时运行时改名、灌酒的瓶子（本体是 mini_bottle）。</summary>
+        internal const string MiniAlcoholBottleId = "mini_alcohol_bottle";
 
         private static void EnsureIds()
         {
@@ -79,6 +86,10 @@ namespace ItemCatalog.UI
         /// <summary>登记一个生成别名；会解析出本体 id 存映射。</summary>
         internal static void RegisterSpawnId(string aliasId)
         {
+            // 运行时改名瓶没有对应的游戏预构建键（Spawn 会失败），
+            // 也不能把 mini_bottle 的拿取全部改到它身上。
+            if (string.Equals(aliasId, MiniAlcoholBottleId, StringComparison.Ordinal)) return;
+
             string baseId = RecipeWindow.BaseItemId(aliasId);
             if (!string.IsNullOrEmpty(baseId) && baseId != aliasId)
                 SpawnIdByBase[baseId] = aliasId;

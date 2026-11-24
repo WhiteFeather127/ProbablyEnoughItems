@@ -105,6 +105,8 @@ namespace ItemCatalog.UI
             }
 
             _slots[gunId] = probed;
+            IndexManager.Invalidate(GunsByModIndex);   // 新枪的真实槽位会影响反查
+            CatalogDataBuilder.InvalidateRelations();  // 让关系表下次重建时带上这把枪的槽位
             SaveCache();
 
             if (ModEntry.Log != null)
@@ -118,6 +120,97 @@ namespace ItemCatalog.UI
         {
             return SlotsFor(gunId).Count;
         }
+
+        /// <summary>
+        /// 加载阶段调用：把目录里所有可改装枪的槽位一次探完并写缓存，
+        /// 打开配件页时不再现建枪实例（与拆枪 / 箱子等探测同一时机）。
+        /// 探测失败不写缓存，留给 <see cref="SlotsFor"/> 在真正用到时重试。
+        /// </summary>
+        internal static void Warmup()
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+
+            ResetForGeneration();
+
+            var guns = ModdableGunIds();
+            if (guns.Count == 0) return;
+
+            // 目录还没建好（配件列表为空）时探测出的 tag 不可信，和 SlotsFor 同一判定
+            if (ModIds().Count == 0) return;
+
+            int cached = 0, probed = 0, failed = 0;
+
+            for (int i = 0; i < guns.Count; i++)
+            {
+                string gunId = guns[i];
+                if (string.IsNullOrEmpty(gunId)) continue;
+
+                List<GunSlot> known;
+                if (_slots.TryGetValue(gunId, out known) && known != null)
+                {
+                    cached++;
+                    continue;
+                }
+
+                List<GunSlot> slots = null;
+                try { slots = Probe(gunId); }
+                catch (Exception e) { Warn("warmup '" + gunId + "': " + e.Message); }
+
+                // 借不到窗口的枪保持未探测状态，翻到配件页时再试
+                if (slots == null || slots.Count == 0)
+                {
+                    failed++;
+                    continue;
+                }
+
+                _slots[gunId] = slots;
+                probed++;
+            }
+
+            // 新探测到的槽位写探测缓存，并让关系表在下次重建时带上
+            if (probed > 0)
+            {
+                SaveCache();
+                CatalogDataBuilder.InvalidateRelations();
+            }
+
+            // 反查索引也在这里建好：打开配件的「用途」页时不再现算
+            try { EnsureReverseIndex(); }
+            catch (Exception e) { Warn("warmup index: " + e.Message); }
+
+            if (ModEntry.Log != null)
+            {
+                ModEntry.Log.Log("[gun-slot] warmup guns=" + guns.Count
+                                 + " cached=" + cached
+                                 + " probed=" + probed
+                                 + " failed=" + failed
+                                 + " (" + watch.ElapsedMilliseconds + " ms)");
+            }
+        }
+
+        /// <summary>能改装的枪（原版非左轮那几把），按 id 排序。</summary>
+        internal static List<string> ModdableGunIds()
+        {
+            if (_moddableGunIds != null && _moddableGunIdsGeneration == CatalogDataBuilder.Generation)
+                return _moddableGunIds;
+
+            var ids = new List<string>();
+
+            foreach (var entry in RecipeIndex.AllEntries)
+            {
+                if (entry == null || entry.Unused || string.IsNullOrEmpty(entry.Id)) continue;
+                if (!IsModdable(entry.Item)) continue;
+                ids.Add(entry.Id);
+            }
+
+            ids.Sort(StringComparer.OrdinalIgnoreCase);
+            _moddableGunIds = ids;
+            _moddableGunIdsGeneration = CatalogDataBuilder.Generation;
+            return ids;
+        }
+
+        private static List<string> _moddableGunIds;
+        private static int _moddableGunIdsGeneration = -1;
 
         internal static string SlotTitleFor(string gunId, int slot)
         {
@@ -171,26 +264,85 @@ namespace ItemCatalog.UI
             return false;
         }
 
-        /// <summary>这件配件能不能装到这把枪上（任一槽接受即算）。</summary>
+        /// <summary>
+        /// 这件配件能不能装到这把枪上（任一槽接受即算）。
+        /// 反查走一次建好的「配件 → 枪」索引，不再每次把每把枪的每个槽重新扫一遍。
+        /// </summary>
         internal static bool FitsAnySlot(string gunId, string modId)
         {
             if (string.IsNullOrEmpty(gunId) || string.IsNullOrEmpty(modId)) return false;
 
             ResetForGeneration();
 
-            // 已探测过（或缓存里读到）的枪：按真实槽判定
-            List<GunSlot> known;
-            if (_slots.TryGetValue(gunId, out known) && known != null)
-            {
-                for (int i = 0; i < known.Count; i++)
-                    if (Compatible(gunId, i).Contains(modId)) return true;
+            var index = EnsureReverseIndex();
+            if (index == null) return false;
 
-                return false;
+            HashSet<string> guns;
+            return index.TryGetValue(modId, out guns) && guns.Contains(gunId);
+        }
+
+        /// <summary>
+        /// 反查索引：配件 id → 能装它的枪。
+        /// 只在内存里，由 <see cref="IndexManager"/> 按 generation 缓存；
+        /// 落盘的「物品 → 关系」索引统一走 CatalogDataBuilder 的关系总表，不再存物物关联。
+        /// </summary>
+        private static Dictionary<string, HashSet<string>> EnsureReverseIndex()
+        {
+            return IndexManager.Get(GunsByModIndex, BuildReverseIndex);
+        }
+
+        private static Dictionary<string, HashSet<string>> BuildReverseIndex()
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var index = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+            var guns = ModdableGunIds();
+            for (int i = 0; i < guns.Count; i++)
+            {
+                string gunId = guns[i];
+                if (string.IsNullOrEmpty(gunId)) continue;
+
+                List<GunSlot> slots;
+                if (_slots.TryGetValue(gunId, out slots) && slots != null)
+                {
+                    for (int slot = 0; slot < slots.Count; slot++)
+                    {
+                        var candidates = Compatible(gunId, slot);
+                        for (int c = 0; c < candidates.Count; c++)
+                            AddGunForMod(index, candidates[c], gunId);
+                    }
+                }
+                else
+                {
+                    // 探测失败的枪：按原版 8 槽的 tag 兜底
+                    var mods = ModItems();
+                    for (int m = 0; m < mods.Count; m++)
+                        if (FitsLegacy(mods[m].Key, gunId))
+                            AddGunForMod(index, mods[m].Key, gunId);
+                }
             }
 
-            // 还没探测（懒加载）：先用原版 8 槽的 tag 快速判，不现建枪实例，
-            // 免得打开配件页时一次性把几十把枪都造一遍。
-            return FitsLegacy(modId, gunId);
+            if (ModEntry.Log != null)
+            {
+                ModEntry.Log.Log("[gun-slot] index mods=" + ModItems().Count
+                                 + " guns=" + guns.Count
+                                 + " (" + watch.ElapsedMilliseconds + " ms)");
+            }
+
+            return index;
+        }
+
+        private static void AddGunForMod(Dictionary<string, HashSet<string>> index, string modId, string gunId)
+        {
+            if (string.IsNullOrEmpty(modId)) return;
+
+            HashSet<string> guns;
+            if (!index.TryGetValue(modId, out guns))
+            {
+                guns = new HashSet<string>(StringComparer.Ordinal);
+                index[modId] = guns;
+            }
+            guns.Add(gunId);
         }
 
         private static bool FitsLegacy(string modId, string gunId)
@@ -199,7 +351,7 @@ namespace ItemCatalog.UI
             var item = entry == null ? null : entry.Item;
             if (item == null) return false;
 
-            if (!Fits(item, gunId)) return false;
+            if (!FitsCached(modId, item, gunId)) return false;
 
             for (int i = 0; i < SlotTags.Length; i++)
             {
@@ -217,19 +369,27 @@ namespace ItemCatalog.UI
 
         private static int _generation = -1;
 
-        /// <summary>目录里所有配件 id（探测 tag 是否需要时用来算「有多少配件带它」）。</summary>
-        private static List<string> _modIds;
+        /// <summary>「配件 × 枪」的装填判定缓存：同一对只跑一次 mayInventoryAddItemFunc。</summary>
+        private static Dictionary<string, bool> _fitsCache;
+
+        /// <summary>反查索引 / 配件清单在 <see cref="IndexManager"/> 里的名字。</summary>
+        private const string GunsByModIndex = "gun-mod-guns";
+        private const string ModListIndex = "gun-mod-items";
+
+        /// <summary>配件清单：id 列表 + 实例，由 <see cref="IndexManager"/> 按 generation 缓存。</summary>
+        private sealed class ModList
+        {
+            internal List<string> Ids;
+            internal List<KeyValuePair<string, GameItem>> Items;
+        }
 
         // ---------------------------------------------------------------- 缓存
         //
-        // 探测结果落在模组数据目录的 gun_slots.txt：
-        //   sig=<游戏版本 + 所有启用模组指纹，与箱子探测同一套失效规则>
-        //   probe=<格式版本>
-        //   gun:<枪id>=<role>~<tag1|tag2>~<rejects 0/1>;<role>~…
-        // 缓存命中时，反查（某配件能装哪些枪）不需要再把每把枪都造一遍。
+        // 枪槽探测结果单独存 gun_slots.txt：这是探测原始数据（槽位 tag / 拒绝标记），
+        // 不是物品索引。索引里只保留「枪 ↔ 槽位 ↔ 候选配件」的关系记录（item-relations）。
+        // 文件带 sig 头，游戏 / 模组变化后整体作废重探。
 
         private const string CacheFile = "gun_slots.txt";
-        private const string CacheVersion = "1";
 
         private static bool _cacheLoaded;
 
@@ -240,7 +400,7 @@ namespace ItemCatalog.UI
 
             _generation = CatalogDataBuilder.Generation;
             _slots.Clear();
-            _modIds = null;
+            _fitsCache = null;
             _cacheLoaded = false;
             LoadCache();
         }
@@ -257,35 +417,8 @@ namespace ItemCatalog.UI
                 string text = ModHelper.ReadModDataFileText(ModEntry.MOD_ID, CacheFile);
                 if (string.IsNullOrEmpty(text)) return;
 
-                string sig = null, probe = null;
-                var map = new Dictionary<string, List<GunSlot>>(StringComparer.Ordinal);
-
-                var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    string line = lines[i].Trim();
-                    if (line.Length == 0) continue;
-
-                    int eq = line.IndexOf('=');
-                    if (eq <= 0) continue;
-
-                    string key = line.Substring(0, eq);
-                    string value = line.Substring(eq + 1);
-
-                    if (key == "sig") { sig = value; continue; }
-                    if (key == "probe") { probe = value; continue; }
-                    if (!key.StartsWith("gun:", StringComparison.Ordinal)) continue;
-
-                    string gunId = key.Substring(4);
-                    if (gunId.Length == 0) continue;
-
-                    var slots = ParseSlots(value);
-                    if (slots.Count > 0) map[gunId] = slots;
-                }
-
-                // 游戏 / 模组变了就整份作废（和箱子内容、拆枪产物同一套签名）
-                if (!string.Equals(probe, CacheVersion, StringComparison.Ordinal)) return;
-                if (!string.Equals(sig, BoxProbe.Signature(), StringComparison.Ordinal)) return;
+                var map = ParseSlotCache(text);
+                if (map == null || map.Count == 0) return;
 
                 foreach (var pair in map) _slots[pair.Key] = pair.Value;
 
@@ -293,6 +426,47 @@ namespace ItemCatalog.UI
                     ModEntry.Log.Log("[gun-slot] cache loaded: " + map.Count + " guns");
             }
             catch (Exception e) { Warn("cache read: " + e.Message); }
+        }
+
+        private static Dictionary<string, List<GunSlot>> ParseSlotCache(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+
+            var map = new Dictionary<string, List<GunSlot>>(StringComparer.Ordinal);
+            var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+            bool sigChecked = false;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (line.Length == 0) continue;
+
+                if (!sigChecked)
+                {
+                    sigChecked = true;
+
+                    if (!line.StartsWith("sig=", StringComparison.Ordinal)) return null;
+                    if (!string.Equals(line.Substring(4), CacheSignature.GameOnly, StringComparison.Ordinal))
+                        return null;
+                    continue;
+                }
+
+                int eq = line.IndexOf('=');
+                if (eq <= 0) continue;
+
+                string key = line.Substring(0, eq);
+                string value = line.Substring(eq + 1);
+
+                if (!key.StartsWith("gun:", StringComparison.Ordinal)) continue;
+
+                string gunId = key.Substring(4);
+                if (gunId.Length == 0) continue;
+
+                var slots = ParseSlots(value);
+                if (slots.Count > 0) map[gunId] = slots;
+            }
+
+            return map.Count > 0 ? map : null;
         }
 
         private static List<GunSlot> ParseSlots(string value)
@@ -330,11 +504,9 @@ namespace ItemCatalog.UI
         {
             try
             {
-                var sb = new System.Text.StringBuilder();
-                sb.Append("sig=").Append(BoxProbe.Signature()).Append('\n');
-                sb.Append("probe=").Append(CacheVersion).Append('\n');
-
                 int guns = 0;
+                var text = new System.Text.StringBuilder();
+                text.Append("sig=").Append(CacheSignature.GameOnly).Append('\n');
 
                 foreach (var pair in _slots)
                 {
@@ -342,25 +514,25 @@ namespace ItemCatalog.UI
                     if (slots == null || slots.Count == 0) continue;
                     if (!slots[0].Probed) continue;   // 手写兜底的 8 槽不写
 
-                    sb.Append("gun:").Append(pair.Key).Append('=');
+                    guns++;
+                    text.Append("gun:").Append(pair.Key).Append('=');
 
                     for (int i = 0; i < slots.Count; i++)
                     {
-                        if (i > 0) sb.Append(';');
+                        if (i > 0) text.Append(';');
 
                         var slot = slots[i];
-                        sb.Append(slot.Role).Append('~');
-                        if (slot.Tags != null) sb.Append(string.Join("|", slot.Tags));
-                        sb.Append('~').Append(slot.RejectsAll ? "1" : "0");
+                        text.Append(slot.Role).Append('~');
+                        if (slot.Tags != null) text.Append(string.Join("|", slot.Tags));
+                        text.Append('~').Append(slot.RejectsAll ? "1" : "0");
                     }
 
-                    sb.Append('\n');
-                    guns++;
+                    text.Append('\n');
                 }
 
                 if (guns == 0) return;
 
-                ModHelper.WriteModDataFileText(ModEntry.MOD_ID, CacheFile, sb.ToString());
+                ModHelper.WriteModDataFileText(ModEntry.MOD_ID, CacheFile, text.ToString());
 
                 if (ModEntry.Log != null)
                     ModEntry.Log.Log("[gun-slot] cache saved: " + guns + " guns");
@@ -455,7 +627,7 @@ namespace ItemCatalog.UI
 
             if (raw.Count == 0 && !accepted) rejectsAll = true;
 
-            var mods = ModIds();
+            var mods = ModItems();
             var keep = new List<string>();
 
             for (int i = 0; i < raw.Count; i++)
@@ -466,8 +638,7 @@ namespace ItemCatalog.UI
                 int matched = 0;
                 for (int m = 0; m < mods.Count; m++)
                 {
-                    var entry = RecipeIndex.FindEntry(mods[m]);
-                    var item = entry == null ? null : entry.Item;
+                    var item = mods[m].Value;
                     if (item == null) continue;
 
                     try { if (item.IsTag(tag)) matched++; }
@@ -484,18 +655,39 @@ namespace ItemCatalog.UI
         /// <summary>目录里所有配件的 id（按 generation 缓存）。</summary>
         private static List<string> ModIds()
         {
-            if (_modIds != null) return _modIds;
+            return Mods().Ids;
+        }
 
-            var ids = new List<string>();
+        /// <summary>目录里所有配件（id + 实例），按 generation 缓存；候选 / 反查只扫这一份。</summary>
+        private static List<KeyValuePair<string, GameItem>> ModItems()
+        {
+            return Mods().Items;
+        }
+
+        /// <summary>配件清单统一放进 <see cref="IndexManager"/>，跟着目录 generation 失效。</summary>
+        private static ModList Mods()
+        {
+            return IndexManager.Get(ModListIndex, BuildMods);
+        }
+
+        private static ModList BuildMods()
+        {
+            var items = new List<KeyValuePair<string, GameItem>>();
+
             foreach (var entry in RecipeIndex.AllEntries)
             {
                 if (entry == null || entry.Unused || string.IsNullOrEmpty(entry.Id)) continue;
-                if (!IsMod(entry.Item)) continue;
 
-                ids.Add(entry.Id);
+                var item = entry.Item;
+                if (item == null || !IsMod(item)) continue;
+
+                items.Add(new KeyValuePair<string, GameItem>(entry.Id, item));
             }
 
-            return _modIds = ids;
+            var ids = new List<string>(items.Count);
+            for (int i = 0; i < items.Count; i++) ids.Add(items[i].Key);
+
+            return new ModList { Ids = ids, Items = items };
         }
 
         private static GameItem PickProbeItem()
@@ -519,15 +711,15 @@ namespace ItemCatalog.UI
             var ids = new List<string>();
             if (slot == null || slot.RejectsAll) return ids;
 
-            foreach (var entry in RecipeIndex.AllEntries)
+            var mods = ModItems();
+            for (int i = 0; i < mods.Count; i++)
             {
-                if (entry == null || entry.Unused || string.IsNullOrEmpty(entry.Id)) continue;
-
-                var item = entry.Item;
-                if (item == null || !IsMod(item)) continue;
-                if (!Fits(item, gunId)) continue;
+                var item = mods[i].Value;
+                if (item == null) continue;
+                if (!FitsCached(mods[i].Key, item, gunId)) continue;
                 if (!HasAnyTag(item, slot.Tags)) continue;
-                if (!ids.Contains(entry.Id)) ids.Add(entry.Id);
+
+                ids.Add(mods[i].Key);
             }
 
             ids.Sort(StringComparer.OrdinalIgnoreCase);
@@ -583,6 +775,23 @@ namespace ItemCatalog.UI
             }
 
             return text.ToString();
+        }
+
+        /// <summary>
+        /// <see cref="Fits"/> 的结果缓存：配对键是「枪 id + 配件 id」。
+        /// 候选列表按槽位分别算，没有缓存时同一对会按槽数重复调代理。
+        /// </summary>
+        private static bool FitsCached(string modId, GameItem item, string gunId)
+        {
+            string key = gunId + "\n" + modId;
+
+            bool value;
+            if (_fitsCache != null && _fitsCache.TryGetValue(key, out value)) return value;
+
+            value = Fits(item, gunId);
+            if (_fitsCache == null) _fitsCache = new Dictionary<string, bool>(StringComparer.Ordinal);
+            _fitsCache[key] = value;
+            return value;
         }
 
         /// <summary>

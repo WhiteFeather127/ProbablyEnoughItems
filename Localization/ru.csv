@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿btn_open,Каталог
+﻿﻿btn_open,Каталог
 win_title,Каталог предметов
 count,Записей: {0}
 page,{0} / {1}
@@ -16,6 +16,7 @@ src_clients,Клиенты
 src_sold,Продажа
 src_wanted,Скупка
 src_locations,Магазины локаций
+src_tutorial,Учебные предметы
 src_client_supplier,Поставщик
 src_client_scavenger,Старьёвщик
 src_doctor_shop,Доктор Джексон (магазин)

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿btn_open,Catalog
+﻿﻿btn_open,Catalog
 win_title,Probably Enough Items
 count,{0} entries
 page,{0} / {1}
@@ -16,6 +16,7 @@ src_clients,Clients
 src_sold,Selling
 src_wanted,Wanted
 src_locations,Location shops
+src_tutorial,Tutorial items
 src_client_supplier,Supply runner
 src_client_scavenger,Scavenger
 src_doctor_shop,Dr. Jackson (shop)

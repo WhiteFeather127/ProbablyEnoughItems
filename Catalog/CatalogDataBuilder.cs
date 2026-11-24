@@ -9,7 +9,7 @@ namespace ItemCatalog.Catalog
     /// 一次性把游戏里所有已注册物品（含模组物品）抓成轻量快照，供界面使用。
     /// 只读取游戏公开成员，不做反射，不需要声明任何能力。
     /// </summary>
-    internal static class CatalogDataBuilder
+    internal static partial class CatalogDataBuilder
     {
         internal static readonly List<ItemEntry> All = new List<ItemEntry>();
         internal static readonly List<ItemEntry> Visible = new List<ItemEntry>();
@@ -445,6 +445,10 @@ namespace ItemCatalog.Catalog
 
             RecipeIndex.Invalidate();   // 物品表变了，配方索引下次查询时重建
             SourceIndex.Invalidate();   // 来源索引同理
+
+            // 统一关系表按 Generation 自动失效；等预热阶段所有 provider 就绪后由
+            // CatalogWindow.Warmup 调 BuildRelations() 建一次（这里不能提前建：
+            // 搅拌机 / 熔炉配方此时还没 Discover）。
 
             if (ModEntry.Log != null)
             {

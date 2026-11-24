@@ -66,11 +66,6 @@ namespace ItemCatalog.Catalog
         /// <summary>探测结果的本地缓存（与 dll 同目录的 ModData 文件夹）。</summary>
         private const string CacheFile = "box_probe.txt";
 
-        /// <summary>缓存格式版本：探测规则变化时 +1，旧缓存自动失效。</summary>
-        private const string CacheVersion = "5";
-
-        private static string _signature;
-
         private static bool _done;
         private static bool _running;
 
@@ -409,7 +404,7 @@ namespace ItemCatalog.Catalog
                 string text = ModHelper.ReadModDataFileText(ModEntry.MOD_ID, CacheFile);
                 if (string.IsNullOrEmpty(text)) return false;
 
-                string sig = null, probe = null;
+                string sig = null;
                 var map = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
                 var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
@@ -425,7 +420,7 @@ namespace ItemCatalog.Catalog
                     string value = line.Substring(eq + 1);
 
                     if (key == "sig") { sig = value; continue; }
-                    if (key == "probe") { probe = value; continue; }
+                    if (key == "probe") continue;   // 旧缓存遗留：格式版本已废弃，只认环境签名
 
                     if (key.StartsWith("boxkey:", StringComparison.Ordinal))
                     {
@@ -437,8 +432,7 @@ namespace ItemCatalog.Catalog
                     map[key] = Split(value);
                 }
 
-                if (!string.Equals(probe, CacheVersion, StringComparison.Ordinal)) return false;
-                if (!string.Equals(sig, Signature(), StringComparison.Ordinal)) return false;
+                if (!string.Equals(sig, CacheSignature.Value, StringComparison.Ordinal)) return false;
 
                 for (int i = 0; i < BoxIds.Length; i++)
                     if (!map.ContainsKey(BoxIds[i])) return false;
@@ -468,8 +462,7 @@ namespace ItemCatalog.Catalog
             try
             {
                 var sb = new StringBuilder();
-                sb.Append("sig=").Append(Signature()).Append('\n');
-                sb.Append("probe=").Append(CacheVersion).Append('\n');
+                sb.Append("sig=").Append(CacheSignature.Value).Append('\n');
 
                 if (keycards != null)
                 {
@@ -518,86 +511,6 @@ namespace ItemCatalog.Catalog
             }
 
             return list;
-        }
-
-        /// <summary>
-        /// 游戏版本 + 所有启用模组指纹：缓存文件在同一套环境下才有效。
-        /// 内部共享给其它探测缓存（枪械槽），保证失效规则一致。
-        /// </summary>
-        internal static string Signature()
-        {
-            if (_signature != null) return _signature;
-
-            var sb = new StringBuilder();
-            sb.Append("game=").Append(Application.version).Append(':').Append(GameHash());
-
-            var mods = new List<string>();
-
-            try
-            {
-                var list = ModLoader.Mods;
-                if (list != null)
-                {
-                    for (int i = 0; i < list.Count; i++)
-                    {
-                        var mod = list[i];
-                        if (mod == null || !mod.IsEnabled) continue;
-
-                        string id = mod.Manifest != null && !string.IsNullOrEmpty(mod.Manifest.ID)
-                            ? mod.Manifest.ID
-                            : "?";
-
-                        string fp = null;
-                        try { if (mod.Fingerprint != null) fp = mod.Fingerprint.Combined; }
-                        catch { }
-
-                        if (string.IsNullOrEmpty(fp))
-                        {
-                            try
-                            {
-                                if (!string.IsNullOrEmpty(mod.DllPath))
-                                    fp = ModFingerprint.HashFile(mod.DllPath);
-                            }
-                            catch { }
-                        }
-
-                        mods.Add(id + ":" + (fp ?? "?"));
-                    }
-                }
-            }
-            catch (Exception e) { Warn("signature mods: " + e.Message); }
-
-            mods.Sort(StringComparer.Ordinal);
-            sb.Append("|mods=").Append(string.Join(";", mods.ToArray()));
-
-            _signature = sb.ToString();
-            return _signature;
-        }
-
-        /// <summary>
-        /// 游戏本体的哈希：优先哈希 Assembly-CSharp.dll；拿不到 Location
-        /// （或被裁剪）时退回模块 MVID——重建过的程序集一定不同。
-        /// </summary>
-        private static string GameHash()
-        {
-            try
-            {
-                var assembly = typeof(GameItem).Assembly;
-
-                string location = assembly.Location;
-                if (!string.IsNullOrEmpty(location))
-                {
-                    string hash = ModFingerprint.HashFile(location);
-                    if (!string.IsNullOrEmpty(hash)) return hash;
-                }
-
-                return assembly.ManifestModule.ModuleVersionId.ToString();
-            }
-            catch (Exception e)
-            {
-                Warn("signature game: " + e.Message);
-                return "?";
-            }
         }
 
         private static void Warn(string message)

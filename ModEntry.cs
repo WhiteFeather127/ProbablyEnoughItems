@@ -41,7 +41,8 @@ namespace ItemCatalog
             ModHook.OnCreateTooltipLate += AppendItemId;
             ModHook.OnCreateTooltipLate += AppendLiquidInfo;
 
-            // 箱子内容探测要等掉落表就绪（packedFoodTable 展开需要 LootRegistry）
+            // 箱子内容探测要等掉落表就绪（packedFoodTable 展开需要 LootRegistry）；
+            // 掉落表就绪时也把关系总表一次建完写进总缓存
             ModHook.OnLootTablesLoaded += OnLootTablesLoaded;
 
             // 模组真正把物品塞进目录的时刻（比 OnGameLoadedLate 更贴切）：
@@ -65,6 +66,10 @@ namespace ItemCatalog
 
             // 枪械槽探测：借用槽的入格判定，记录它问了哪些 tag（同样只在捕获窗口内生效）
             Catalog.IsTagCapture.Install(MOD_ID);
+
+            // 教程物品：跳过开场时截获 HandleSkipIntro 塞进背包的清单并缓存
+            //（没捕获过时回退到 IL 抄录的表），图鉴里作为「教程物品」来源页显示
+            Catalog.TutorialProbe.Install(MOD_ID);
 
             try
             {
@@ -228,15 +233,28 @@ namespace ItemCatalog
             {
                 if (Log != null) Log.Warning("[boxprobe] trigger failed: " + e.Message);
             }
+
+            // 关系总表：预热后数据齐了就一次建完写进总缓存（没齐等掉落表钩子 / 打开图鉴）
+            try { Catalog.CatalogDataBuilder.BuildRelations(); }
+            catch (Exception e)
+            {
+                if (Log != null) Log.Warning("[relations] build after warmup failed: " + e.Message);
+            }
         }
 
-        /// <summary>掉落表刚加载完：箱子内容探测需要的 registry 齐了。</summary>
+        /// <summary>掉落表刚加载完：箱子内容探测的 registry 齐了，关系总表也在这里一次建完并落盘。</summary>
         private static void OnLootTablesLoaded()
         {
             try { Catalog.BoxProbe.ScanIfNeeded(); }
             catch (Exception e)
             {
                 if (Log != null) Log.Warning("[boxprobe] trigger failed: " + e.Message);
+            }
+
+            try { Catalog.CatalogDataBuilder.BuildRelations(); }
+            catch (Exception e)
+            {
+                if (Log != null) Log.Warning("[relations] build on loot tables loaded failed: " + e.Message);
             }
         }
     }

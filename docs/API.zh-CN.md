@@ -6,7 +6,7 @@
 
 其它模组用这份接口告诉图鉴两件事：
 
-1. **这件物品一共有几种状态**（能枚举就按顺序展开成多格，不能枚举才随机取样）；
+1. **这件物品一共有几种状态**（能枚举就按顺序展开成独立的格子，每格固定一个变体）；
 2. **注册表之外还有哪些条目**该出现在图鉴里。
 
 | 项 | 值 |
@@ -95,7 +95,7 @@ internal sealed class BerryVariants : ProbablyEnoughItems.Api.ICatalogVariantPro
 
     public GameItem CreateVariant(int index)
     {
-        var item = DirectoryMaster.Item("wine_berry");
+        var item = DirectoryMaster.Item("wine_berry");   // 现造实例，不要持有 / 缓存
         ApplyQuality(item, index);      // 必须确定：同一 index 结果等价
         return item;
     }
@@ -134,14 +134,14 @@ internal sealed class BerryVariants : ProbablyEnoughItems.Api.ICatalogVariantPro
   在之后的空闲节拍里增量补入并预热图标；同一帧内多次调用会合并成一次。
 - 图鉴**不替你注册目录**。要让游戏能按 id 重建物品（存档读回、拖拽落地都依赖它），
   必须自己 `DirectoryMaster.AddDirectory` + `Add(id, factory)`。
-- 只支持「新增 / 变体变多」；删掉已有物品会在下次打开图鉴时整表重建（较慢）。
+- 只支持「新增 / 变体变多」；删掉已有条目会在下一个空闲节拍触发整表重建（较慢）。
 
 ### 3.2 `ICatalogVariantProvider`
 
 | 成员 | 说明 |
 |---|---|
 | `string ItemId` | 目标物品 id，与注册表一致 |
-| `int VariantCount` | 变体数量；**返回 0 表示未知**，图鉴退回内置判定 |
+| `int VariantCount` | 变体数量；`<= 1` 表示不按 provider 展开（仍可能落到图鉴的内置分支）。图鉴对未知物品**不会**自动探测 |
 | `GameItem CreateVariant(int index)` | 生成第 `index` 个变体（`0 <= index < VariantCount`）；返回 `null` 表示该索引不可用 |
 
 `CreateVariant` 必须是**确定函数**：图鉴靠它做顺序展开，同一 `index` 每次调用应产出等价结果。
@@ -156,8 +156,8 @@ internal sealed class BerryVariants : ProbablyEnoughItems.Api.ICatalogVariantPro
 | `string ModId` | 来源模组 id，仅用于日志 |
 | `List<GameItem> GetExtraItems()` | 要展示的物品列表，允许返回 `null` 或空列表 |
 
-`GetExtraItems` 在**构建快照时**被调用（启动预热、以及打开图鉴时的变化检测）。请保持轻量：
-需要现造物品的话，自己在 `Init` 阶段缓存好再返回。
+`GetExtraItems` 在**构建或扩展快照时**被调用（启动预热、打开图鉴时的变化检测、`NotifyItemsChanged` 后的空闲节拍补入）。
+请保持轻量：需要现造物品的话，自己在 `Init` 阶段缓存好再返回。
 
 返回的物品由你负责构造，图鉴只读取、不销毁。
 
@@ -221,24 +221,28 @@ public sealed class BerryFormInfo { public int Condition; public int Visual; pub
 
 ### 4.1 变体展开：有限集合展开成多格
 
-`VariantCellCount > 1` 的物品会**展开成 N 个格子**（JEI 的 matching stacks），每格固定一个变体，
-显示名带 `#N` 后缀。判定顺序（`CatalogWindow.VariantCellCount`）：
+`VariantCellCount > 1` 的物品会**展开成 N 个格子**（JEI 的 matching stacks），每格固定一个变体。
+判定顺序（`CatalogWindow.VariantCellCount`）全部写死在代码里——没有采样，也没有自动状态发现：
 
 | 顺序 | 来源 | 格数 |
 |---|---|---|
 | ① | `ICatalogVariantProvider` | `VariantCount`（**不做上限截断**，请自己控制数量） |
-| ② | 内置特殊形态 | 刮刮乐 1 格；香烟 5 格；免疫宁注射器 5 格；食品券 30 格（5 面额 × 6 状态） |
-| ③ | 模块 | 占格形状数 × `ModuleEffectCells.Length` |
-| ④ | 浆果 | `BerryForms.Length` |
-| ⑤ | 硬编码生成器表 | 表长（>1 才展开） |
-| — | 其他（连续随机值） | 1 格，每秒重掷 |
+| ② | 作物品质档（`CropVariants`） | 2~4 |
+| ③ | 刮刮乐 | 1 格（奖品随机，不展开） |
+| ④ | 香烟（`packet_red_cigarette`） | 5 格（正品 + 4 种瑕疵） |
+| ⑤ | 免疫宁注射器（`large_purple_injector`） | 6 格（正品 + 5 种瑕疵） |
+| ⑥ | 食品券（`food_stamp`） | 30 格（5 面额 × 6 状态） |
+| ⑦ | 模块（`system_module_*`，且在内置生成器表里） | 占格形状数 × `ModuleEffectCells.Length`（11） |
+| ⑧ | 浆果（`BERRY_TAG`） | `BerryForms.Length`（6） |
+| ⑨ | 硬编码生成器表（`ribwich`、`node_medium`） | 表长（>1 才展开） |
+| — | 其他（连续随机值） | 1 格固定实例，**不会**重掷 |
 
 所以**注册提供者就等于接管了这件物品的展示方式**，比内置判定更准，也不会浪费格子。
-变体实例在渲染时按需创建并缓存到该格（启动预热不会批量造物品）。
+变体实例在渲染时按需创建并缓存到该格（启动预热不会批量造物品）；单格条目一直用它建格时那一份实例。
 
 ### 4.2 额外条目的合并规则
 
-构建快照时：
+构建（或扩展）快照时：
 
 1. 先按注册表（各 `ItemDirectory`）建条目；
 2. 再并入 `GetExtraItems()` 的结果，遇到以下情况跳过：
@@ -246,16 +250,18 @@ public sealed class BerryFormInfo { public int Condition; public int Visual; pub
    - 多个提供者给出同一个 id → 只收录第一次出现的；
 3. 合并后按 id 字典序排序，额外条目自然落到对应前缀位置。
 
+运行中补入沿用同一套规则：只造新增的条目，已有条目原样保留。
+
 ### 4.3 什么时候会重新拉取
 
 | 时机 | 行为 |
 |---|---|
-| 游戏加载完成 | 预构建快照 + 预热图标 |
-| 打开图鉴 | `HasNewItems()` 检测：注册表 id 变化、提供者数量变化、额外条目集合变化 → 整表重建 |
-| 运行中 | 每秒整页刷新一次，连续随机值重掷、图标按需换图 |
+| 游戏加载完成 | 快照 + 索引 + 变体展开 + 第一页图标，一次做完 |
+| 打开图鉴 | `HasNewItems()` 检测：注册表 id 变化、提供者数量变化、额外条目集合变化 → 新增条目走增量补入；只有条目消失才整表重建 |
+| 运行中 | 没有周期性刷新：每帧节拍只处理待重绘、分片建格与覆盖层重试 |
 | 调用 `NotifyItemsChanged` | 下一个空闲节拍增量补入，然后触发 `CatalogRefreshed` |
 
-注册得晚（比如挂到 `OnGameLoadedLate`）不会丢：提供者数量变化会触发下次打开图鉴时重建。
+注册得晚（比如挂到 `OnGameLoadedLate`）不会丢：提供者数量变化会在下次变化检测时触发增量补入。
 
 ---
 
@@ -268,7 +274,8 @@ public sealed class BerryFormInfo { public int Condition; public int Visual; pub
 2. **不要缓存 `GameItem` 引用长期持有。** 变体请每次现造。
 3. **不要在 `CreateVariant` 里改全局状态**（RNG、`PlayerStore`、静态表）。
 4. **主线程调用**，回调也在主线程执行，别开线程。
-5. 图鉴重掷用的随机流是隔离的（`UnityEngine.Random.state` 会原样还原），你的实现也不应该推进游戏随机流。
+5. 预览实例通过隔离随机流创建（`UnityEngine.Random.state` 会原样还原），没有周期性重掷；
+   你的实现也不应该推进游戏随机流。
 6. 造物品不要裸调 `DirectoryMaster.Item` 之后就乱改共享实例——图鉴自己走 `CreatePreviewItem`（RNG / uniqueId 还原）；
    第三方至少要做到「每次现造、不持有、不改全局」。
 
@@ -280,7 +287,7 @@ public sealed class BerryFormInfo { public int Condition; public int Visual; pub
 |---|---|---|
 | 提示框里 `ID: xxx` 出现两行 | 捆绑了 `ProbablyEnoughItems.dll` 并写进 `<Assemblies>` | 改走桥接，删掉那个 `<Assembly>` 与随包副本 |
 | 日志 `unlisted-reference: xxx.dll -> references ProbablyEnoughItems` | 编译期引用了图鉴但没写进 `<Assemblies>` | 改用反射（推荐），或放弃编译期引用 |
-| 注册成功但图鉴没有变化 | `VariantCount` 返回 0；或 id 拼错；或图鉴已构建过且提供者数量没变 | 检查 id；在 `Init` 里注册，或调用 `NotifyItemsChanged` |
+| 注册成功但图鉴没有变化 | `VariantCount` 返回 0 或 1；或 id 拼错；或图鉴已构建过且提供者数量没变 | 检查 id；在 `Init` 里注册，或调用 `NotifyItemsChanged` |
 | 额外条目没出现 | 该 id 已在注册表里（注册表优先） | 换一个专属 id |
 | 图标缺失 | `spriteAtlasPath` / `spritePath` 不对 | 参照原版物品的值填 |
 | `GetMethod("RegisterVariantProvider", …)` 返回 null | 图鉴版本低于 v2 | `ApiVersion >= 2` 才有委托版重载 |

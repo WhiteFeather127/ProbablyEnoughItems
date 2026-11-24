@@ -60,6 +60,41 @@ namespace ItemCatalog.Catalog
         internal int Amount;
     }
 
+    /// <summary>
+    /// 一条配方里某个参与物品的角色。显示位置由角色决定：
+    ///   Tool     → 右上角（机器 / 工作台）
+    ///   Material → 材料区（手持工具也归这一类）
+    ///   Output   → 产物区
+    ///   Module   → 模块，按槽位分组（机器模块迁移时再加 SlotId）
+    /// </summary>
+    internal enum PartRole
+    {
+        Tool = 0,
+        Material = 1,
+        Output = 2,
+        Module = 3
+    }
+
+    /// <summary>配方里的一个参与物品（拍平后的「配方 × 物品」一行）。</summary>
+    internal sealed class ItemPart
+    {
+        internal PartRole Role;
+
+        /// <summary>单个 id（机器 / 产物）。材料可能有多件候选，见 <see cref="Ids"/>。</summary>
+        internal string Id;
+        internal List<string> Ids;
+        internal List<string> Tags;
+
+        internal string DisplayName;
+        internal int Amount = 1;
+
+        /// <summary>手持工具（不消耗）；角色仍是 <see cref="PartRole.Material"/>。</summary>
+        internal bool IsTool;
+
+        /// <summary>槽位 id（<see cref="PartRole.Module"/> 用）：module / chip / container / dispenser / butcher…</summary>
+        internal string SlotId;
+    }
+
     /// <summary>一条配方：属于某台机器 / 某张蓝图。</summary>
     internal sealed class RecipeInfo
     {
@@ -67,9 +102,16 @@ namespace ItemCatalog.Catalog
         internal string MachineName;
         internal string Name;             // 配方自带的 customName，可能为空
 
+        /// <summary>手持工具。现在也同时出现在 <see cref="Materials"/> 里（按角色算作 Material）。</summary>
         internal List<RecipeIngredient> Tools = new List<RecipeIngredient>();
         internal List<RecipeIngredient> Materials = new List<RecipeIngredient>();
         internal List<RecipeOutput> Outputs = new List<RecipeOutput>();
+
+        /// <summary>
+        /// 拍平后的角色视图：机器（Tool）+ 材料（含手持工具）+ 产物。
+        /// 与上面三个列表共享同一批对象，只多一层角色标注，供统一查询 / 缓存使用。
+        /// </summary>
+        internal List<ItemPart> Parts = new List<ItemPart>();
 
         /// <summary>产物 id 的缩写，用于索引与日志。</summary>
         internal string FirstOutputId
@@ -95,6 +137,7 @@ namespace ItemCatalog.Catalog
                 Tools = Tools,
                 Materials = Materials,
                 Outputs = Outputs,
+                Parts = Parts,
                 DisplayCropId = cropId,
                 DisplayCropVariant = variant
             };
@@ -143,6 +186,10 @@ namespace ItemCatalog.Catalog
         internal static int UnresolvedOutputs { get; private set; }
         internal static bool Built { get; private set; }
 
+        /// <summary>本索引在 <see cref="IndexManager"/> 里的名字 / 建好后的占位值。</summary>
+        private const string IndexName = "recipes";
+        private static readonly object IndexMarker = new object();
+
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
         /// <summary>空扫描后的重试时间点（unscaled）。</summary>
@@ -154,11 +201,15 @@ namespace ItemCatalog.Catalog
         /// <summary>本次扫描中访问物品字段抛异常的次数（实例被销毁的信号）。</summary>
         private static int _scanThrows;
 
-        /// <summary>建索引。重复调用只会重建一次（Generation 变化时由调用方清空 Built）。</summary>
+        /// <summary>建索引；缓存与失效交给 <see cref="IndexManager"/>（目录 generation / 环境签名）。</summary>
         internal static void Build()
         {
-            if (Built) return;
-            if (UnityEngine.Time.unscaledTime < _retryAt) return;
+            IndexManager.Get(IndexName, BuildCore);
+        }
+
+        private static object BuildCore()
+        {
+            if (UnityEngine.Time.unscaledTime < _retryAt) return null;
 
             // 目录还没就绪（All 为空）时绝不缓存结果：任何来源层都可能通过
             // BaseItemId → FindEntry 提前触发本次构建，此时缓存 0 条配方
@@ -169,7 +220,7 @@ namespace ItemCatalog.Catalog
                     ModEntry.Log.Log("[recipes] catalog not ready, deferred");
                 _retryAt = UnityEngine.Time.unscaledTime + _retryDelay;
                 _retryDelay = UnityEngine.Mathf.Min(_retryDelay * 2f, 60f);
-                return;
+                return null;
             }
 
             All.Clear();
@@ -252,7 +303,7 @@ namespace ItemCatalog.Catalog
                         "[recipes] no machines yet (recipeManager attaches after save load), deferred"
                         + " [all={0} withItem={1} throws={2}] retry in {3:0}s",
                         items.Count, CountWithItem(items), _scanThrows, _retryDelay));
-                return;
+                return null;
             }
 
             Built = true;
@@ -278,6 +329,8 @@ namespace ItemCatalog.Catalog
                     MachineCount, All.Count, _byOutput.Count, UnresolvedOutputs, watch.ElapsedMilliseconds,
                     items.Count, withItem, withManager, _scanThrows));
             }
+
+            return IndexMarker;
         }
 
         private static int CountWithItem(System.Collections.Generic.List<ItemEntry> items)
@@ -411,6 +464,7 @@ namespace ItemCatalog.Catalog
         internal static void Invalidate()
         {
             Built = false;
+            IndexManager.Invalidate(IndexName);
         }
 
         // ---------------------------------------------------------------- 读取
@@ -451,7 +505,74 @@ namespace ItemCatalog.Catalog
             // 既没材料也没产物 → 不是可展示的配方
             if (info.Materials.Count == 0 && info.Outputs.Count == 0) return null;
 
+            BuildParts(info);
             return info;
+        }
+
+        /// <summary>
+        /// 生成拍平后的角色视图：机器（Tool）+ 材料（含手持工具）+ 产物。
+        /// 与 Materials / Outputs 共享同一批对象，只多一层角色标注。
+        /// </summary>
+        private static void BuildParts(RecipeInfo info)
+        {
+            info.Parts.Clear();
+
+            if (!string.IsNullOrEmpty(info.MachineId))
+            {
+                info.Parts.Add(new ItemPart
+                {
+                    Role = PartRole.Tool,
+                    Id = info.MachineId,
+                    DisplayName = info.MachineName,
+                    Amount = 1
+                });
+            }
+
+            for (int i = 0; i < info.Materials.Count; i++)
+            {
+                var ing = info.Materials[i];
+                if (ing == null) continue;
+
+                info.Parts.Add(new ItemPart
+                {
+                    Role = PartRole.Material,
+                    Ids = ing.Ids,
+                    Tags = ing.Tags,
+                    DisplayName = ing.DisplayName,
+                    Amount = ing.Amount,
+                    IsTool = ing.IsTool
+                });
+            }
+
+            // 手持工具：配方要求，不是消耗材料；单独标 IsTool，不进 Materials / 材料索引
+            for (int i = 0; i < info.Tools.Count; i++)
+            {
+                var ing = info.Tools[i];
+                if (ing == null) continue;
+
+                info.Parts.Add(new ItemPart
+                {
+                    Role = PartRole.Material,
+                    Ids = ing.Ids,
+                    Tags = ing.Tags,
+                    DisplayName = ing.DisplayName,
+                    Amount = ing.Amount,
+                    IsTool = true
+                });
+            }
+
+            for (int i = 0; i < info.Outputs.Count; i++)
+            {
+                var output = info.Outputs[i];
+                if (output == null) continue;
+
+                info.Parts.Add(new ItemPart
+                {
+                    Role = PartRole.Output,
+                    Id = output.Id,
+                    Amount = Math.Max(1, output.Amount)
+                });
+            }
         }
 
         private static void AddIngredient(List<RecipeIngredient> into, CraftingFilter filter, bool isTool)

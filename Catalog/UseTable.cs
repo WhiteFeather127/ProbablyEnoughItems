@@ -26,6 +26,74 @@ namespace ItemCatalog.Catalog
         internal string Kind;           // open / drink / apply / combine，用于标题文案
         internal string[] Produces;     // 产出的物品（可能多个）
         internal string Note;           // 备注本地化 key（可选）
+
+        private List<ItemPart> _parts;
+
+        /// <summary>
+        /// 和配方同一套「角色列表」视图：投入物品 → <see cref="PartRole.Material"/>，
+        /// 产出物品 → <see cref="PartRole.Output"/>；标签源也作为一条 Material（Tags）。
+        /// 惰性生成，现有 Sources / Produces 字段仍然是查询用的主数据。
+        /// </summary>
+        internal List<ItemPart> Parts
+        {
+            get
+            {
+                if (_parts != null) return _parts;
+
+                _parts = new List<ItemPart>();
+
+                if (Sources != null)
+                {
+                    for (int i = 0; i < Sources.Length; i++)
+                    {
+                        string id = Sources[i];
+                        if (string.IsNullOrEmpty(id)) continue;
+
+                        _parts.Add(new ItemPart
+                        {
+                            Role = PartRole.Material,
+                            Id = id,
+                            Amount = 1
+                        });
+                    }
+                }
+
+                if (SourceTags != null)
+                {
+                    for (int i = 0; i < SourceTags.Length; i++)
+                    {
+                        string tag = SourceTags[i];
+                        if (string.IsNullOrEmpty(tag)) continue;
+
+                        _parts.Add(new ItemPart
+                        {
+                            Role = PartRole.Material,
+                            Tags = new List<string> { tag },
+                            DisplayName = tag,
+                            Amount = 1
+                        });
+                    }
+                }
+
+                if (Produces != null)
+                {
+                    for (int i = 0; i < Produces.Length; i++)
+                    {
+                        string id = Produces[i];
+                        if (string.IsNullOrEmpty(id)) continue;
+
+                        _parts.Add(new ItemPart
+                        {
+                            Role = PartRole.Output,
+                            Id = id,
+                            Amount = 1
+                        });
+                    }
+                }
+
+                return _parts;
+            }
+        }
     }
 
     /// <summary>
@@ -174,10 +242,39 @@ namespace ItemCatalog.Catalog
             return merged;
         }
 
+        /// <summary>全部使用关系（uses.csv + 自动补充 + 开箱配方），给统一关系索引聚合用。</summary>
+        internal static List<UseInfo> AllRecords()
+        {
+            EnsureLoaded();
+
+            var list = new List<UseInfo>();
+            if (_relations != null) list.AddRange(_relations.All);
+
+            var open = OpenRecipes();
+            if (open != null)
+            {
+                var records = open.All;
+                for (int i = 0; i < records.Count; i++)
+                {
+                    var info = records[i];
+                    if (info != null && !list.Contains(info)) list.Add(info);
+                }
+            }
+
+            return list;
+        }
+
         private static void EnsureLoaded()
         {
-            if (_relations != null) return;
+            IndexManager.Get(IndexName, BuildCore);
+        }
 
+        /// <summary>本索引在 <see cref="IndexManager"/> 里的名字 / 建好后的占位值。</summary>
+        private const string IndexName = "uses";
+        private static readonly object IndexMarker = new object();
+
+        private static object BuildCore()
+        {
             _relations = new RelationIndex<UseInfo>();
             _tagUsing = new Dictionary<string, List<UseInfo>>(StringComparer.Ordinal);
 
@@ -186,7 +283,7 @@ namespace ItemCatalog.Catalog
             try { text = ModHelper.ReadModFileText(ModEntry.MOD_ID, UsesCsvPath); }
             catch (Exception e) { Warn("cannot read " + UsesCsvPath + ": " + e.Message); }
 
-            if (string.IsNullOrEmpty(text)) return;
+            if (string.IsNullOrEmpty(text)) return IndexMarker;
 
             var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
 
@@ -262,6 +359,8 @@ namespace ItemCatalog.Catalog
 
             // 紫外滤片对的是容器里的液体，不是容器本身（见方法注释）
             AppendLiquidFilterUses();
+
+            return IndexMarker;
         }
 
         /// <summary>

@@ -20,9 +20,10 @@ restarting the game is enough — no rebuild, no code change.
 
 | File | Content |
 |---|---|
-| `Data/clients.csv` | who (faction → customer) **and what each customer sells** — columns 12–16 |
+| `Data/clients.csv` | who (faction → customer) **and what each customer sells** — columns 12–17 |
 | `Data/uses.csv` | transformations that act on the item itself — open a box, tear a package, drink a bottle, apply a substance, combine two items — kept separate from the machine recipe index |
 | `Data/box_pools.csv` | cards required to open a box, plus fallback pools for boxes with no contents table. Box contents themselves are captured at load time by `Catalog/BoxProbe` (the game's own `PreBuiltItemHelper.crateFillers`) and have no CSV |
+| `Data/loot_pools.csv` | loot pool id → the place it belongs to, so the source page can group pools by site. The second column is either `item:<box id>` or a game localization key (`location_dumping_grounds`) |
 
 `Data/goods.csv` no longer ships. Its columns were folded into `clients.csv` 12–16; a leftover copy is still parsed
 and merged for compatibility (see the end of this page), but new data belongs in `clients.csv`.
@@ -54,6 +55,7 @@ Optional columns:
 | `exclude` | 14 | ids to drop from the inherited list |
 | `random_items` | 15 | ids that appear only sometimes in the IL (guarded by RNG rolls or day counters); kept separate so the UI can present them as "may appear" |
 | `dynamic` | 16 | `commissary` = the goods are read from the save's shelf at runtime; the row only supplies the display name |
+| `buys_water` | 17 | water grades accepted when buying `WATER` (`pure` / `hq` / `base` / `ghost` …, `|`-separated), copied from the customer's `willAcceptItem` predicate. Empty = any water. For `alias` / `unused` rows this column holds the merge target instead and the row is ignored entirely |
 
 Notes:
 
@@ -81,4 +83,8 @@ Data/clients.csv, ignored`. The file is not required and is not shipped; keep ne
 
 - **Recipes and uses**: read from the game at runtime.
 - **Commissary stock**: read from the save; only the display name comes from `clients.csv`.
-- **Variant expansion** (which item states exist): decided in code, see [API.md](API.md) §4.1.
+- **Tutorial items** (`PlayerStore.HandleSkipIntro`): the list only exists as string literals inside that method,
+  and calling it would mutate the save. `Catalog/TutorialProbe.cs` captures the ids when a player actually skips the
+  intro, caches them to `ModData/probably_enough_items/tutorial_items.txt`, and falls back to an IL-transcribed table
+  when no capture exists yet. It shows up as its own "Tutorial items" source page.
+- **Variant expansion** (which item states exist): decided in code and deliberately hardcoded, see [API.md](API.md) §4.1.
