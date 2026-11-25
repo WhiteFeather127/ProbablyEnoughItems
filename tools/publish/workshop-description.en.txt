@@ -100,7 +100,7 @@ It gathers all 27 item directories in the game, along with entries injected by o
 [list]
 [*]Containers show the fill water as that particular customer pours it, down to the bottle
 [*]On wanted pages the body lists what the customer buys — type tags plus specific items; water is shown as its quality tier, the composition stays in the tooltip
-[*]Barter customers: the page opens with "Barter", lists each offer set item by item (duplicates kept, sets separated by "or", the left/right arrows after them), and ends with what they ask for; a category cell cycles through that whole type and turns green when the queried item belongs to it
+[*]Barter customers: their offers, the "or" between sets, and what they ask for
 [/list]
 
 [h2]Taking items[/h2]
