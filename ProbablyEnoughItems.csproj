@@ -6,7 +6,7 @@
     <AssemblyName>ProbablyEnoughItems</AssemblyName>
     <RootNamespace>ItemCatalog</RootNamespace>
     <!-- 与 manifest.xml 的 ModVersion 手工同步（发版时一起改） -->
-    <Version>0.3.4</Version>
+    <Version>0.3.5</Version>
     <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
     <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
     <!--

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿using System;
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using ProbablyEnoughItems.Api;
@@ -1981,6 +1981,15 @@ namespace ItemCatalog.UI
                 rect.offsetMax = Vector2.zero;
                 go.transform.SetAsFirstSibling();
             }
+
+            // 旋转（R 键）时红底跟着物品一起转：幽灵节点不一定带旋转，
+            // 这里每帧取物品自身的世界旋转，换算成幽灵节点的本地旋转。
+            try
+            {
+                var src = element.rectTransform;
+                if (src != null) rect.localRotation = Quaternion.Inverse(ghost.rotation) * src.rotation;
+            }
+            catch { }
         }
 
         private static void DropGroupMark(GameItemElement key)
@@ -2065,6 +2074,15 @@ namespace ItemCatalog.UI
                 catch { }
 
                 mark.sizeDelta = new Vector2(width, height);
+
+                // 物品被 R 键旋转时红底也要跟着转：红底挂在画布上，
+                // 所以把物品的世界旋转换算成画布下的本地旋转。
+                try
+                {
+                    var src = dragged.rectTransform;
+                    if (src != null) mark.localRotation = Quaternion.Inverse(canvasRoot.rotation) * src.rotation;
+                }
+                catch { }
 
                 // 跟着鼠标走：被拖动的物品就在指针下面，红底于是贴在它身上，
                 // 而不是留在物品原来所在的格子里

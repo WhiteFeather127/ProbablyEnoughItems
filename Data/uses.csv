@@ -94,34 +94,39 @@ uses,restricted_chemical,open,med_bottle_violet|med_bottle_violet|med_bottle_ora
 
 # ===== 2026-11-15 全量激活动作核查（tools/audit/91 号探针，扫全部 set_onActivateSlotItemFunc）=====
 
-# 谷果箱激活：按箱内重量随机分成最多 4 颗谷果（继承新鲜度）
-uses,nutrifruit_crate,open,nutrifruit|nutrifruit|nutrifruit|nutrifruit,
-#   UnusedDirectory/<>c__DisplayClass75_0::<NutrifruitCrate>b__3
-#   （RNG.DivideWithDeviation(重量, 4) + FoodItemHelper.CloneFreshness）
-
-# 真空包装谷果激活：拆出 1 颗
-uses,nutrifruit_packaged,open,nutrifruit,
-#   UnusedDirectory/<>c__DisplayClass76_0::<NutrifruitPackaged>b__2
+# 谷果箱 / 真空谷果不再登记（2026-11-25）：nutrifruit_crate 与 nutrifruit_packaged
+# 都在 UnusedDirectory，目录里不注册，整行会被 HasUnusedItem 丢掉。
+# 如果以后游戏重新启用这两个 id，再加回来。
 
 # 消耗品激活 = 直接消耗（GameItem.Destroy，无产出）。
-#   ConsumableHelper.Init* 挂过激活动作的物品全集（MedsItemDirectory /
-#   FoodItemDirectory / AmenitiesItemDirectory 的工厂 IL）：
-uses,fanta_pill,apply,,
-uses,dream_dust,apply,,
-uses,nudka,drink,,
-uses,cig_red,apply,,
-uses,injector_white,apply,,
-uses,injector_pure_white,apply,,
-uses,injector_black,apply,,
-uses,injector_red,apply,,
-uses,injector_green,apply,,
-uses,injector_turquoise,apply,,
-uses,injector_purple,apply,,
-uses,injector_purple_large,apply,,
-uses,injector_blue,apply,,
-uses,injector_blood_red,apply,,
-uses,injector_pink,apply,,
-uses,injector_pink_alt,apply,,
+#   只收**工厂里真的调了 ConsumableHelper.Init*** 的物品（按 IL 的
+#   InitDirectory → lambda → 工厂 逐层核对，2026-11-25 修正）：
+#     SynaprestInjector(InitSynaprest)    → black_injector
+#     Injector(InitNarcotic/Relief)       → pure_white_injector / pink_injector / pink_alt_injector
+#     ImmunivaxInjector(InitImmunivax)    → large_purple_injector
+#     FentanylPill / DreamDust(InitNarcotic) → fanta_pill / dream_dust
+#     RedBeer / Nudka(InitAlcohol)        → red_beer / nudka
+#     PacketCigaretteRed(InitNicotine)    → packet_red_cigarette
+#   旧表里的 cig_red / injector_white / injector_red … 是工厂内部的
+#   局部标识（不是目录 id），目录里不存在，已删除。
+# 以下消耗品的激活动作被「成瘾」开局因子锁住（2026-11-25）：
+#   fanta_pill / dream_dust / pure_white_injector / pink_injector / pink_alt_injector
+#       → HealthData.CanUseNarcotic()  = StartingPerk.IsNarcoticAddiction()
+#   red_beer / nudka          → CanUseAlcohol()  = IsAlcoholAddiction()
+#   packet_red_cigarette      → CanUseNicotine() = IsNicotineAddiction()
+#   black_injector            → CanUseSynaprest() = 有任意成瘾
+#   large_purple_injector     → CanUseImmunivax() = IsSentinel()
+# 没有对应因子时点不动，属于「开局因子相关物品」，不登记成使用关系。
+# uses,fanta_pill,apply,,
+# uses,dream_dust,apply,,
+# uses,nudka,drink,,
+# uses,red_beer,drink,,
+# uses,packet_red_cigarette,apply,,
+# uses,pure_white_injector,apply,,
+# uses,black_injector,apply,,
+# uses,pink_injector,apply,,
+# uses,pink_alt_injector,apply,,
+# uses,large_purple_injector,apply,,
 
 # ===== 2026-11-15 倾倒场工具残骸堆（DebrisHelper.TOOL_REWARDS，需要工具才能拿到的物品）=====
 
@@ -191,9 +196,10 @@ uses,storage_bay_expansion_kit+storage_bay_chem,apply,,
 uses,storage_bay_expansion_kit+storage_bay_large,apply,,
 
 # ---- 医疗（UnusedDirectory::AloeVeraGel / HemostaticAgent）----
-# 芦荟胶 + 绷带 → 局部药绷带；止血粉 + 绷带 → 止血绷带
-uses,aloe_vera_gel+bandage_item,combine,topical_bandage_item,
-uses,hemostatic_agent+bandage_item,combine,hemostatic_bandage_item,
+# 不登记（2026-11-25）：aloe_vera_gel / hemostatic_agent 都在 UnusedDirectory，
+# 目录里不注册，整行会被 HasUnusedItem 丢掉。
+# uses,aloe_vera_gel+bandage_item,combine,topical_bandage_item,
+# uses,hemostatic_agent+bandage_item,combine,hemostatic_bandage_item,
 
 # ---- 畜牧 / 农业 ----
 # 激素针（红=类固醇 20、绿=免疫 20）打在活体动物身上，各 10 次
@@ -214,8 +220,8 @@ uses,water_ration+tag:LIQUID_CONTAINER_TAG,apply,,
 uses,water_ration_small+tag:LIQUID_CONTAINER_TAG,apply,,
 
 # ---- 开锁（SecuredContainerHelper / LockHelper）----
-# 撬锁器：机械锁，难度 1，不消耗
-uses,lockpicks+tag:LOCKED_CONTAINER_TAG,apply,,note_lockpick
+# 撬锁器不登记（2026-11-25）：lockpicks 在 UnusedDirectory，目录里不注册。
+# uses,lockpicks+tag:LOCKED_CONTAINER_TAG,apply,,note_lockpick
 # 钥匙卡开锁不在这里登记：它只对「对应锁型」成立，写 `tag:LOCKED_CONTAINER_TAG`
 # 会让每张卡都出现在每个锁容器上（图鉴里表现为多余的「卡 + 箱子」页）。
 # 每个箱子的卡已经由 `box_pools.csv` 的 key 列给出，开启关系里会画出来。

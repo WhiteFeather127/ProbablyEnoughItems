@@ -32,7 +32,7 @@ namespace ItemCatalog.Catalog
         /// 已废弃的分段：枪槽探测结果现在并入 <c>item-relations</c>（kind = Gun），
         /// 旧文件里的这段在加载时直接丢弃，下次写回不会再出现。
         /// </summary>
-        private static readonly string[] ObsoleteSections = { "gun-slots" };
+        private static readonly string[] ObsoleteSections = { "gun-slots", "item-relations" };
 
         private static readonly Dictionary<string, Entry> _entries =
             new Dictionary<string, Entry>(StringComparer.Ordinal);

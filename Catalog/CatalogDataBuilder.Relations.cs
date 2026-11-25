@@ -51,7 +51,8 @@ namespace ItemCatalog.Catalog
     /// </summary>
     internal static partial class CatalogDataBuilder
     {
-        private const string RelationIndexName = "item-relations";
+        // 2 = 关系哈希把「按标签匹配」的 part 也算进内容哈希（修标签行互相覆盖）
+        private const string RelationIndexName = "item-relations2";
 
         /// <summary>一条关系本体（客人的一份货单 / 一张掉落表 / 一条配方 / 一条枪槽…）。</summary>
         internal sealed class RelationRecord
@@ -883,6 +884,16 @@ namespace ItemCatalog.Catalog
                     var ids = new List<string>(part.Ids);
                     ids.Sort(StringComparer.Ordinal);
                     text.Append(string.Join(",", ids.ToArray()));
+                }
+
+                // 标签也必须进哈希：`scrap_metal+tag:CAGE_TAG` 与 `scrap_metal+tag:FRIDGE_TAG`
+                // 的 id / 数量完全一样，只有标签不同；漏掉标签它们会算出同一个关系 id，
+                // 后一条被当成重复丢掉（症状：冰箱查不到废金属升级）。
+                if (part.Tags != null && part.Tags.Count > 0)
+                {
+                    var tags = new List<string>(part.Tags);
+                    tags.Sort(StringComparer.Ordinal);
+                    text.Append("t:").Append(string.Join(",", tags.ToArray()));
                 }
 
                 text.Append('\n');
