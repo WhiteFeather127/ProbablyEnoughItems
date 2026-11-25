@@ -41,6 +41,30 @@ namespace ItemCatalog.Catalog
         internal string[] BuysWater;
         internal string[] Items;      // 该来源可能摆出的全部物品 id（固定 + 随机，已去重）
 
+        /// <summary>
+        /// 以物易物：他摆出来的每一组货（`clients.csv` 第 18 列）。
+        /// 每组是展开后的物品 id 列表，**保留重复**（wire*4 就是四个 wire 格子）；
+        /// 空 = 不是以物易物的客人。
+        /// </summary>
+        internal List<string[]> BarterCombos;
+
+        /// <summary>以物易物他索要的东西（第 19 列），带数量。</summary>
+        internal List<BarterWant> BarterWants;
+
+        internal bool IsBarter
+        {
+            get { return BarterCombos != null && BarterCombos.Count > 0; }
+        }
+
+        /// <summary>以物易物的一格：具体物品或种类标签 + 数量。</summary>
+        internal sealed class BarterWant
+        {
+            internal string Id;         // 具体物品（pink_injector…），与 Tag 二选一
+            internal string Tag;        // 种类标签（FOOD / NARCOTIC…）
+            internal int Amount;
+            internal string[] Blacklist;  // 该标签里游戏不认的品种（starch_grade / junk_grade）
+        }
+
         private List<ItemPart> _parts;
 
         /// <summary>
@@ -73,10 +97,15 @@ namespace ItemCatalog.Catalog
 
                 if (BuysItems != null)
                 {
+                    // 以物易物的索要清单按数量重复写了多次（页面要画多个格子），
+                    // 关系本体只留一份：同一件物品不重复登记 Material。
+                    var seenItems = new HashSet<string>(StringComparer.Ordinal);
+
                     for (int i = 0; i < BuysItems.Length; i++)
                     {
                         string id = BuysItems[i];
                         if (string.IsNullOrEmpty(id)) continue;
+                        if (!seenItems.Add(id)) continue;
 
                         _parts.Add(new ItemPart
                         {
@@ -89,10 +118,13 @@ namespace ItemCatalog.Catalog
 
                 if (BuysTags != null)
                 {
+                    var seenTags = new HashSet<string>(StringComparer.Ordinal);
+
                     for (int i = 0; i < BuysTags.Length; i++)
                     {
                         string tag = BuysTags[i];
                         if (string.IsNullOrEmpty(tag)) continue;
+                        if (!seenTags.Add(tag)) continue;
 
                         _parts.Add(new ItemPart
                         {
@@ -189,13 +221,27 @@ namespace ItemCatalog.Catalog
             internal bool Empty;             // 第 9 列：他也摆空瓶（1/yes）
             internal string BuysTags;        // 第 10 列：收购的标签，| 分隔
             internal string BuysItems;       // 第 11 列：收购的具体物品 id，| 分隔
-        internal string Sells;           // 第 12 列：他摆出来卖的货（合并原 goods.csv 的 items）
+            internal string Sells;           // 第 12 列：他摆出来卖的货（合并原 goods.csv 的 items）
             internal string Base;            // 继承另一个 id 的货单（解析后清空）
             internal string[] Exclude;       // 从继承结果里剔除的 id
             internal string[] Items;         // 固定会摆出的货
             internal string[] RandomItems;   // 随机分支的所有可能产出（全部列出，不漏）
             internal string Dynamic;         // non-null 表示商品运行时补，自己不列物品
             internal string BuysWater;       // 收购 WATER 时要的水质档位（pure|hq…）
+
+            // 第 18 / 19 列：以物易物。组合里允许重复（wire*4），索要项带数量。
+            internal string BarterCell;
+            internal string BarterWantsCell;
+            internal List<string[]> BarterCombos;
+            internal List<SourceInfo.BarterWant> BarterWants;
+
+            /// <summary>
+            /// 解析后的收购清单。以物易物的客人用第 19 列（可含重复，页面按数量画格子），
+            /// 其余客人用第 10 / 11 列（去重）。AddDefinitions 直接取这两份。
+            /// </summary>
+            internal string[] BuyTags;
+            internal string[] BuyItems;
+            internal string[] BuyWaterTags;
         }
 
         /// <summary>物品 id → 来源列表。</summary>
@@ -325,10 +371,12 @@ namespace ItemCatalog.Catalog
                     Sprite = def.Sprite,
                     Water = def.Water,
                     SellsEmpty = def.Empty,
-                    BuysTags = SplitIds(def.BuysTags),
-                    BuysItems = SplitIds(def.BuysItems),
-                    BuysWater = SplitIds(def.BuysWater),
-                    Items = CombineItems(def.Items, def.RandomItems)
+                    BuysTags = def.BuyTags ?? new string[0],
+                    BuysItems = def.BuyItems ?? new string[0],
+                    BuysWater = def.BuyWaterTags ?? new string[0],
+                    Items = CombineItems(def.Items, def.RandomItems),
+                    BarterCombos = def.BarterCombos,
+                    BarterWants = def.BarterWants
                 };
 
                 // dynamic=commissary：商品运行时从存档货架读，这里只登记来源元信息。
@@ -350,8 +398,8 @@ namespace ItemCatalog.Catalog
                 // 只买不卖的客人（woundedMan / clinicNurse / pharmacist / cartelWoundedSoldier …）
                 // 货单是空的，但它要出现在「求购」里。以前这里一律跳过，
                 // 于是这些买家整个被丢掉，医疗品、毒品的求购列表就空了。
-                bool buys = (def.BuysTags != null && def.BuysTags.Length > 0)
-                         || (def.BuysItems != null && def.BuysItems.Length > 0);
+                bool buys = (def.BuyTags != null && def.BuyTags.Length > 0)
+                         || (def.BuyItems != null && def.BuyItems.Length > 0);
 
                 // 既不卖也不买的静态行没有意义；dynamic 行本来就不该有 items
                 if (!dynamic && !buys && def.Items.Length == 0 && def.RandomItems.Length == 0)

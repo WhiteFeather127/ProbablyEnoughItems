@@ -15,11 +15,16 @@ namespace ItemCatalog.Catalog
     /// 模组扫描器把后者判为 <c>files</c> 能力，而本模组 manifest 没有声明能力，
     /// 直接读会导致玩家侧拒绝激活。改表后重启游戏即可生效，不需要重新编译。
     ///
-    /// clients.csv 列顺序（前 7 列必填，8~16 可选）：
+    /// clients.csv 列顺序（前 7 列必填，8~19 可选）：
     /// kind,id,name_key,location_id,fallback_key,profession,sprite,
-    /// water,empty,buys_tags,buys_items,sells,base,exclude,random_items,dynamic
+    /// water,empty,buys_tags,buys_items,sells,base,exclude,random_items,dynamic,buys_water,
+    /// barter,barter_wants
     ///   kind=faction 行是**阵营分节**，id 列填官方本地化 key，其后所有客人行都继承它；
     ///   kind=client / location 行是一个来源的元数据，不带 faction 列。
+    ///   第 18 列 barter：以物易物的组合，`;` 分隔组合、`|` 分隔物品、`id*数量` 表示多件，
+    ///     **保留重复**（wire*4 = 四个 wire 格子）；物品同时并入该客人的货单（来源索引）。
+    ///   第 19 列 barter_wants：他索要的东西，`物品id*数量` 或 `种类标签*数量`（全大写当标签），
+    ///     `|` 分隔。写了这列的客人不再读第 10 / 11 列。
     /// 旧的 goods.csv 列顺序（6 列，仅供残留文件兼容解析）：
     /// id,base,exclude,items,random_items,dynamic
     /// </summary>
@@ -83,8 +88,9 @@ namespace ItemCatalog.Catalog
 
                 if (!goods.TryGetValue(def.Id, out row))
                 {
-                    if (sells.Length > 0) def.Items = sells;
-                    else if (def.Kind == SourceKind.Client)
+                    // 以物易物的客人：货单来自第 18 列展开的结果（ParseClients 已写入 def.Items）
+                    def.Items = Concat(sells, def.Items);
+                    if (def.Items.Length == 0 && def.Kind == SourceKind.Client)
                         Warn("'" + def.Id + "' 既没有货单行，也没有第 12 列 sells");
                     continue;
                 }
@@ -227,7 +233,7 @@ namespace ItemCatalog.Catalog
                     Warn("'" + id + "' appears before any faction row; treated as faction_none");
                 }
 
-                defs.Add(new HardcodedSource
+                var def = new HardcodedSource
                 {
                     Kind = kind,
                     Id = id,
@@ -254,8 +260,29 @@ namespace ItemCatalog.Catalog
                     // 第 17 列可选：收购 WATER 时要的水质档位（pure|hq…）
                     // alias 行的第 17 列是「并入哪一行」的资料字段，那些行整行忽略，不冲突
                     BuysWater = cols.Length > 16 ? NullIfEmpty(cols[16]) : null,
+                    // 第 18 / 19 列可选：以物易物（组合 / 索要）
+                    BarterCell = cols.Length > 17 ? NullIfEmpty(cols[17]) : null,
+                    BarterWantsCell = cols.Length > 18 ? NullIfEmpty(cols[18]) : null,
                     Items = new string[0]
-                });
+                };
+
+                // 以物易物：第 18 列的组合展开后同时充当货单（来源索引按它登记），
+                // 第 19 列的索要项取代第 10 / 11 列（带数量，页面按数量重复画格子）。
+                def.BarterCombos = ParseBarterCombos(def.BarterCell);
+                def.Items = FlattenCombos(def.BarterCombos);
+                if (def.BarterWantsCell != null)
+                {
+                    def.BarterWants = ParseBarterWants(def.BarterWantsCell,
+                                                       out def.BuyTags, out def.BuyItems);
+                }
+                else
+                {
+                    def.BuyTags = SplitIds(def.BuysTags);
+                    def.BuyItems = SplitIds(def.BuysItems);
+                }
+                def.BuyWaterTags = SplitIds(def.BuysWater);
+
+                defs.Add(def);
             }
 
             return defs;
@@ -397,6 +424,177 @@ namespace ItemCatalog.Catalog
                 if (id.Length > 0 && seen.Add(id)) result.Add(id);
             }
             return result.ToArray();
+        }
+
+        /// <summary>按单个分隔符切开、去空白、去空项（不要求去重）。</summary>
+        private static string[] SplitOn(string cell, char separator)
+        {
+            if (string.IsNullOrEmpty(cell)) return new string[0];
+
+            string[] parts = cell.Split(separator);
+            var result = new List<string>();
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string id = parts[i].Trim();
+                if (id.Length > 0) result.Add(id);
+            }
+            return result.ToArray();
+        }
+
+        // ------------------------------------------------------------ 以物易物
+
+        /// <summary>
+        /// 第 18 列：`;` 分隔组合，`|` 分隔组合里的物品，`id*数量` 表示多件。
+        /// 组合内**保留重复**（`wire*4` 就是四个 wire，游戏会摆四个）。
+        /// </summary>
+        private static List<string[]> ParseBarterCombos(string cell)
+        {
+            if (string.IsNullOrEmpty(cell)) return null;
+
+            var combos = new List<string[]>();
+            string[] groups = cell.Split(';');
+            for (int i = 0; i < groups.Length; i++)
+            {
+                var ids = ExpandRepeated(groups[i], '|');
+                if (ids.Count > 0) combos.Add(ids.ToArray());
+            }
+
+            return combos.Count > 0 ? combos : null;
+        }
+
+        /// <summary>所有组合的并集（去重）：来源索引按它登记，查货能反查到这位客人。</summary>
+        private static string[] FlattenCombos(List<string[]> combos)
+        {
+            if (combos == null || combos.Count == 0) return new string[0];
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var result = new List<string>();
+            for (int c = 0; c < combos.Count; c++)
+            {
+                var ids = combos[c];
+                if (ids == null) continue;
+                for (int i = 0; i < ids.Length; i++)
+                {
+                    if (!string.IsNullOrEmpty(ids[i]) && seen.Add(ids[i])) result.Add(ids[i]);
+                }
+            }
+            return result.ToArray();
+        }
+
+        /// <summary>
+        /// 第 19 列：`|` 分隔索要项，`id*数量` / `TAG*数量`；`~` 后面是黑名单标签
+        /// （`NARCOTIC*1~starch_grade+junk_grade`，游戏里这两种不算麻醉品）。
+        /// 全大写的词当种类标签，其余当具体物品 id。
+        /// </summary>
+        private static List<SourceInfo.BarterWant> ParseBarterWants(string cell,
+                                                                     out string[] tags,
+                                                                     out string[] items)
+        {
+            tags = new string[0];
+            items = new string[0];
+            if (string.IsNullOrEmpty(cell)) return null;
+
+            var wants = new List<SourceInfo.BarterWant>();
+            var tagList = new List<string>();
+            var itemList = new List<string>();
+            var tagSeen = new HashSet<string>(StringComparer.Ordinal);
+            var itemSeen = new HashSet<string>(StringComparer.Ordinal);
+
+            string[] parts = cell.Split('|');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string raw = parts[i].Trim();
+                if (raw.Length == 0) continue;
+
+                string[] blacklist = null;
+                int tilde = raw.IndexOf('~');
+                if (tilde >= 0)
+                {
+                    blacklist = SplitOn(raw.Substring(tilde + 1), '+');
+                    raw = raw.Substring(0, tilde).Trim();
+                }
+
+                string token = raw;
+                int amount = 1;
+                int star = raw.LastIndexOf('*');
+                if (star > 0)
+                {
+                    int parsed;
+                    if (int.TryParse(raw.Substring(star + 1).Trim(), out parsed) && parsed > 0)
+                    {
+                        amount = parsed;
+                        token = raw.Substring(0, star).Trim();
+                    }
+                }
+                if (token.Length == 0) continue;
+
+                var want = new SourceInfo.BarterWant
+                {
+                    Amount = amount,
+                    Blacklist = blacklist
+                };
+
+                if (IsTagToken(token))
+                {
+                    want.Tag = token;
+                    if (tagSeen.Add(token)) tagList.Add(token);
+                }
+                else
+                {
+                    want.Id = token;
+                    if (itemSeen.Add(token)) itemList.Add(token);
+                }
+
+                wants.Add(want);
+            }
+
+            tags = tagList.ToArray();
+            items = itemList.ToArray();
+            return wants.Count > 0 ? wants : null;
+        }
+
+        /// <summary>全大写（含数字 / 下划线）= 种类标签；带小写的 = 物品 id。</summary>
+        private static bool IsTagToken(string token)
+        {
+            bool hasLetter = false;
+            for (int i = 0; i < token.Length; i++)
+            {
+                char c = token[i];
+                if (c >= 'a' && c <= 'z') return false;
+                if (c >= 'A' && c <= 'Z') hasLetter = true;
+            }
+            return hasLetter;
+        }
+
+        /// <summary>把 `a*3|b` 展开成 [a,a,a,b]，保留重复、保持顺序。</summary>
+        private static List<string> ExpandRepeated(string cell, char separator)
+        {
+            var result = new List<string>();
+            if (string.IsNullOrEmpty(cell)) return result;
+
+            string[] parts = cell.Split(separator);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string raw = parts[i].Trim();
+                if (raw.Length == 0) continue;
+
+                string token = raw;
+                int count = 1;
+                int star = raw.LastIndexOf('*');
+                if (star > 0)
+                {
+                    int parsed;
+                    if (int.TryParse(raw.Substring(star + 1).Trim(), out parsed) && parsed > 0)
+                    {
+                        count = Math.Min(parsed, 99);
+                        token = raw.Substring(0, star).Trim();
+                    }
+                }
+                if (token.Length == 0) continue;
+
+                for (int k = 0; k < count; k++) result.Add(token);
+            }
+            return result;
         }
 
         private static string NullIfEmpty(string s)

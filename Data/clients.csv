@@ -14,6 +14,13 @@
 #   第 17 列 buys_water  收购 WATER 时承认的水质档位（pure / hq / base / ghost…，| 分隔）；
 #                        从客人 willAcceptItem 谓词里的 WaterFeatureHelper.*_WATER_DISPLAY 抄的
 #                        （囤水者 pure|hq、口渴太空人 base|hq|ghost）。留空 = 任意水。
+#   第 18 列 barter      以物易物：他摆出来换东西的货。`;` 分隔组合、`|` 分隔组合内物品、
+#                        `id*数量` 表示多件，**重复照写**（wire*4 就是游戏里的四格）。
+#                        组合展开后同时充当他的货单（查 wire 能反查到这位客人）。
+#                        数据来源：BarterOfferList 的 AddOfferSet lambda（IL 抄录）。
+#   第 19 列 barter_wants 以物易物他索要的东西：`|` 分隔，`物品id*数量` 或 `种类标签*数量`
+#                        （全大写当标签），`~` 后接该标签里游戏不认的品种（用 `+` 分隔，
+#                        例 NARCOTIC*1~starch_grade+junk_grade）。写了这列就不读第 10/11 列。
 #   goods.csv 仍会被读取并与上面 12~16 列叠加，但新数据只需要写这一张表。
 # kind          faction=阵营分节 / client=上门客人 / location=地点商店
 #               alias =同一个角色在游戏代码里的另一个 id（如 abby2..5、inventor、
@@ -93,7 +100,6 @@ client,FarmerClientStandard,name_hydroponic_farmer,,,农业/食品,pool:GetRando
 unused,FoodSurplusClient,name_lower_levels_trader,,,农业/食品,pool:GetRandomLowerLevelSpriteName,,,,,beis_icecream|cat_bar|cup_noodle|energy_drink|galaxy_blend|li_eat_snackbar|nudka|processed_juice|processed_meat|processed_milk|red_beer|soda_red|zerochew,,,,
 unused,MaterialSurplusClient,name_lower_levels_trader,,,农业/食品,pool:GetRandomLowerLevelSpriteName,,,,,common_ore|scrap_metal|wire|common_electronic,,,,
 # ---- 医药/化学 ----
-client,AddictBlood,name_addict,,,医药/化学,pool:GetRandomScavSpriteName,,,,blood_bag|pink_injector,blood_bag|pink_injector,,,,
 client,LowerLevelChemist,name_lower_level_chemist,,,医药/化学,pool:GetRandomScientistSpriteName,,,CHEMICAL_SUPPLIES,,caffeine_pill|dream_dust|salve,,,,
 unused,MedicalSurplusClient,name_lower_levels_vendor,,,医药/化学,pool:GetRandomLowerLevelSpriteName,,,,,bandage_item|birth_control_pill|caffeine_pill|pink_injector|salve|topical_bandage_item,,,,
 client,RareLowerLevelChemist,name_pharmacist,,,医药/化学,pool:GetRandomScientistSpriteName,,,CHEMICAL_SUPPLIES,,black_injector|dream_dust|fanta_pill|pink_injector,,,,
@@ -154,6 +160,20 @@ client,Wanted1,name_james_bailey,,,其他,wanted1,,,,,sec_keycard|stun_baton|hea
 client,Wanted2,name_the_butcher,,,其他,wanted2,,,,,common_electronic|crowbar|energy_drink|fat_meat|postit|processed_meat|raw_meat|satchel|scav_token|small_raw_meat,,,,
 client,Wanted6,name_li_bei_wen,,,其他,wanted6,,,,,pink_alt_injector,,,,
 client,Wanted7,name_juan,,,其他,wanted7,,,,,processed_juice|processed_meat|processed_milk,,,,
+# ---- 以物易物 ----
+# 数据来源：StoreClientListBarter / BarterOfferList（AddOfferSet lambda 与 BarterCondition 的 IL 抄录）。
+# 组合按游戏顺序写，`*数量` 是真实格数（重复照写）；多种组合就是游戏里左右箭头翻的那几页。
+# 按概率追加的组合照列（这局不一定出现，但属于游戏的报价格）；内容本身随机的两类不写：
+# addictGeneralBarter 的 packedFoodTable 抽三份食物、energy credit 50~100 金额
+# ——那些物品已由掉落池覆盖，写死会把「可能」说成「一定」。
+# 出场路径：addictBarter = 剧情第 13 天；storyFoodBarter = 剧情第 6 天；
+# addictGeneralBarter / normalFoodBarter = generalPool 随机池（前者另有卡特尔开局第 2 天）。
+# scavBarter / addictBarterBlood / lowerLevelChemistBarter 只有 id→工厂字典登记、没有任何
+# 出场路径，已挪到文末「未使用」节留档（scavBarter 的 moonshine 在现版本也不存在）。
+client,addictBarter,name_scav_addict,,,以物易物,pool:GetRandomScavSpriteName,,,,,,,,,,,wire*4;blood_bag*3;processed_meat*2|soda_red;c4;box_tampon;combat_knife,pink_injector
+client,addictGeneralBarter,name_scav_addict,,,以物易物,pool:GetRandomScavSpriteName,,,,,,,,,,,wire*3;blood_bag*2;glass_shard_shiv|pipe_weapon|box_cutter;birth_control_pill*3;wire_cutter|screwdriver;box_tampon;c4;kotton_fabric*2;system_module_efficiancy;system_module_performance;system_module_quality;system_module_overclock;system_module_eco;system_module_fineness;large_purple_injector;system_capped_neural_core;advanced_flux_agent;energy_credit_breeder;common_medical*2;common_chemical*2;combat_knife,NARCOTIC*1~starch_grade+junk_grade
+client,storyFoodBarter,name_poor_scav,,,以物易物,pool:GetRandomScavSpriteName,,,,,,,,,,,blood_bag*2;scrap_metal*3;scratcher*2,FOOD*1
+client,normalFoodBarter,name_poor_scav,,,以物易物,pool:GetRandomScavSpriteName,,,,,,,,,,,blood_bag*2;scrap_metal*3;scratcher*2,FOOD*1
 # ===== 上层 =====
 faction,faction_name_upper_level,,,,,
 # ---- 水商/水类 ----
@@ -357,3 +377,11 @@ unused,chemical_returning_client,,,,,,,,WATER,,,,,,
 unused,addictGeneralTrailer,Addict,,,,,,,SUBSTANCE,,,,,,
 unused,debug_client,Debug Client,,,,,,,SUBSTANCE|ALL_TYPE,,,,,,
 unused,revSupplyBuyerTrailer,Revolution Quartermaster,,,,,,,WEAPON|AMMUNITION|MEDICAL,,,,,,
+# 以物易物客户里没有出场路径的三位（只在 StoreClientListDict 的 id→工厂字典登记，
+# StoreClientList 的任何随机池 / 剧情天数 / 事件都不创建它们）。报价数据照留档：
+#   addictBarterBlood     给 blood_bag*2，要 pink_injector
+#   scavBarter            给 金属废料组 / 日用品组，要 moonshine（现版本没有这个物品 id）
+#   lowerLevelChemistBarter 给 salve / caffeine_pill*4 / dream_dust*2，要 FOOD*2
+unused,addictBarterBlood,name_addict,,,医药/化学,pool:GetRandomScavSpriteName,,,,,,,,,,,blood_bag*2,pink_injector
+unused,scavBarter,name_scav,,,以物易物,pool:GetRandomScavSpriteName,,,,,,,,,,,wire|nuts_metal|scrap_metal*2|common_electronic;paper_towel|shampoo|toilet_paper,moonshine
+unused,lowerLevelChemistBarter,name_lower_level_chemist,,,以物易物,pool:GetRandomScavSpriteName,,,,,,,,,,,salve;caffeine_pill*4;dream_dust*2,FOOD*2

@@ -15,6 +15,9 @@ src_commissary,配给站
 src_clients,客人
 src_sold,售出
 src_wanted,求购
+src_barter,以物易物
+src_barter_or,或
+src_barter_wants,索要
 src_locations,地点商店
 src_tutorial,教程物品
 src_client_supplier,补给跑者

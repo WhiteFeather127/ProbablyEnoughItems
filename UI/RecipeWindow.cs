@@ -348,6 +348,12 @@ namespace ItemCatalog.UI
             /// 标签格下面的说明写这几个档位，而不是空样本的「未知的水」。
             /// </summary>
             internal string[] WaterQualities;
+
+            /// <summary>
+            /// 标签格下面除了标签名还要写的件数（以物易物索要 FOOD*2 这类）。
+            /// 没登记的标签不写数量。
+            /// </summary>
+            internal Dictionary<string, int> TagCounts;
         }
 
         /// <summary>左键（来源方向）打开。页面同一份，方向标注不同。</summary>
@@ -693,13 +699,16 @@ namespace ItemCatalog.UI
         /// （水囤积者只要纯水 / 优质水、拾荒者只要基础水 / 幽灵水……），这里直接写这些档位。
         /// 不能读轮播样本的实例：样本是空瓶，`GetWaterDisplayName` 只会回「未知的水」。
         /// </summary>
-        private static string CaptionFor(string tag, string currentId, string[] waterQualities)
+        private static string CaptionFor(string tag, string currentId, string[] waterQualities, int amount = 0)
         {
             // 内部 `_TAG` 已经展开成物品了，不需要再写一行标签
             if (IsInternalTag(tag)) return null;
 
             if (!string.Equals(tag, "WATER", StringComparison.OrdinalIgnoreCase))
-                return DescribeTags(new[] { tag });
+            {
+                string name = DescribeTags(new[] { tag });
+                return amount > 1 ? name + " \u00d7" + amount : name;
+            }
 
             if (waterQualities != null && waterQualities.Length > 0)
             {
@@ -714,6 +723,15 @@ namespace ItemCatalog.UI
             }
 
             return ModEntry.T("use_tag_water");
+        }
+
+        /// <summary>标签格要写的件数（只有以物易物会登记，其它标签条返回 0 = 不写）。</summary>
+        private static int TagAmount(TagStrip strip, string tag)
+        {
+            if (strip == null || strip.TagCounts == null || string.IsNullOrEmpty(tag)) return 0;
+
+            int amount;
+            return strip.TagCounts.TryGetValue(tag, out amount) ? amount : 0;
         }
 
         /// <summary>查的是液体条目时，收购标签（WATER 等）就是这种液体 → 整格标绿。</summary>
@@ -918,7 +936,8 @@ namespace ItemCatalog.UI
                 // 绿底表示「这一类里有当前这件」，与轮播到哪一件无关（MatchMatch 用 self 判定）
                 RenderGoods(builder, showId, self, strip.Base + i, false);
                 AddOverlayCaption(builder, builder.Last,
-                    CaptionFor(tag, strip.CurrentId, strip.WaterQualities), "tagcap" + (strip.Base + i));
+                    CaptionFor(tag, strip.CurrentId, strip.WaterQualities, TagAmount(strip, tag)),
+                    "tagcap" + (strip.Base + i));
             }
 
             // 具体物品紧接在标签格后面，同一张网格里往下排——列数够时就在同一行，
@@ -2519,10 +2538,20 @@ namespace ItemCatalog.UI
                 if (page.Source != null && !string.IsNullOrEmpty(page.Source.Sprite))
                     h += PortraitMaxSide + 8f;
 
-                // 一块一页：按整块货单的行数估（超高由滚动条处理，这里只用来兜底）
-                int cells = page.Count;
-                int rows = Math.Max(1, (cells + GridColumns() - 1) / GridColumns());
-                h += rows * (CellHeight + CellSpacing);
+                // 以物易物：组合 + 索要各一块网格，按格数估行数
+                if (page.Source != null && page.Source.IsBarter)
+                {
+                    int barterCells = BarterCellEstimate(page.Source);
+                    int barterRows = Math.Max(1, (barterCells + GridColumns() - 1) / GridColumns());
+                    h += barterRows * (CellHeight + CellSpacing);
+                }
+                else
+                {
+                    // 一块一页：按整块货单的行数估（超高由滚动条处理，这里只用来兜底）
+                    int cells = page.Count;
+                    int rows = Math.Max(1, (cells + GridColumns() - 1) / GridColumns());
+                    h += rows * (CellHeight + CellSpacing);
+                }
             }
             else
             {
@@ -2640,6 +2669,13 @@ namespace ItemCatalog.UI
                 var items = source.Items;
                 var cells = new List<GoodsCell>(items == null ? 0 : items.Length);
 
+                // 以物易物的客人不走货单格：页面按 BarterCombos / BarterWants 单独画。
+                if (source.IsBarter)
+                {
+                    _sourceBlocks.Add(new SourceBlock { Source = source, Cells = cells });
+                    continue;
+                }
+
                 if (items != null)
                 {
                     // 卖水的客人：容器一格（满瓶）。
@@ -2752,6 +2788,14 @@ namespace ItemCatalog.UI
                     + " sprites=0 spec=" + source.Sprite);
             }
 
+            // 以物易物：客人把货摆出来换你手里的东西（BarterOffer / BarterCondition）。
+            // 页面按游戏里的顺序画：以物易物 → 各组合（重复照列）→ ←/→ → 他索要的东西。
+            if (source != null && source.IsBarter)
+            {
+                RenderBarter(builder, source);
+                return;
+            }
+
             // 该来源可能摆出的全部物品。只收购、不卖货的客人（比如按标签收
             // WEAPON 的 Scavenger）货单是空的，不画空网格，让位给下面的求购区。
             var cells = page.Cells;
@@ -2794,6 +2838,173 @@ namespace ItemCatalog.UI
             {
                 RenderBuys(builder, source, true, _asUse);
             }
+        }
+
+        /// <summary>以物易物页的格子总数（估算窗口高度用）。</summary>
+        private static int BarterCellEstimate(SourceInfo source)
+        {
+            int cells = 0;
+
+            var combos = source.BarterCombos;
+            if (combos != null)
+            {
+                for (int c = 0; c < combos.Count; c++)
+                    if (combos[c] != null) cells += combos[c].Length;
+            }
+
+            var wants = source.BarterWants;
+            if (wants != null)
+            {
+                for (int w = 0; w < wants.Count; w++)
+                {
+                    var want = wants[w];
+                    if (want == null) continue;
+                    cells += Mathf.Clamp(want.Amount, 1, 9);
+                }
+            }
+
+            return Math.Max(1, cells);
+        }
+
+        /// <summary>
+        /// 以物易物页：以物易物 → 对方摆出来的各组合（重复照列）→ 左右箭头 → 他索要的东西。
+        /// 数据来自 `clients.csv` 第 18 / 19 列（`BarterOfferList` 的 IL 抄录）。
+        /// 组合内重复的件数就是游戏里真实的格子数（`wire*4` 摆四个），不能去重。
+        /// </summary>
+        private static void RenderBarter(CustomUIBuilder builder, SourceInfo source)
+        {
+            builder.AddLabel(ModEntry.T("src_barter"), "src_barter");
+
+            var combos = source.BarterCombos;
+            int shown = 0;
+
+            if (combos != null)
+            {
+                for (int c = 0; c < combos.Count; c++)
+                {
+                    var ids = combos[c];
+                    if (ids == null || ids.Length == 0) continue;
+
+                    if (shown > 0)
+                        builder.AddLabel(ModEntry.T("src_barter_or"), "src_barter_or" + c);
+
+                    builder.BeginGrid(GridColumns(), GridCellWidth(), CellHeight, CellSpacing);
+                    for (int i = 0; i < ids.Length; i++)
+                    {
+                        if (string.IsNullOrEmpty(ids[i])) continue;
+                        RenderGoods(builder, ids[i], MatchesCurrent(ids[i]), 20000 + c * 40 + i, false);
+                    }
+                    builder.End();
+
+                    shown++;
+                }
+            }
+
+            // 多种组合在游戏里靠左右箭头翻（BarterOffer.ShowSetByOffset）。
+            if (shown > 1)
+            {
+                builder.BeginRow(4f);
+                builder.AddFlexibleSpace();
+                builder.AddLabel("\u2190", "barter_arrow_l");
+                builder.AddSpace(16f);
+                builder.AddLabel("\u2192", "barter_arrow_r");
+                builder.AddFlexibleSpace();
+                builder.End();
+            }
+
+            var wants = source.BarterWants;
+            if (wants == null || wants.Count == 0) return;
+
+            builder.AddLabel(ModEntry.T("src_barter_wants"), "src_barter_wants");
+
+            // 索要项交给标签条统一渲染（和客人的「求购」同一套实现）：
+            //   · 具体物品 → 一格一件，要几件就几格；
+            //   · 种类标签 → 一格代表整类，每秒轮播类里的物品（Carousel 的 tag: 游标），
+            //     查的物品属于这一类就整格标绿（与轮播到哪一件无关），格下写「食物 ×2」。
+            var wantTags = new List<string>();
+            var wantItems = new List<string>();
+            var tagCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+
+            for (int w = 0; w < wants.Count; w++)
+            {
+                var want = wants[w];
+                if (want == null) continue;
+
+                if (!string.IsNullOrEmpty(want.Id))
+                {
+                    int times = Mathf.Clamp(want.Amount, 1, 9);
+                    for (int k = 0; k < times; k++) wantItems.Add(want.Id);
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(want.Tag)) continue;
+                if (!tagCounts.ContainsKey(want.Tag)) wantTags.Add(want.Tag);
+                tagCounts[want.Tag] = Mathf.Clamp(want.Amount, 1, 9);
+            }
+
+            builder.BeginColumn(2f);
+            var wantsHost = builder.CurrentContainer;
+            builder.End();
+
+            var wantsStrip = new TagStrip
+            {
+                Host = wantsHost,
+                Tags = wantTags.ToArray(),
+                Items = wantItems.ToArray(),
+                Base = 50000,
+                CurrentId = _entry == null ? null : _entry.Id,
+                Exclude = BarterBlacklist(source),
+                TagCounts = tagCounts
+            };
+            _tagStrips.Add(wantsStrip);
+            RenderTagStrip(wantsStrip);
+        }
+
+        /// <summary>
+        /// 以物易物索要里的「游戏不认的品种」（`~` 黑名单，例如麻醉品里的 starch_grade /
+        /// junk_grade）：整类格子要把它们剔掉，否则查这些低档货也会显示对方收。
+        /// </summary>
+        private static HashSet<string> BarterBlacklist(SourceInfo source)
+        {
+            var wants = source.BarterWants;
+            if (wants == null) return null;
+
+            List<string> words = null;
+            for (int w = 0; w < wants.Count; w++)
+            {
+                var want = wants[w];
+                if (want == null || want.Blacklist == null) continue;
+
+                for (int b = 0; b < want.Blacklist.Length; b++)
+                {
+                    string word = want.Blacklist[b];
+                    if (string.IsNullOrEmpty(word)) continue;
+                    if (words == null) words = new List<string>();
+                    if (!words.Contains(word)) words.Add(word);
+                }
+            }
+            if (words == null) return null;
+
+            var exclude = new HashSet<string>(StringComparer.Ordinal);
+            var all = CatalogDataBuilder.All;
+            for (int i = 0; i < all.Count; i++)
+            {
+                var entry = all[i];
+                var item = entry == null ? null : entry.Item;
+                if (item == null || string.IsNullOrEmpty(entry.Id)) continue;
+
+                for (int k = 0; k < words.Count; k++)
+                {
+                    bool hit = false;
+                    try { hit = item.IsTag(words[k]) || item.IsGameItemType(words[k]); }
+                    catch { }
+
+                    if (!hit) continue;
+                    exclude.Add(entry.Id);
+                    break;
+                }
+            }
+            return exclude;
         }
 
         /// <summary>

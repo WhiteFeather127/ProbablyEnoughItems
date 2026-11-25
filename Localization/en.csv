@@ -15,6 +15,9 @@ src_commissary,Commissary
 src_clients,Clients
 src_sold,Selling
 src_wanted,Wanted
+src_barter,Barter
+src_barter_or,or
+src_barter_wants,Asks for
 src_locations,Location shops
 src_tutorial,Tutorial items
 src_client_supplier,Supply runner

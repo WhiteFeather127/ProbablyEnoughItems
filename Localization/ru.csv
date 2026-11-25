@@ -15,6 +15,9 @@ src_commissary,Снабжение
 src_clients,Клиенты
 src_sold,Продажа
 src_wanted,Скупка
+src_barter,Обмен
+src_barter_or,или
+src_barter_wants,Просит
 src_locations,Магазины локаций
 src_tutorial,Учебные предметы
 src_client_supplier,Поставщик
